@@ -46,8 +46,9 @@ Write-Host ''
 $confirm = Read-Host 'Type YES to continue'
 if ($confirm -ne 'YES') { Say 'Cancelled - nothing was changed.' Yellow; return }
 
-# ---------- 1. Stop the app (safely) ----------
+# ---------- 1. Stop the app (safely - only AdBazaar's own node process) ----------
 Step 'Stopping AdBazaar'
+$ErrorActionPreference = 'Continue'
 $port = 4780
 if ($AppDir -and (Test-Path (Join-Path $AppDir '.env'))) {
   foreach ($line in Get-Content (Join-Path $AppDir '.env')) {
@@ -59,22 +60,60 @@ if ($AppDir -and (Test-Path (Join-Path $AppDir 'storage\server-url.txt'))) {
   $u = (Get-Content (Join-Path $AppDir 'storage\server-url.txt') -Raw).Trim()
   if ($u -match ':(\d+)$') { $ports += [int]$Matches[1] }
 }
-$stopped = $false
-foreach ($p in ($ports | Select-Object -Unique)) {
+
+$targets = @{}
+$all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+$byId = @{}; foreach ($p in $all) { $byId[[int]$p.ProcessId] = $p }
+$dirLower = ''; if ($AppDir) { $dirLower = $AppDir.ToLower() }
+
+# a) node processes started by AdBazaar's own launchers or from the AdBazaar folder
+foreach ($p in $all) {
+  if ($p.Name -ne 'node.exe') { continue }
+  $cmd = [string]$p.CommandLine
+  $parent = $byId[[int]$p.ParentProcessId]
+  $pcmd = ''; if ($parent) { $pcmd = [string]$parent.CommandLine }
+  $hit = $false
+  if ($pcmd -match 'storage\\server\.log') { $hit = $true }                       # started by start-hidden.vbs / auto-start
+  if ($dirLower -and ($cmd.ToLower().Contains($dirLower) -or $pcmd.ToLower().Contains($dirLower))) { $hit = $true }  # 2-start.bat etc.
+  if ($cmd -match 'scripts[\\/](seed-test|create-admin)\.js') { $hit = $true }   # AdBazaar helper scripts
+  if ($hit) { $targets[[int]$p.ProcessId] = 'launcher' }
+}
+# b) the process answering as "adbazaar" on AdBazaar's port (127.0.0.1 avoids slow IPv6 'localhost' lookups)
+foreach ($pt in ($ports | Select-Object -Unique)) {
   $isAdb = $false
-  try { $isAdb = ((Invoke-RestMethod "http://localhost:$p/healthz" -TimeoutSec 3).app -eq 'adbazaar') } catch { $isAdb = $false }
-  if (-not $isAdb) { continue }
-  foreach ($c in @(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)) {
-    $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
-    if ($proc -and $proc.ProcessName -eq 'node') {
-      Stop-Process -Id $proc.Id -Force
-      $stopped = $true
-      Say "Stopped AdBazaar (process $($proc.Id) on port $p)." Green
+  try { $isAdb = ((Invoke-RestMethod "http://127.0.0.1:$pt/healthz" -TimeoutSec 8).app -eq 'adbazaar') } catch { $isAdb = $false }
+  if ($isAdb) {
+    foreach ($c in @(Get-NetTCPConnection -LocalPort $pt -State Listen -ErrorAction SilentlyContinue)) {
+      $pp = $byId[[int]$c.OwningProcess]
+      if ($pp -and $pp.Name -eq 'node.exe') { $targets[[int]$c.OwningProcess] = "port $pt" }
     }
   }
 }
-if (-not $stopped) { Say 'AdBazaar was not running.' }
-Start-Sleep -Seconds 2
+# c) the PID AdBazaar wrote at start-up (only if it is still a node process running server.js)
+if ($AppDir -and (Test-Path (Join-Path $AppDir 'storage\server.pid'))) {
+  $sp = 0; [int]::TryParse((Get-Content (Join-Path $AppDir 'storage\server.pid') -Raw).Trim(), [ref]$sp) | Out-Null
+  $pp = $byId[$sp]
+  if ($pp -and $pp.Name -eq 'node.exe' -and ([string]$pp.CommandLine) -match 'server\.js') { $targets[$sp] = 'pid file' }
+}
+
+if ($targets.Count -eq 0) { Say 'AdBazaar was not running.' }
+foreach ($id in $targets.Keys) {
+  try { Stop-Process -Id $id -Force -ErrorAction Stop; Say "Stopped AdBazaar process $id ($($targets[$id]))." Green }
+  catch { Say "Could not stop process $id - $($_.Exception.Message)" Yellow }
+}
+Start-Sleep -Seconds 3
+
+# Is the database still locked by something?
+$dbFile = $null; if ($AppDir) { $dbFile = Join-Path $AppDir 'storage\adbazaar.db' }
+function DbLocked {
+  if (-not $dbFile -or -not (Test-Path $dbFile)) { return $false }
+  try { $fs = [IO.File]::Open($dbFile, 'Open', 'ReadWrite', 'None'); $fs.Close(); return $false } catch { return $true }
+}
+if (DbLocked) {
+  Say 'The AdBazaar database is still open in another program.' Yellow
+  Say 'Close any window showing AdBazaar (black "AdBazaar server" window, Notepad, DB viewer), then press Enter.' Yellow
+  Read-Host 'Press Enter to continue' | Out-Null
+}
 
 # ---------- 2. Optional backup (to move to another computer) ----------
 $backup = $null
@@ -87,9 +126,17 @@ if ($AppDir -and (Test-Path (Join-Path $AppDir 'storage'))) {
     $backup = Join-Path ([Environment]::GetFolderPath('Desktop')) ("AdBazaar-backup-" + (Get-Date -Format 'yyyy-MM-dd-HHmm') + '.zip')
     $items = @(Join-Path $AppDir 'storage')
     if (Test-Path (Join-Path $AppDir '.env')) { $items += (Join-Path $AppDir '.env') }
-    Compress-Archive -Path $items -DestinationPath $backup -Force
-    Say "Backup saved: $backup" Green
-    Say 'It contains ID documents - keep it private and delete it after moving.' Yellow
+    try {
+      Compress-Archive -Path $items -DestinationPath $backup -Force -ErrorAction Stop
+      Say "Backup saved: $backup" Green
+      Say 'It contains ID documents - keep it private and delete it after moving.' Yellow
+    } catch {
+      Remove-Item $backup -Force -ErrorAction SilentlyContinue
+      $backup = $null
+      Say "Backup failed: $($_.Exception.Message)" Red
+      $go = Read-Host 'Continue removing WITHOUT a backup? (Y/N) [N]'
+      if ($go -notmatch '^[Yy]') { Say 'Stopped. Nothing else was removed. Restart the PC and run this again.' Yellow; return }
+    }
   }
 }
 
@@ -114,7 +161,7 @@ if ($AppDir) {
   Set-Location $env:USERPROFILE
   $deleted = $false
   for ($i = 0; $i -lt 5 -and -not $deleted; $i++) {
-    try { Remove-Item $AppDir -Recurse -Force; $deleted = $true } catch { Start-Sleep -Seconds 2 }
+    try { Remove-Item $AppDir -Recurse -Force -ErrorAction Stop; $deleted = $true } catch { Start-Sleep -Seconds 2 }
   }
   if ($deleted) { Say 'Folder deleted.' Green }
   else { Say "Could not delete $AppDir completely (a file is open). Close any window/Notepad using it, restart the PC and delete the folder by hand." Yellow }
