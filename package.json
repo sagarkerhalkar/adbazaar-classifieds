@@ -1,0 +1,16 @@
+{
+  "name": "adbazaar-classifieds",
+  "version": "1.0.0",
+  "description": "Classifieds web app: KYC-verified sellers post paid, time-limited ads (7/15/29 days) with ranking, TOP ads, UPI/Razorpay payments and an admin verification portal with live video-call KYC.",
+  "main": "server.js",
+  "private": true,
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed:demo": "node scripts/seed-demo.js",
+    "create-admin": "node scripts/create-admin.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}
