@@ -25,6 +25,10 @@
     }
 
     async function start() {
+      if (!window.isSecureContext) {
+        say('The camera only works on a secure address. Open this site on https:// (your domain) or as http://localhost on the computer running it.', true);
+        return;
+      }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         say('Your browser cannot open the camera. Please use Chrome or Safari on HTTPS.', true);
         return;

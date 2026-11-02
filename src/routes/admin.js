@@ -84,8 +84,8 @@ function clientsView(req, rows, filter) {
 
 function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
   const settings = req.settings;
-  const proto = (process.env.TRUST_PROXY === '1' && String(req.headers['x-forwarded-proto'] || '').split(',')[0]) || 'http';
-  const base = (process.env.BASE_URL || `${proto}://${req.headers.host}`).replace(/\/+$/, '');
+  // Links sent to clients must be https (your domain) so their camera works — set BASE_URL in .env.
+  const base = (process.env.BASE_URL || req.origin).replace(/\/+$/, '');
   const callLink = `${base}/kyc/call/${c.status_token}`;
   const statusLink = `${base}/kyc/status/${c.status_token}`;
   const waMsg = encodeURIComponent(`Hello ${c.name}, this is ${settings.site_name}. Please join your verification video call here: ${callLink}`);

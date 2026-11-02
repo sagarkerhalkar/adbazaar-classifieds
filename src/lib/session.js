@@ -6,9 +6,13 @@ const { randomToken } = require('./security');
 const COOKIE = 'adb_sid';
 const TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
-function cookieString(id) {
+// COOKIE_SECURE: "1" = always Secure, "0" = never, anything else ("auto", default) =
+// Secure only when the visitor came over HTTPS (e.g. your Cloudflare domain). This lets the
+// same running app work on http://localhost, on your Wi-Fi (http://192.168.x.x) and on https://your-domain.
+function cookieString(id, req) {
   const parts = [`${COOKIE}=${id}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${TTL_MS / 1000}`];
-  if (process.env.COOKIE_SECURE === '1') parts.push('Secure');
+  const mode = String(process.env.COOKIE_SECURE || 'auto');
+  if (mode === '1' || (mode !== '0' && req.secure)) parts.push('Secure');
   return parts.join('; ');
 }
 
@@ -35,7 +39,7 @@ function sessionMiddleware(db) {
     }
     if (!id) {
       id = randomToken(32);
-      res.appendHeader('Set-Cookie', cookieString(id));
+      res.appendHeader('Set-Cookie', cookieString(id, req));
     }
     req.sessionId = id;
     req.session = data;
@@ -45,7 +49,7 @@ function sessionMiddleware(db) {
       req.sessionId = randomToken(32);
       const csrf = req.session.csrf;
       req.session = { csrf };
-      res.setHeader('Set-Cookie', cookieString(req.sessionId));
+      res.setHeader('Set-Cookie', cookieString(req.sessionId, req));
     };
     req.destroySession = () => {
       del.run(req.sessionId);

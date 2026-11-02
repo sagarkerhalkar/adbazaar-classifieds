@@ -94,9 +94,21 @@ function decorate(req, res) {
   req.cookies = parseCookies(req.headers.cookie);
   req.body = {};
   req.files = {};
-  req.ip = (process.env.TRUST_PROXY === '1' && req.headers['x-forwarded-for'])
-    ? String(req.headers['x-forwarded-for']).split(',')[0].trim()
-    : req.socket.remoteAddress;
+  // Requests arriving from this same computer (127.0.0.1) may come through Cloudflare Tunnel
+  // (cloudflared) or a local Nginx, so we trust their forwarding headers automatically.
+  // Requests from other machines are trusted only when TRUST_PROXY=1.
+  const remote = req.socket.remoteAddress || '';
+  const viaLocalProxy = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+  const trust = viaLocalProxy || process.env.TRUST_PROXY === '1';
+  const first = (h) => String(h || '').split(',')[0].trim();
+  req.ip = (trust && (first(req.headers['cf-connecting-ip']) || first(req.headers['x-forwarded-for']))) || remote;
+  let proto = '';
+  if (trust) {
+    try { proto = JSON.parse(req.headers['cf-visitor'] || '{}').scheme || ''; } catch { /* ignore */ }
+    proto = proto || first(req.headers['x-forwarded-proto']);
+  }
+  req.secure = proto === 'https';
+  req.origin = `${req.secure ? 'https' : 'http'}://${req.headers.host || 'localhost'}`;
 
   res.status = (code) => { res.statusCode = code; return res; };
   res.send = (body, type = 'text/plain; charset=utf-8') => {

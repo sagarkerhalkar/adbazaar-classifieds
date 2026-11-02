@@ -45,6 +45,8 @@ Expired ads are removed from the listing. Scores are recalculated every 5 minute
 
 ## Run locally
 
+> 👉 **New to this? Follow [GUIDE.md](GUIDE.md).** It's a step-by-step guide covering install, test data, Wi-Fi access, your domain through a free Cloudflare Tunnel, and auto-start.
+
 **Windows (easiest):** open the `windows` folder and double-click, in order:
 1. `1-setup.bat`: checks Node.js, creates your `.env` settings file and opens it in Notepad.
 2. `2-start.bat`: starts the app in a window (close the window to stop it).
@@ -66,7 +68,8 @@ npm test                      # unit tests
 
 - **Ports:** set `PORT` in `.env` (default 4780). If that port is busy, the app stops with a clear message so you can pick another one. Without a `PORT` setting, it tries 3000, 3001 and so on. It never starts twice.
 - **Admin login:** `http://localhost:4780/admin/login`, using the email and password from `.env`.
-- Camera and video calls work on `localhost` and on **HTTPS** sites. To test on your own domain from this computer, use a Cloudflare Tunnel. See the setup guide.
+- **One running copy works everywhere at once:** `http://localhost:4780`, your Wi-Fi address (`http://192.168.x.x:4780`, printed at startup), and your Cloudflare Tunnel domain. Secure cookies and real visitor IPs are detected automatically.
+- Camera and video calls work only on `localhost` and on **HTTPS** addresses (your domain). See [GUIDE.md](GUIDE.md) Parts 8–9.
 
 ## Deploy (VPS, e.g. Ubuntu)
 

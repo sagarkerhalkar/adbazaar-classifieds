@@ -10,8 +10,9 @@ timeout /t 5 /nobreak >nul
 if not exist storage\server-url.txt goto notyet
 set /p URL=<storage\server-url.txt
 echo.
-echo  AdBazaar is running at  %URL%
-echo  Admin panel:            %URL%/admin/login
+echo  AdBazaar is running:
+type storage\addresses.txt
+echo.
 echo  You can close this window - the app keeps running.
 start "" "%URL%"
 goto end

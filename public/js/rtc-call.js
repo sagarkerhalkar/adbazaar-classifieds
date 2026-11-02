@@ -134,6 +134,11 @@
   }
 
   async function start() {
+    if (!window.isSecureContext) {
+      setState('Needs https', 'bad');
+      wait.textContent = 'Video calls only work on a secure address. Open this page on https:// (your domain) or http://localhost.';
+      return;
+    }
     if (!window.RTCPeerConnection || !navigator.mediaDevices) { setState('Browser not supported', 'bad'); wait.textContent = 'Please open this page in a recent Chrome, Edge, Firefox or Safari (HTTPS required).'; return; }
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });

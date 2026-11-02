@@ -42,8 +42,8 @@ function securityHeaders(req, res) {
     "base-uri 'self'",
     "object-src 'none'",
   ].join('; '));
-  if (process.env.COOKIE_SECURE === '1') {
-    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  if (process.env.COOKIE_SECURE === '1' && req.secure) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000');
   }
 }
 

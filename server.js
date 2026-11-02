@@ -3,6 +3,7 @@
 // Zero npm dependencies: requires Node.js 22.13+ (built-in SQLite).
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 if (fs.existsSync(path.join(__dirname, '.env'))) process.loadEnvFile(path.join(__dirname, '.env'));
@@ -80,8 +81,19 @@ function start(port, triesLeft) {
     const url = `http://localhost:${port}`;
     fs.writeFileSync(PID_FILE, String(process.pid));
     fs.writeFileSync(URL_FILE, url);
-    console.log(`[${new Date().toLocaleString('en-IN')}] AdBazaar running on ${url}`);
-    console.log(`Admin panel:      ${url}/admin/login`);
+    // Addresses other phones/laptops on the same Wi-Fi / LAN can use.
+    const lan = HOST === '127.0.0.1' ? [] : Object.values(os.networkInterfaces()).flat()
+      .filter((n) => n && n.family === 'IPv4' && !n.internal).map((n) => `http://${n.address}:${port}`);
+    const lines = [
+      `This computer:       ${url}`,
+      `Admin panel:         ${url}/admin/login`,
+      ...lan.map((u, i) => `${i ? '                     ' : 'Other devices (LAN): '}${u}`),
+      process.env.BASE_URL ? `Your domain:         ${process.env.BASE_URL}` : 'Your domain:         (set BASE_URL in .env after setting up Cloudflare Tunnel)',
+      'Note: camera & video call work only on localhost or https:// (your domain), not on LAN http:// addresses.',
+    ];
+    fs.writeFileSync(path.join(RUN_DIR, 'addresses.txt'), lines.join('\r\n') + '\r\n');
+    console.log(`\n[${new Date().toLocaleString('en-IN')}] AdBazaar is running`);
+    console.log(lines.map((l) => `  ${l}`).join('\n') + '\n');
   });
   server.on('error', (err) => {
     if (err.code !== 'EADDRINUSE') throw err;
