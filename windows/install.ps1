@@ -148,6 +148,19 @@ Set-Location $AppDir
 # ---------- 5. Settings (.env) ----------
 Step 'Settings'
 $envPath = Join-Path $AppDir '.env'
+# Moving from another computer? Restore the backup made by uninstall.ps1 (Desktop or Downloads).
+if (-not (Test-Path $envPath)) {
+  $bk = Get-ChildItem ([Environment]::GetFolderPath('Desktop')), (Join-Path $env:USERPROFILE 'Downloads') -Filter 'AdBazaar-backup-*.zip' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($bk) {
+    $r = Ask "Found backup $($bk.Name). Restore your old data and settings from it? (Y/N)" 'Y'
+    if ($r -match '^[Yy]') {
+      Expand-Archive $bk.FullName -DestinationPath $AppDir -Force
+      Remove-Item (Join-Path $AppDir 'storage\server.pid'), (Join-Path $AppDir 'storage\server-url.txt') -Force -ErrorAction SilentlyContinue
+      Say 'Backup restored - your clients, ads, payments, documents and admin login are back.' Green
+    }
+  }
+}
 $firstInstall = -not (Test-Path $envPath)
 if ($firstInstall) {
   $lines = Get-Content (Join-Path $AppDir '.env.example')

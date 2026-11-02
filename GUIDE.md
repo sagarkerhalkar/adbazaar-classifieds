@@ -311,3 +311,39 @@ sudo npm i -g pm2 && pm2 start ecosystem.config.js && pm2 save && pm2 startup   
 # Cloudflare Tunnel: same as Part 9, choose your OS in step 9.2 and run the shown "sudo cloudflared service install …"
 # Quick link: cloudflared tunnel --url http://localhost:4780
 ```
+
+---
+
+## Part 14 — Remove AdBazaar completely / move it to another laptop
+
+### 14.1 Remove it from the old computer (one command)
+On the **old** computer, open Command Prompt and paste:
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://raw.githubusercontent.com/sagarkerhalkar/adbazaar-classifieds/main/windows/uninstall.ps1 | iex"
+```
+Type `YES` when it asks. It:
+- stops **only** AdBazaar. It checks that the program on AdBazaar's port really is AdBazaar before stopping it, so your other Node apps keep running.
+- removes AdBazaar's auto-start, firewall rule and desktop shortcut.
+- deletes the `D:\AdBazaar` folder.
+- **does NOT uninstall** Node.js or cloudflared, and does not touch your Cloudflare Tunnel service. Your other running apps are not disturbed.
+- **optional:** if you answer **Y** to "Make a backup", it saves `AdBazaar-backup-<date>.zip` to your Desktop with all clients, ads, payments, documents and settings. Skip this if you want a fresh start.
+
+### 14.2 Install on the new laptop
+1. *(Only if you made a backup)* Copy the `AdBazaar-backup-….zip` to the new laptop's **Desktop** or **Downloads** folder using a pen drive, Google Drive or similar.
+2. On the new laptop, run the normal one-command installer (top of this guide).
+3. If it finds the backup, it asks **"Restore your old data?"**. Type `Y`, and your admin login, clients and ads come back. Without a backup, it asks for a new admin email and password as usual.
+4. At the end, note the **port** it shows (for example `http://localhost:4780`).
+
+### 14.3 Point the same subdomain to the new laptop (Cloudflare)
+Your domain stays the same (for example `test.yourdomain.com`). You only move it from the old computer's tunnel to a new tunnel on the laptop.
+
+1. **Remove the route from the old tunnel** (do **not** delete the tunnel itself if other apps use it):
+   Cloudflare dashboard → **Networking → Tunnels** → click the **old** tunnel → **Routes** → find `test.yourdomain.com` → **⋯ → Delete**.
+2. **Create a tunnel for the laptop:** **Networking → Tunnels → Create Tunnel** → name it `laptop` → choose **Windows 64-bit** → copy the `cloudflared.exe service install eyJ…` command.
+3. On the **laptop**, open Command Prompt **as administrator** and paste that command. The installer already installed cloudflared. Wait until the dashboard shows **Healthy**, then click **Continue**.
+4. **Add the same subdomain to the new tunnel:** click the `laptop` tunnel → **Routes → Add route → Published application** → Hostname `test` + your domain → Service URL `http://localhost:4780` (use the port from step 14.2) → **Add route**.
+   - If Cloudflare says a DNS record **already exists**: go to your domain → **DNS → Records**, delete the `test` record (type CNAME), then add the route again.
+5. On the laptop, check that `D:\AdBazaar\.env` has `BASE_URL=https://test.yourdomain.com`. A restored backup already has it; otherwise add it. If you changed it, restart: `windows\stop.bat`, then `windows\3-start-in-background.bat`.
+6. Open `https://test.yourdomain.com` on your phone using mobile data. It is now served from the laptop. ✅
+
+> ⚠️ Run the uninstaller only on the **old** computer, and only for AdBazaar. Never run `cloudflared service uninstall` there if other apps use that tunnel. Removing the route (step 1) is enough.
