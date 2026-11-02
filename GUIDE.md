@@ -140,6 +140,10 @@ npm run seed:test
 | vikram.test@example.com | **Pending.** Approve him in Admin → Clients |
 | pooja.test@example.com | **Video call** requested |
 | ravi.test@example.com | **Rejected** |
+| neha.test@example.com | Registered but **did not confirm the email OTP** yet |
+| karan.test@example.com | **Deactivated his own account.** Log in as him to see **Reactivate** |
+
+TOP ads use time slots: Rahul's iPhone is TOP **all day**, Sneha's tuition **9 AM–6 PM**, and Fatima's makeup **6 PM–12 AM**. Open the home page at different times to see the TOP section change.
 
 To remove all the test data later (your real data stays):
 ```
@@ -165,7 +169,9 @@ Use **two browsers**, for example Chrome for the admin and Edge (or an Incognito
 - [ ] Admin → **Clients** → **+ Add client**. Add a person yourself and take their photo with your webcam.
 
 **As a new seller (do this on `http://localhost:4780`, because the camera needs it):**
-- [ ] Click **Post your ad** → register → upload any photo as the Aadhaar/PAN → **Start camera**. It clicks automatically after 3 seconds.
+- [ ] Click **Post your ad** → register → upload any photo as the Aadhaar/PAN → **Start camera**. It clicks automatically after 3 seconds. (The "recent photo" upload is optional, because the live photo is enough.)
+- [ ] Type the **6-digit email code**. If email isn't set up yet (Part 15), find the code in Admin → **Messages**.
+- [ ] Do nothing for 5 minutes: the client is **approved automatically** and both of you get an email. You can change the minutes in Admin → Settings.
 - [ ] Try to log in. It's blocked until you approve. ✅
 - [ ] As admin: open that client → **Request video call** → **Start video call**. As the seller: open the status link → **Join video call**. As admin: click **Capture live photo**, then **Approve**.
 - [ ] As the seller: log in → **Post ad** → choose 7/15/29 days, tick ★ TOP → enter any UTR number such as `123456789012` → submit.
@@ -347,3 +353,66 @@ Your domain stays the same (for example `test.yourdomain.com`). You only move it
 6. Open `https://test.yourdomain.com` on your phone using mobile data. It is now served from the laptop. ✅
 
 > ⚠️ Run the uninstaller only on the **old** computer, and only for AdBazaar. Never run `cloudflared service uninstall` there if other apps use that tunnel. Removing the route (step 1) is enough.
+
+---
+
+## Part 15 — Email & SMS codes (OTP) and notifications
+
+Each new seller confirms their **email** (and their **mobile**, if SMS is turned on) **once** with a 6-digit code. After that they never need a code again. The site also emails them when they are approved, when their ad goes live, and so on, and emails **you** about new sellers and UPI payments.
+
+> Until you set this up, nothing is lost: every code and email is shown in **Admin → Messages**, so you can test everything right away.
+
+### 15.1 Email — free with Gmail (10 minutes)
+1. Use (or create) a Gmail account for the site, for example `adbazaar.help@gmail.com`.
+2. Turn on **2-Step Verification**: https://myaccount.google.com/security
+3. Open **https://myaccount.google.com/apppasswords**, type `AdBazaar`, and click **Create**. Google shows a 16-letter password. Copy it.
+4. Open `D:\AdBazaar\.env` in Notepad and fill in:
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=adbazaar.help@gmail.com
+SMTP_PASS=abcdefghijklmnop
+```
+   (`SMTP_PASS` is the 16 letters without spaces. It is **not** your normal Gmail password.)
+5. Restart: `windows\stop.bat`, then `windows\3-start-in-background.bat`.
+6. Go to Admin → **Settings** → **Send test email**. ✅ Gmail allows roughly 500 emails a day for free.
+
+### 15.2 SMS OTP — the free way (Android phone)
+No company gives free SMS forever. The free way is to let **your own Android phone** send the SMS, using your SIM plan's free SMS.
+1. On a spare Android phone with a SIM, install **SMS Gateway for Android** (free, open source, from sms-gate.app or the Play Store).
+2. Open the app, turn on **Cloud server**, and note the **username** and **password** it shows.
+3. In `.env`:
+```
+SMS_PROVIDER=android
+SMS_GATEWAY_USER=the-username
+SMS_GATEWAY_PASS=the-password
+```
+4. Restart AdBazaar, then go to Admin → **Settings** → **Send test SMS**.
+5. Keep that phone charged and online. Every OTP is sent from its SIM.
+
+**Paid alternatives** (more reliable, a few paise per SMS): `SMS_PROVIDER=fast2sms` with `FAST2SMS_API_KEY`, or `SMS_PROVIDER=msg91` with `MSG91_AUTH_KEY` and `MSG91_TEMPLATE_ID`. Indian telecom rules (DLT) apply to these providers; they guide you through it.
+
+If `SMS_PROVIDER` is empty, sellers only confirm their email.
+
+---
+
+## Part 16 — Using the newer features
+
+**★ TOP ads by time slot.** The day (India time) has 8 slots: 12–3 AM, 3–6 AM, 6–9 AM, 9 AM–12 PM, 12–3 PM, 3–6 PM, 6–9 PM and 9 PM–12 AM. When paying, a seller ticks the slots they want. During those hours, every day of their plan, their ad sits in the **TOP ads** section. You set the price per slot per day in Admin → **Settings → TOP ad time slots**, and you can stop selling a slot there too.
+
+**Auto-approve.** If you don't approve or reject a verified seller within **5 minutes**, they are approved automatically and you get an email. Change the minutes (or set 0 to turn it off) in Admin → Settings → *Approvals & notifications*. You can also auto-confirm UPI payments there, but that is **off** by default because the UTR is not checked against your bank.
+
+**Photos & videos.** Each ad can have **5 photos** and **2 videos**, each up to **1 minute** (MP4/MOV from a phone, up to 90 MB). Sellers can change them any time: My ads → Edit.
+
+**Main category → sub-category.** In Admin → **Categories** you can add a main category or a sub-category, rename it, change its emoji, reorder it, move a sub-category under another main category, **deactivate** it (hidden from menus and new ads; existing ads keep running), or **delete** it (if it has ads, choose where they move). Sellers must pick a sub-category when one exists.
+
+**Deactivate / block / delete.**
+| Who | What | Result |
+|---|---|---|
+| Seller | Account → **Deactivate my account** (password needed) | Profile and live ads are hidden. **Remaining paid days are saved.** Logging in again offers **Reactivate**, and the ads come back with those days. |
+| You | Client → **Deactivate / Reactivate** | Same as above, but only you can reactivate. |
+| You | Client → **Block / Unblock** | The seller can't log in and all their ads are hidden. Unblock brings them back. |
+| You | Client → **Delete client permanently** | ID documents, photos, videos and personal details are erased. Payment records stay (anonymised) so your revenue numbers stay correct. |
+| You | Ads → **Deactivate / Reactivate** | Hides one ad; its remaining paid days are saved. |
+| You | Ads → **Block / Unblock** | Hides one ad (for example, after a report); the clock keeps running. |
+| You | Ads → **Delete** | Removes the ad and its photos and videos. |

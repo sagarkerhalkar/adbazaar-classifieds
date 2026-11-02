@@ -2,6 +2,8 @@
 // Request body parsing: urlencoded, JSON and multipart/form-data (no dependencies).
 
 const MAX_BODY = Number(process.env.MAX_UPLOAD_MB || 30) * 1024 * 1024;
+// Video uploads go one-at-a-time to their own URL and may be bigger (Cloudflare's free plan allows 100 MB per request).
+const MAX_VIDEO_BODY = 95 * 1024 * 1024;
 
 function readRaw(req, limit) {
   return new Promise((resolve, reject) => {
@@ -71,7 +73,7 @@ function parseMultipart(buf, boundary) {
 async function parseBody(req) {
   if (req.method !== 'POST') return;
   const type = String(req.headers['content-type'] || '');
-  const raw = await readRaw(req, MAX_BODY);
+  const raw = await readRaw(req, /\/videos$/.test(req.path || '') ? MAX_VIDEO_BODY : MAX_BODY);
   if (type.startsWith('multipart/form-data')) {
     const boundary = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(type);
     if (!boundary) return;

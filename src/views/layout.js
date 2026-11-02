@@ -32,7 +32,9 @@ function adminNav(req, counts = {}) {
     <a href="/admin/clients" class="nav-link">Clients ${badge(counts.kyc)}</a>
     <a href="/admin/payments" class="nav-link">Payments ${badge(counts.pay)}</a>
     <a href="/admin/ads" class="nav-link">Ads</a>
+    <a href="/admin/categories" class="nav-link">Categories</a>
     <a href="/admin/reports" class="nav-link">Reports ${badge(counts.reports)}</a>
+    <a href="/admin/messages" class="nav-link">Messages</a>
     <a href="/admin/settings" class="nav-link">Settings</a>
     <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${req.csrfToken}"><button class="btn btn-ghost">Logout</button></form>`;
 }

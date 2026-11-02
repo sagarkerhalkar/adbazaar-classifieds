@@ -16,6 +16,8 @@ const { sessionMiddleware } = require('./src/lib/session');
 const { staticDir } = require('./src/lib/files');
 const { db, getSettings } = require('./src/db');
 const { startScheduler } = require('./src/ranking');
+const { startJobs } = require('./src/jobs');
+const notify = require('./src/notify');
 
 // ---- First admin account ----
 if (!db.prepare('SELECT 1 FROM admins LIMIT 1').get()) {
@@ -39,6 +41,7 @@ app.use(parseBody);
 app.use(csrfProtect);
 app.use((req) => {
   req.settings = getSettings();
+  notify.rememberOrigin(req);   // so links in emails point to the address people use (your domain)
   if (req.session.adminId) {
     req.admin = db.prepare('SELECT id, name, email FROM admins WHERE id = ?').get(req.session.adminId) || null;
     if (!req.admin) delete req.session.adminId;
@@ -57,6 +60,7 @@ require('./src/routes/client').register(app);
 require('./src/routes/admin').register(app);
 
 startScheduler(Number(process.env.SCHEDULER_MINUTES || 5) * 60_000);
+startJobs(30_000);   // auto-approve clients / auto-confirm payments (Admin → Settings)
 
 // ---- Start listening ----
 // If PORT is set in .env we use exactly that port (needed for tunnels / reverse proxies)

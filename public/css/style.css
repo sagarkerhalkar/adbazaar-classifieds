@@ -323,3 +323,51 @@ input.xs { width: 64px; }
   .only-mobile { display: inline-flex; }
 }
 @media (max-width: 380px) { .grid { grid-template-columns: 1fr; } }
+
+/* ---- Sub-categories ---- */
+.subcats { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.subcats .chip { background: #f2f3f7; }
+.subcats .chip.active { background: var(--accent); color: #fff; }
+
+/* ---- OTP verification ---- */
+.otp-box { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 12px 0; }
+.otp-box h3 { margin: 0 0 6px; }
+.otp-box.done { background: var(--ok-soft); border-color: #bfe8cf; }
+.otp-form { display: flex; gap: 8px; margin: 8px 0; }
+.otp-input { font-size: 1.5rem; letter-spacing: .4em; text-align: center; max-width: 220px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* ---- TOP time slots ---- */
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0; }
+.slot { position: relative; cursor: pointer; }
+.slot input { position: absolute; opacity: 0; }
+.slot span { display: flex; flex-direction: column; gap: 2px; border: 2px solid #f0dca3; background: #fff; border-radius: 10px; padding: 9px 10px; transition: border-color .15s, background .15s; }
+.slot span b { font-size: .9rem; }
+.slot span small { color: var(--muted); }
+.slot input:checked + span { border-color: var(--gold); background: #fff4d6; box-shadow: 0 0 0 3px rgba(242,169,0,.18); }
+.slot input:focus-visible + span { outline: 2px solid var(--accent); }
+
+/* ---- Videos ---- */
+.videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.videos video { width: 100%; border-radius: 10px; background: #000; max-height: 360px; }
+.video-item { display: grid; gap: 6px; }
+.videos-edit { border-top: 1px dashed var(--line); margin-top: 18px; padding-top: 14px; }
+
+/* ---- Admin: categories ---- */
+.cat-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cat-add select { max-width: 280px; }
+.cat-add input[name=name] { max-width: 280px; }
+.cat-group { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.cat-group:last-child { border-bottom: 0; }
+.cat-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0; }
+.cat-row.is-sub { padding-left: 34px; position: relative; }
+.cat-row.is-sub::before { content: "└"; position: absolute; left: 12px; color: var(--muted); }
+.cat-row.is-main input[name=name] { font-weight: 700; }
+.cat-edit, .cat-del { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cat-edit input[name=name] { width: 200px; }
+.cat-edit select, .cat-del select { width: auto; padding: 6px 8px; font-size: .85rem; }
+.cat-edit input { padding: 6px 8px; font-size: .9rem; }
+
+/* ---- Admin: messages ---- */
+.msg-body { white-space: pre-wrap; font-size: .82rem; background: var(--bg); padding: 10px; border-radius: 8px; max-width: 560px; overflow-x: auto; }
+.danger-zone h2 { color: var(--bad); font-size: 1.05rem; }
+.danger-zone .btn + .small { margin-left: 8px; }

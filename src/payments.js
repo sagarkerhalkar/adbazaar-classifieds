@@ -5,14 +5,16 @@ const crypto = require('node:crypto');
 const { db, tx } = require('./db');
 const { rescore } = require('./ranking');
 const { safeEqual } = require('./lib/security');
+const { topCost } = require('./slots');
 
 const RZP_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const RZP_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 const RZP_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 const razorpayEnabled = () => Boolean(RZP_KEY_ID && RZP_KEY_SECRET);
 
-function quote(plan, withTop) {
-  return plan.price_paise + (withTop ? plan.top_price_paise : 0);
+// Total = plan price + (price per day of each chosen TOP slot × plan days).
+function quote(plan, topMask) {
+  return plan.price_paise + topCost(topMask || 0, plan.days);
 }
 
 async function createRazorpayOrder(amountPaise, receipt, notes) {
@@ -52,18 +54,18 @@ function confirmPayment(paymentId, { adminId = null, razorpayPaymentId = null, n
     const now = Date.now();
     const dayMs = 86400_000;
 
-    let startsAt, expiresAt, paidTotal, isTop;
+    let startsAt, expiresAt, paidTotal, topSlots;
     if (ad.status === 'active' && ad.expires_at > now) {
       // Extension of a running ad: add days on top of the current expiry.
       startsAt = ad.starts_at;
       expiresAt = ad.expires_at + pay.days * dayMs;
       paidTotal = ad.paid_total_paise + pay.amount_paise;
-      isTop = ad.is_top || pay.with_top ? 1 : 0;
+      topSlots = (ad.top_slots || 0) | (pay.top_slots || 0);   // keep old TOP slots, add new ones
     } else {
       startsAt = now;
       expiresAt = now + pay.days * dayMs;
       paidTotal = pay.amount_paise;
-      isTop = pay.with_top ? 1 : 0;
+      topSlots = pay.top_slots || 0;
     }
 
     db.prepare(`UPDATE payments SET status = 'paid', confirmed_by = ?, confirmed_at = ?,
@@ -72,9 +74,9 @@ function confirmPayment(paymentId, { adminId = null, razorpayPaymentId = null, n
 
     // Never re-activate an ad the admin has blocked; keep the payment recorded.
     if (ad.status !== 'blocked') {
-      db.prepare(`UPDATE ads SET status = 'active', plan_id = ?, is_top = ?, paid_total_paise = ?,
+      db.prepare(`UPDATE ads SET status = 'active', plan_id = ?, is_top = ?, top_slots = ?, paid_total_paise = ?,
                   starts_at = ?, expires_at = ?, updated_at = ? WHERE id = ?`)
-        .run(pay.plan_id, isTop, paidTotal, startsAt, expiresAt, now, ad.id);
+        .run(pay.plan_id, topSlots ? 1 : 0, topSlots, paidTotal, startsAt, expiresAt, now, ad.id);
       rescore(ad.id);
     }
     return { already: false, pay };

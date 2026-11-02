@@ -28,6 +28,14 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 
 ---
 
+## Also included
+- **One-time email OTP** (plus optional SMS OTP), confirmation emails, and admin notifications. Free Gmail SMTP, and free SMS from your own Android phone. See GUIDE Part 15.
+- **Auto-approve** sellers if the admin doesn't act within 5 minutes (configurable), with an email to both sides.
+- **TOP ads by 3-hour time slots** (8 a day, price per slot per day, set by the admin).
+- **5 photos + 2 videos** (up to 1 minute each) per ad, changeable any time.
+- **Main categories → sub-categories**, managed by the admin (add, rename, move, deactivate, delete).
+- **Deactivate / reactivate** accounts (by the seller or the admin, with paid days frozen), plus **block** and **delete** for clients and ads.
+
 ## Ranking algorithm (`src/ranking.js`)
 
 ```

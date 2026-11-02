@@ -5,16 +5,18 @@
   if (!form) return;
   const csrf = document.querySelector('meta[name=csrf-token]').content;
   const totalEl = form.querySelector('[data-total]');
-  const topEl = form.querySelector('[data-top-price]');
-  const withTop = form.querySelector('[data-with-top]');
+  const summaryEl = form.querySelector('[data-top-summary]');
   const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   function selected() { return form.querySelector('input[name=plan_id]:checked'); }
+  function chosenSlots() { return Array.from(form.querySelectorAll('input[name="top_slots[]"]:checked')); }
   function update() {
     const p = selected(); if (!p) return;
-    const top = Number(p.dataset.top);
-    topEl.textContent = inr(top);
-    totalEl.textContent = inr(Number(p.dataset.price) + (withTop.checked ? top : 0));
+    const days = Number(p.dataset.days);
+    const perDay = chosenSlots().reduce((s, c) => s + Number(c.dataset.slotPrice), 0);
+    const top = perDay * days;
+    if (summaryEl) summaryEl.textContent = chosenSlots().length ? `TOP: ${chosenSlots().length} slot(s) × ${inr(perDay)}/day × ${days} days = ${inr(top)}` : '';
+    totalEl.textContent = inr(Number(p.dataset.price) + top);
   }
   form.addEventListener('change', update);
   update();
@@ -27,7 +29,7 @@
     try {
       const r = await fetch(`/client/ads/${form.dataset.adId}/pay/razorpay`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-        body: JSON.stringify({ plan_id: p.value, with_top: withTop.checked ? '1' : '0' }),
+        body: JSON.stringify({ plan_id: p.value, top_slots: chosenSlots().map((c) => c.value) }),
       });
       const o = await r.json();
       if (!r.ok) throw new Error(o.error || 'Could not start payment');

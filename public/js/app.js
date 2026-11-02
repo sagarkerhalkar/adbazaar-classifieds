@@ -44,6 +44,31 @@
     if (s > 0) setTimeout(() => window.location.reload(), s * 1000);
   });
 
+  // Check a video before uploading: max 1 minute and 90 MB.
+  $$('[data-video-form]').forEach((form) => {
+    const input = form.querySelector('[data-video-input]');
+    const msg = form.querySelector('[data-video-msg]');
+    const btn = form.querySelector('button');
+    let ok = false;
+    input.addEventListener('change', () => {
+      ok = false; msg.textContent = ''; msg.classList.remove('bad');
+      const f = input.files[0]; if (!f) return;
+      if (f.size > 90 * 1024 * 1024) { msg.textContent = 'This video is bigger than 90 MB. Record in 720p or trim it.'; msg.classList.add('bad'); return; }
+      const v = document.createElement('video'); v.preload = 'metadata';
+      v.onloadedmetadata = () => {
+        URL.revokeObjectURL(v.src);
+        if (v.duration > 60.5) { msg.textContent = 'This video is ' + Math.round(v.duration) + ' seconds. Maximum is 60 seconds.'; msg.classList.add('bad'); return; }
+        ok = true; msg.textContent = 'Length ' + Math.round(v.duration) + ' s, ' + (f.size / 1048576).toFixed(1) + ' MB — ready to upload.';
+      };
+      v.onerror = () => { ok = true; msg.textContent = 'Ready to upload.'; };
+      v.src = URL.createObjectURL(f);
+    });
+    form.addEventListener('submit', (e) => {
+      if (!ok && input.files[0]) { e.preventDefault(); if (!msg.textContent) msg.textContent = 'Checking the video… try again in a second.'; return; }
+      btn.disabled = true; btn.textContent = 'Uploading… please wait';
+    });
+  });
+
   // Uppercase helper for PAN
   $$('input.upper').forEach((i) => i.addEventListener('input', () => { i.value = i.value.toUpperCase(); }));
 })();

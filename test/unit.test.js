@@ -35,14 +35,77 @@ test('PAN, phone, PIN validation', () => {
   assert.ok(!V.isValidPincode('011001'));
 });
 
-test('ranking: TOP > longer/paid-more plan > fresher', () => {
+test('ranking: longer / paid-more plan > fresher cheap plan; expired = -1', () => {
   const now = Date.now();
-  const base = { status: 'active', starts_at: now, expires_at: now + 7 * 864e5, views: 0, admin_boost: 0, is_top: 0 };
+  const base = { status: 'active', starts_at: now, expires_at: now + 7 * 864e5, views: 0, admin_boost: 0 };
   const basic = computeScore({ ...base, paid_total_paise: 19900 }, 1, now);
   const premiumOld = computeScore({ ...base, starts_at: now - 10 * 864e5, expires_at: now + 19 * 864e5, paid_total_paise: 59900 }, 3, now);
-  const top = computeScore({ ...base, is_top: 1, paid_total_paise: 49800 }, 1, now);
-  assert.ok(top > premiumOld && premiumOld > basic, `${top} > ${premiumOld} > ${basic}`);
+  assert.ok(premiumOld > basic, `${premiumOld} > ${basic}`);
   assert.equal(computeScore({ ...base, expires_at: now - 1 }, 3, now), -1, 'expired ads score -1');
+});
+
+test('TOP time slots (India time, 3-hour slots)', () => {
+  const S = require('../src/slots');
+  const ist = (h, m = 0) => Date.UTC(2026, 10, 2, h, m) - 5.5 * 3600_000; // h:m India time
+  assert.equal(S.currentSlot(ist(0, 5)), 0);    // 12–3 AM
+  assert.equal(S.currentSlot(ist(9, 0)), 3);    // 9 AM–12 PM
+  assert.equal(S.currentSlot(ist(14, 59)), 4);  // 12–3 PM
+  assert.equal(S.currentSlot(ist(18, 30)), 6);  // 6–9 PM
+  assert.equal(S.currentSlot(ist(23, 59)), 7);  // 9 PM–12 AM
+  const mask = S.maskFrom(['3', '6', '9', 'x']);
+  assert.equal(mask, (1 << 3) | (1 << 6));
+  assert.ok(S.inSlot(mask, 6) && !S.inSlot(mask, 5));
+  // default prices: 9–12 ₹20/day + 6–9 PM ₹30/day, for 15 days
+  assert.equal(S.topCost(mask, 15), (2000 + 3000) * 15);
+});
+
+test('categories: main includes subs; ads need a sub-category when one exists', () => {
+  const C = require('../src/categories');
+  const el = C.bySlug('electronics');
+  const ids = C.idsForSlug('electronics');
+  assert.ok(ids.includes(el.id) && ids.length > 1);
+  assert.match(C.checkForAd(el.id), /sub-category/);
+  assert.equal(C.checkForAd(C.bySlug('electronics-mobile-phones').id), null);
+  assert.equal(C.checkForAd(C.bySlug('other').id), null);
+});
+
+test('video length is read from the MP4 header', () => {
+  const { videoDuration } = require('../src/lib/files');
+  const box = (type, body) => { const b = Buffer.alloc(8); b.writeUInt32BE(8 + body.length); b.write(type, 4, 'latin1'); return Buffer.concat([b, body]); };
+  const mvhd = Buffer.alloc(100); mvhd.writeUInt32BE(1000, 12); mvhd.writeUInt32BE(45_000, 16); // timescale 1000, 45 s
+  const file = Buffer.concat([box('ftyp', Buffer.from('isom0000')), box('moov', box('mvhd', mvhd))]);
+  assert.equal(videoDuration(file), 45);
+});
+
+test('OTP: right code once, wrong code counted', () => {
+  const { db } = require('../src/db');
+  const N = require('../src/notify');
+  const r = db.prepare("INSERT INTO clients (name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number, status, status_token, created_at) VALUES ('T','otp@test.in','9999999999','x','a','c','s','411001','1234','ABCDE1234F','unverified','tok-otp-test-000000000000',1)").run();
+  const id = Number(r.lastInsertRowid);
+  const { code } = N.issueOtp(id, 'email');
+  assert.equal(N.checkOtp(id, 'email', '000000' === code ? '111111' : '000000'), 'wrong');
+  assert.equal(N.checkOtp(id, 'email', code), 'ok');
+  assert.equal(N.checkOtp(id, 'email', code), 'expired', 'a code works only once');
+});
+
+test('deactivate freezes paid time; reactivate gives it back', () => {
+  const { db } = require('../src/db');
+  const life = require('../src/lifecycle');
+  const r = db.prepare("INSERT INTO clients (name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number, status, status_token, created_at) VALUES ('L','life@test.in','9999999998','x','a','c','s','411001','1234','ABCDE1234F','approved','tok-life-test-00000000000',1)").run();
+  const cid = Number(r.lastInsertRowid);
+  const cat = db.prepare('SELECT id FROM categories LIMIT 1').get().id;
+  const left = 5 * 864e5;
+  const a = db.prepare("INSERT INTO ads (client_id, category_id, title, description, city, contact_phone, status, starts_at, expires_at, created_at, updated_at) VALUES (?, ?, 'Ad', 'Desc', 'Pune', '9999999998', 'active', ?, ?, 1, 1)")
+    .run(cid, cat, Date.now(), Date.now() + left);
+  const aid = Number(a.lastInsertRowid);
+  life.deactivateClient(cid, 'client');
+  assert.equal(db.prepare('SELECT status FROM ads WHERE id = ?').get(aid).status, 'paused');
+  life.reactivateClient(cid);
+  const ad = db.prepare('SELECT * FROM ads WHERE id = ?').get(aid);
+  assert.equal(ad.status, 'active');
+  assert.ok(Math.abs(ad.expires_at - Date.now() - left) < 5000, 'remaining days restored');
+  life.deleteAd(aid);
+  assert.equal(db.prepare('SELECT status FROM ads WHERE id = ?').get(aid).status, 'deleted');
 });
 
 test('html escapes by default', () => {

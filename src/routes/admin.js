@@ -13,6 +13,11 @@ const P = require('../payments');
 const rtc = require('../rtc');
 const { rescore, runMaintenance } = require('../ranking');
 const { callView } = require('./client');
+const Cat = require('../categories');
+const life = require('../lifecycle');
+const notify = require('../notify');
+const { SLOTS, ALL_SLOTS, slotLabels, slotPrices } = require('../slots');
+const { sendEmail, sendSmsOtp, emailConfigured, smsConfigured, smsProvider } = require('../messaging');
 
 const page = (req, title, body, scripts = []) => renderPage(req, { title, body, portal: 'admin', scripts });
 const back = (req, fallback) => {
@@ -67,7 +72,7 @@ function dashboardView(req, d) {
 }
 
 function clientsView(req, rows, filter) {
-  const tabs = [['pending', 'To verify'], ['video_call', 'Video call'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['suspended', 'Suspended'], ['all', 'All']];
+  const tabs = [['pending', 'To verify'], ['unverified', 'OTP not done'], ['video_call', 'Video call'], ['approved', 'Approved'], ['deactivated', 'Deactivated'], ['suspended', 'Blocked'], ['rejected', 'Rejected'], ['all', 'All']];
   return html`
   <div class="page-head"><h1>Clients</h1><a class="btn btn-accent" href="/admin/clients/new">+ Add client</a></div>
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${filter.status === k ? 'active' : ''}" href="/admin/clients?status=${k}">${l}</a>`)}</div>
@@ -102,7 +107,9 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
       <dl class="facts">
         <div><dt>Business</dt><dd>${c.business_name || '—'}</dd></div>
         <div><dt>Phone</dt><dd><a href="tel:+91${c.phone}">${c.phone}</a></dd></div>
-        <div><dt>Email</dt><dd>${c.email}</dd></div>
+        <div><dt>Email</dt><dd>${c.email} ${c.email_verified_at ? html`<span class="pill pill-ok">✔ verified</span>` : html`<span class="pill pill-warn">not verified</span>`}</dd></div>
+        <div><dt>Mobile OTP</dt><dd>${c.phone_verified_at ? html`<span class="pill pill-ok">✔ verified</span>` : html`<span class="pill pill-muted">${smsConfigured() ? 'not verified' : 'SMS not set up'}</span>`}</dd></div>
+        ${c.auto_approved ? html`<div><dt>Approval</dt><dd><span class="pill pill-info">Auto-approved</span></dd></div>` : ''}
         <div><dt>Aadhaar</dt><dd class="mono">XXXX XXXX ${c.aadhaar_last4}</dd></div>
         <div><dt>PAN</dt><dd class="mono">${c.pan_number}</dd></div>
         <div><dt>PIN</dt><dd>${c.pincode}</dd></div>
@@ -126,12 +133,22 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
         ${csrf(req)}
         ${field('Note to client (shown on their status page)', html`<textarea name="note" rows="2" maxlength="500">${c.admin_note}</textarea>`)}
         <div class="btn-row">
-          ${c.status !== 'approved' ? html`<button class="btn btn-ok" name="action" value="approve">✔ Approve</button>` : ''}
-          ${c.status === 'pending' || c.status === 'video_call' ? html`<button class="btn btn-danger" name="action" value="reject">✖ Reject</button>` : ''}
-          ${c.status === 'approved' ? html`<button class="btn btn-danger" name="action" value="suspend" data-confirm="Suspend this client? Their live ads will be hidden.">Suspend</button>` : ''}
+          ${['pending', 'video_call', 'unverified', 'rejected'].includes(c.status) ? html`<button class="btn btn-ok" name="action" value="approve">✔ Approve</button>` : ''}
+          ${c.status === 'suspended' ? html`<button class="btn btn-ok" name="action" value="approve">Unblock</button>` : ''}
+          ${c.status === 'deactivated' ? html`<button class="btn btn-ok" name="action" value="reactivate">Reactivate</button>` : ''}
+          ${c.status === 'pending' || c.status === 'video_call' || c.status === 'unverified' ? html`<button class="btn btn-danger" name="action" value="reject">✖ Reject</button>` : ''}
+          ${c.status === 'approved' ? html`<button class="btn" name="action" value="deactivate" data-confirm="Deactivate this client? Their live ads are hidden and their remaining paid days are saved until reactivation.">Deactivate</button>` : ''}
+          ${c.status === 'approved' || c.status === 'deactivated' ? html`<button class="btn btn-danger" name="action" value="suspend" data-confirm="Block this client? They cannot log in and all their ads are hidden.">Block</button>` : ''}
           ${c.status === 'rejected' || c.status === 'suspended' ? html`<button class="btn" name="action" value="pending">Move back to review</button>` : ''}
         </div>
+        ${c.status === 'deactivated' ? html`<p class="small muted">Deactivated by ${c.deactivated_by === 'client' ? 'the client' : 'admin'} on ${fmtDate(c.deactivated_at)}.</p>` : ''}
       </form>
+      ${c.status !== 'deleted' ? html`
+      <form method="post" action="/admin/clients/${c.id}/delete" class="danger-zone" data-confirm="DELETE ${c.name} permanently? Their ID documents, photos, videos and ads are removed for good. This cannot be undone.">
+        ${csrf(req)}
+        <button class="btn btn-danger btn-sm">🗑 Delete client permanently</button>
+        <span class="small muted">Removes personal data & documents. Payment records stay (anonymised) for your accounts.</span>
+      </form>` : ''}
 
       <div class="callbox">
         <h3>🎥 Video call verification</h3>
@@ -223,7 +240,7 @@ function paymentsView(req, rows, status) {
       <td>${p.id}</td><td>${fmtDate(p.created_at)}</td>
       <td><a href="/admin/clients/${p.client_id}">${p.client_name}</a></td>
       <td><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></td>
-      <td>${p.days} days${p.with_top ? html` <span class="pill pill-top">TOP</span>` : ''}</td>
+      <td>${p.days} days${p.top_slots ? html`<div class="small"><span class="pill pill-top">TOP ${slotLabels(p.top_slots).join(', ')}</span></div>` : ''}</td>
       <td><strong>${rupees(p.amount_paise)}</strong></td>
       <td>${p.method === 'razorpay' ? html`Online<div class="small muted mono">${p.razorpay_payment_id || p.razorpay_order_id}</div>` : html`UPI <span class="mono">${p.utr}</span>${p.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${p.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}`}</td>
       <td>${pill(p.status)}${p.admin_note ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
@@ -234,7 +251,7 @@ function paymentsView(req, rows, status) {
 }
 
 function adsView(req, rows, f) {
-  const tabs = [['active', 'Live'], ['payment_review', 'Payment review'], ['awaiting_payment', 'Unpaid'], ['expired', 'Expired'], ['blocked', 'Blocked'], ['all', 'All']];
+  const tabs = [['active', 'Live'], ['payment_review', 'Payment review'], ['awaiting_payment', 'Unpaid'], ['paused', 'Deactivated'], ['expired', 'Expired'], ['blocked', 'Blocked'], ['deleted', 'Deleted'], ['all', 'All']];
   return html`
   <div class="page-head"><h1>Ads</h1><form method="post" action="/admin/ads/rerank" class="inline">${csrf(req)}<button class="btn btn-ghost btn-sm">↻ Re-run ranking now</button></form></div>
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${f.status === k ? 'active' : ''}" href="/admin/ads?status=${k}">${l}</a>`)}</div>
@@ -245,18 +262,21 @@ function adsView(req, rows, f) {
       <td class="mono">${a.status === 'active' ? a.rank_score.toFixed(1) : '—'}</td>
       <td><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></td>
       <td><a href="/admin/clients/${a.client_id}">${a.client_name}</a></td>
-      <td>${pill(a.status)}${a.is_top ? html` <span class="pill pill-top">TOP</span>` : ''}${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
+      <td>${pill(a.status)}${a.top_slots ? html` <span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
       <td>${a.plan_name || '—'}<div class="small muted">${rupees(a.paid_total_paise)}</div></td>
       <td>${a.expires_at ? html`${fmtDay(a.expires_at)}<div class="small muted">${a.status === 'active' ? timeLeft(a.expires_at) : ''}</div>` : '—'}</td>
       <td>${a.views}</td>
       <td class="actions">
-        ${a.status === 'blocked'
+        ${a.status === 'deleted' ? '' : a.status === 'blocked'
           ? html`<form method="post" action="/admin/ads/${a.id}/unblock" class="inline">${csrf(req)}<button class="btn btn-sm">Unblock</button></form>`
           : html`<form method="post" action="/admin/ads/${a.id}/block" class="inline reject-form">${csrf(req)}<input name="reason" placeholder="Reason" maxlength="200"><button class="btn btn-danger btn-sm">Block</button></form>`}
         ${a.status === 'active' ? html`
           <form method="post" action="/admin/ads/${a.id}/boost" class="inline boost-form">${csrf(req)}<input type="number" name="boost" min="-10" max="10" value="${a.admin_boost}" title="Manual ranking boost (-10…10)"><button class="btn btn-sm">Set boost</button></form>
-          <form method="post" action="/admin/ads/${a.id}/top" class="inline">${csrf(req)}<button class="btn btn-sm">${a.is_top ? 'Remove TOP' : 'Make TOP'}</button></form>` : ''}
+          <form method="post" action="/admin/ads/${a.id}/top" class="inline">${csrf(req)}<button class="btn btn-sm">${a.top_slots ? 'Remove TOP' : 'Make TOP (all day)'}</button></form>` : ''}
         ${a.status === 'active' || a.status === 'expired' ? html`<form method="post" action="/admin/ads/${a.id}/extend" class="inline boost-form">${csrf(req)}<input type="number" name="days" min="1" max="365" value="7"><button class="btn btn-sm">+ days free</button></form>` : ''}
+        ${a.status === 'active' ? html`<form method="post" action="/admin/ads/${a.id}/pause" class="inline">${csrf(req)}<button class="btn btn-sm" title="Hide the ad; remaining paid days are saved">Deactivate</button></form>` : ''}
+        ${a.status === 'paused' ? html`<form method="post" action="/admin/ads/${a.id}/resume" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">Reactivate</button></form><div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}
+        ${a.status !== 'deleted' ? html`<form method="post" action="/admin/ads/${a.id}/delete" class="inline" data-confirm="Delete ad #${a.id} permanently? Photos and videos are removed.">${csrf(req)}<button class="btn btn-danger btn-sm">Delete</button></form>` : ''}
       </td></tr>`)}
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No ads.</p></div>`}`;
 }
@@ -275,35 +295,110 @@ function reportsView(req, rows) {
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No reports. 👍</p></div>`}`;
 }
 
+function categoriesView(req, mains, counts) {
+  const allTargets = [];
+  for (const m of mains) { if (!m.subs.length) allTargets.push(m); for (const sc of m.subs) allTargets.push({ ...sc, label: `${m.name} › ${sc.name}` }); }
+  const moveSelect = (c) => html`<select name="move_to" class="xs-select"><option value="">Move its ads to…</option>${allTargets.filter((t) => t.id !== c.id).map((t) => html`<option value="${t.id}">${t.label || t.name}</option>`)}</select>`;
+  const row = (c, isSub) => {
+    const n = counts[c.id] || 0;
+    return html`
+    <div class="cat-row ${isSub ? 'is-sub' : 'is-main'} ${c.is_active ? '' : 'dim'}">
+      <form method="post" action="/admin/categories/${c.id}" class="cat-edit">
+        ${csrf(req)}
+        <input name="icon" value="${c.icon}" maxlength="4" class="xs" title="Icon (emoji)">
+        <input name="name" value="${c.name}" maxlength="40" required>
+        <input type="number" name="sort" value="${c.sort}" class="xs" title="Order">
+        ${isSub ? html`<select name="parent_id" title="Main category">${mains.map((m) => html`<option value="${m.id}" ${m.id === c.parent_id ? 'selected' : ''}>${m.name}</option>`)}</select>` : ''}
+        <select name="is_active"><option value="1" ${c.is_active ? 'selected' : ''}>Active</option><option value="0" ${!c.is_active ? 'selected' : ''}>Deactivated</option></select>
+        <span class="muted small">${n} ad${n === 1 ? '' : 's'}</span>
+        <button class="btn btn-sm">Save</button>
+      </form>
+      <form method="post" action="/admin/categories/${c.id}/delete" class="cat-del" data-confirm="Delete ${c.name}?">
+        ${csrf(req)}${n ? moveSelect(c) : ''}<button class="btn btn-danger btn-sm">Delete</button>
+      </form>
+    </div>`;
+  };
+  return html`
+  <div class="page-head"><div><h1>Categories</h1><p class="muted">Main categories (bold) and their sub-categories. Ads are posted in a sub-category; a main category without sub-categories takes ads directly.
+    <br>Deactivated = hidden from menus and new ads (existing ads keep running). Delete = gone; if it has ads you choose where they move.</p></div></div>
+  <section class="card">
+    <h2>Add</h2>
+    <form method="post" action="/admin/categories/add" class="cat-add">
+      ${csrf(req)}
+      <select name="parent_id"><option value="">➕ New MAIN category</option>${mains.map((m) => html`<option value="${m.id}">➕ Sub-category of ${m.name}</option>`)}</select>
+      <input name="icon" maxlength="4" class="xs" placeholder="📱">
+      <input name="name" maxlength="40" required placeholder="Name, e.g. Mobile phones">
+      <button class="btn btn-accent">Add</button>
+    </form>
+  </section>
+  <section class="card cat-tree">
+    ${mains.map((m) => html`<div class="cat-group">${row(m, false)}${m.subs.map((sc) => row(sc, true))}</div>`)}
+  </section>`;
+}
+
 function settingsView(req, { s, plans, cats, admins }) {
   return html`
   <div class="page-head"><h1>Settings</h1></div>
   <section class="card">
     <h2>Pricing plans</h2>
-    <p class="muted small">Price and ranking level for each run period. Higher ranking level = ad appears higher. “TOP price” is the extra charge to pin the ad in the TOP section.</p>
+    <p class="muted small">Price and ranking level for each run period. Higher ranking level = ad appears higher.</p>
     <form method="post" action="/admin/plans" class="form">
       ${csrf(req)}
       <div class="table-wrap"><table class="table plans-table">
-        <thead><tr><th>Name</th><th>Days</th><th>Price (₹)</th><th>TOP extra (₹)</th><th>Ranking level</th><th>Active</th></tr></thead>
+        <thead><tr><th>Name</th><th>Days</th><th>Price (₹)</th><th>Ranking level</th><th>Active</th></tr></thead>
         <tbody>
           ${plans.map((p) => html`<tr>
             <td><input type="hidden" name="id[]" value="${p.id}"><input name="name[]" value="${p.name}" required maxlength="60"></td>
             <td><input type="number" name="days[]" value="${p.days}" min="1" max="365" required></td>
             <td><input type="number" name="price[]" value="${p.price_paise / 100}" min="0" step="1" required></td>
-            <td><input type="number" name="top[]" value="${p.top_price_paise / 100}" min="0" step="1" required></td>
             <td><input type="number" name="priority[]" value="${p.priority}" min="1" max="10" required></td>
             <td><select name="active[]"><option value="1" ${p.is_active ? 'selected' : ''}>Yes</option><option value="0" ${!p.is_active ? 'selected' : ''}>No</option></select></td></tr>`)}
           <tr class="new-row">
             <td><input type="hidden" name="id[]" value="new"><input name="name[]" placeholder="+ New plan name" maxlength="60"></td>
             <td><input type="number" name="days[]" min="1" max="365" placeholder="days"></td>
             <td><input type="number" name="price[]" min="0" step="1" placeholder="₹"></td>
-            <td><input type="number" name="top[]" min="0" step="1" placeholder="₹"></td>
             <td><input type="number" name="priority[]" min="1" max="10" value="1"></td>
             <td><select name="active[]"><option value="1">Yes</option><option value="0">No</option></select></td></tr>
         </tbody></table></div>
       <button class="btn btn-accent">Save plans</button>
     </form>
   </section>
+
+  <div class="cols2">
+    <section class="card">
+      <h2>★ TOP ad time slots</h2>
+      <p class="muted small">Clients choose the 3-hour slots (India time) when their ad is pinned in TOP. They pay this price per day × the days of their plan.</p>
+      <form method="post" action="/admin/slots" class="form">
+        ${csrf(req)}
+        <div class="table-wrap"><table class="table"><thead><tr><th>Slot</th><th>Price per day (₹)</th><th>On sale</th></tr></thead><tbody>
+          ${slotPrices().map((sl) => html`<tr><td><strong>${sl.label}</strong></td>
+            <td><input type="number" name="price_${sl.slot}" value="${sl.price_per_day_paise / 100}" min="0" step="1" required></td>
+            <td><select name="active_${sl.slot}"><option value="1" ${sl.is_active ? 'selected' : ''}>Yes</option><option value="0" ${!sl.is_active ? 'selected' : ''}>No</option></select></td></tr>`)}
+        </tbody></table></div>
+        <button class="btn btn-accent">Save slot prices</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Approvals & notifications</h2>
+      <form method="post" action="/admin/automation" class="form">
+        ${csrf(req)}
+        ${field('Auto-approve clients after (minutes)', html`<input type="number" name="auto_approve_minutes" min="0" max="10080" value="${s.auto_approve_minutes}">`, 'If you don\'t approve or reject a verified client in this time, they are approved automatically and you get an email. 0 = off (always wait for you).')}
+        ${field('Auto-confirm UPI payments after (minutes)', html`<input type="number" name="auto_confirm_payment_minutes" min="0" max="10080" value="${s.auto_confirm_payment_minutes}">`, '⚠ Risky: the UTR is NOT checked against your bank. 0 = off (recommended) — you confirm each payment.')}
+        ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
+        <button class="btn btn-accent">Save</button>
+      </form>
+      <h3>Email & SMS status</h3>
+      <ul class="list">
+        <li><span>Email (SMTP)</span>${emailConfigured() ? html`<span class="pill pill-ok">Ready</span>` : html`<span class="pill pill-warn">Not set up — see GUIDE Part 15</span>`}</li>
+        <li><span>SMS OTP${smsProvider() ? ` (${smsProvider()})` : ''}</span>${smsConfigured() ? html`<span class="pill pill-ok">Ready</span>` : html`<span class="pill pill-muted">Off — only email OTP is used</span>`}</li>
+      </ul>
+      <div class="btn-row">
+        <form method="post" action="/admin/test-email" class="inline">${csrf(req)}<button class="btn btn-sm">Send test email</button></form>
+        <form method="post" action="/admin/test-sms" class="inline reject-form">${csrf(req)}<input name="phone" placeholder="10-digit mobile" maxlength="10"><button class="btn btn-sm">Send test SMS</button></form>
+        <a class="btn btn-ghost btn-sm" href="/admin/messages">View sent messages</a>
+      </div>
+    </section>
+  </div>
 
   <div class="cols2">
     <section class="card">
@@ -322,14 +417,8 @@ function settingsView(req, { s, plans, cats, admins }) {
     </section>
     <section class="card">
       <h2>Categories</h2>
-      <form method="post" action="/admin/categories" class="form">
-        ${csrf(req)}
-        <div class="table-wrap"><table class="table"><thead><tr><th>Icon</th><th>Name</th><th>Order</th><th>Active</th></tr></thead><tbody>
-          ${cats.map((c) => html`<tr><td><input type="hidden" name="id[]" value="${c.id}"><input name="icon[]" value="${c.icon}" maxlength="4" class="xs"></td><td><input name="name[]" value="${c.name}" maxlength="40" required></td><td><input type="number" name="sort[]" value="${c.sort}" class="xs"></td><td><select name="active[]"><option value="1" ${c.is_active ? 'selected' : ''}>Yes</option><option value="0" ${!c.is_active ? 'selected' : ''}>No</option></select></td></tr>`)}
-          <tr><td><input type="hidden" name="id[]" value="new"><input name="icon[]" maxlength="4" class="xs" placeholder="🙂"></td><td><input name="name[]" maxlength="40" placeholder="+ New category"></td><td><input type="number" name="sort[]" value="99" class="xs"></td><td><select name="active[]"><option value="1">Yes</option></select></td></tr>
-        </tbody></table></div>
-        <button class="btn">Save categories</button>
-      </form>
+      <p class="muted small">Main categories and sub-categories (e.g. Electronics → Mobile phones) are managed on their own page.</p>
+      <p><a class="btn btn-sm" href="/admin/categories">Manage categories →</a></p>
       <h2>Admins</h2>
       <ul class="list">${admins.map((a) => html`<li><span><strong>${a.name}</strong> <span class="muted small">${a.email}</span></span></li>`)}</ul>
       <form method="post" action="/admin/admins" class="form">
@@ -399,10 +488,10 @@ function register(app) {
 
   // ---- Clients ----
   app.get('/admin/clients', requireAdmin, (req, res) => {
-    const status = ['pending', 'video_call', 'approved', 'rejected', 'suspended', 'all'].includes(req.query.status) ? req.query.status : 'pending';
+    const status = ['pending', 'unverified', 'video_call', 'approved', 'deactivated', 'rejected', 'suspended', 'all'].includes(req.query.status) ? req.query.status : 'pending';
     const q = V.str(req.query.q, 80);
     const where = []; const args = [];
-    if (status !== 'all') { where.push('c.status = ?'); args.push(status); }
+    if (status !== 'all') { where.push('c.status = ?'); args.push(status); } else where.push("c.status != 'deleted'");
     if (q) { where.push('(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.pan_number LIKE ? OR c.business_name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l, l, l); }
     const rows = db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM ads a WHERE a.client_id = c.id) AS ad_count FROM clients c
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY c.created_at ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 300`).all(...args);
@@ -439,10 +528,10 @@ function register(app) {
       const now = Date.now();
       const approve = b.approve_now === '1';
       const id = tx(() => {
-        const r = db.prepare(`INSERT INTO clients (name, business_name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number,
+        const r = db.prepare(`INSERT INTO clients (email_verified_at, phone_verified_at, submitted_at, name, business_name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number,
           aadhaar_file, aadhaar_back_file, pan_file, address_proof_file, photo_file, live_photo_file, status, status_token, created_by_admin, reviewed_by, reviewed_at, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)`)
-          .run(v.name, v.business_name, v.email, v.phone, hashPassword(password), v.address, v.city, v.state, v.pincode, v.aadhaar_number.slice(-4), v.pan_number,
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)`)
+          .run(now, now, now, v.name, v.business_name, v.email, v.phone, hashPassword(password), v.address, v.city, v.state, v.pincode, v.aadhaar_number.slice(-4), v.pan_number,
             f.a, f.ab, f.p, f.ad, f.ph, live, approve ? 'approved' : 'pending', randomToken(24), approve ? req.admin.id : null, approve ? now : null, now);
         if (live) db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'admin_webcam', ?)").run(r.lastInsertRowid, live, now);
         return Number(r.lastInsertRowid);
@@ -474,6 +563,20 @@ function register(app) {
     const action = req.body.action;
     const note = V.str(req.body.note, 500) || null;
     const now = Date.now();
+    if (action === 'deactivate' || action === 'reactivate') {
+      if (action === 'deactivate') {
+        const r = life.deactivateClient(c.id, 'admin');
+        db.prepare('UPDATE clients SET admin_note = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?').run(note, req.admin.id, now, c.id);
+        notify.deactivated(c, 'admin');
+        req.flash('success', `Client deactivated${r && r.paused ? ` — ${r.paused} live ad(s) hidden, remaining paid days saved` : ''}.`);
+      } else {
+        const r = life.reactivateClient(c.id);
+        notify.reactivated(c);
+        req.flash('success', `Client reactivated${r && r.resumed ? ` — ${r.resumed} ad(s) live again` : ''}.`);
+      }
+      res.redirect(`/admin/clients/${c.id}`);
+      return;
+    }
     const map = { approve: 'approved', reject: 'rejected', suspend: 'suspended', video_call: 'video_call', pending: 'pending' };
     const status = map[action];
     if (!status) { res.redirect(`/admin/clients/${c.id}`); return; }
@@ -488,13 +591,36 @@ function register(app) {
         .run(status, note, req.admin.id, now, status, callAt, c.id);
       if (status === 'suspended') {
         // Hide their live ads; remaining time is kept so unblocking restores them.
-        db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment')").run(now, c.id);
+        db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment','paused')").run(now, c.id);
+      }
+      if (status === 'approved' && c.status === 'suspended') {
+        // Unblock: ads that were hidden because of the block come back (live if their paid time is not over).
+        for (const a of db.prepare("SELECT * FROM ads WHERE client_id = ? AND status = 'blocked' AND block_reason = 'Seller suspended'").all(c.id)) {
+          const st = a.paused_remaining_ms ? 'paused' : a.expires_at && a.expires_at > now ? 'active' : a.paid_total_paise > 0 ? 'expired' : 'awaiting_payment';
+          db.prepare('UPDATE ads SET status = ?, block_reason = NULL, updated_at = ? WHERE id = ?').run(st, now, a.id);
+        }
+        if (c.deactivated_by) db.prepare('UPDATE clients SET deactivated_by = NULL, deactivated_at = NULL WHERE id = ?').run(c.id);
       }
     });
     if (status === 'rejected' || status === 'suspended') rtc.broadcast(`kyc-${c.id}`, 'client', 'signal', { type: 'hangup' });
-    const label = { approved: 'Client approved — they can now log in and post ads.', rejected: 'Client rejected.', suspended: 'Client suspended and their ads hidden.', video_call: 'Video call requested. Share the call link with the client.', pending: 'Moved back to review.' }[status];
+    if (status === 'approved' && c.status !== 'approved') notify.approved(c);
+    if (status === 'rejected') notify.rejected(c, note);
+    if (status === 'suspended') notify.suspended(c, note);
+    if (status === 'video_call') notify.videoCall(c, callAt);
+    if (status === 'approved' || status === 'pending') db.prepare('UPDATE clients SET submitted_at = COALESCE(submitted_at, ?), auto_approved = 0 WHERE id = ?').run(now, c.id);
+    if (status === 'approved' && c.status === 'suspended') rescore(0);
+    const label = { approved: c.status === 'suspended' ? 'Client unblocked — their ads are back.' : 'Client approved — they can now log in and post ads.', rejected: 'Client rejected.', suspended: 'Client blocked and their ads hidden.', video_call: 'Video call requested. Share the call link with the client.', pending: 'Moved back to review.' }[status];
     req.flash('success', label);
     res.redirect(`/admin/clients/${c.id}`);
+  });
+
+  app.post('/admin/clients/:id/delete', requireAdmin, (req, res) => {
+    const c = getClient(req.params.id);
+    if (!c) { res.redirect('/admin/clients'); return; }
+    rtc.broadcast(`kyc-${c.id}`, 'client', 'signal', { type: 'hangup' });
+    life.deleteClient(c.id);
+    req.flash('success', `${c.name} was deleted permanently.`);
+    res.redirect('/admin/clients?status=all');
   });
 
   app.post('/admin/clients/:id/reset-password', requireAdmin, (req, res) => {
@@ -576,24 +702,27 @@ function register(app) {
     const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(parseInt(req.params.id, 10) || 0);
     if (!pay || pay.status !== 'pending') { req.flash('error', 'Payment is not pending.'); res.redirect(back(req, '/admin/payments')); return; }
     P.confirmPayment(pay.id, { adminId: req.admin.id });
+    notify.paymentConfirmed(pay.id);
     req.flash('success', `Payment #${pay.id} confirmed — ad is live.`);
     res.redirect(back(req, '/admin/payments'));
   });
   app.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
-    const ok = P.rejectPayment(parseInt(req.params.id, 10) || 0, req.admin.id, V.str(req.body.note, 200) || 'Payment not received');
+    const payId = parseInt(req.params.id, 10) || 0;
+    const ok = P.rejectPayment(payId, req.admin.id, V.str(req.body.note, 200) || 'Payment not received');
+    if (ok) notify.paymentRejected(payId);
     req.flash(ok ? 'success' : 'error', ok ? 'Payment rejected.' : 'Payment is not pending.');
     res.redirect(back(req, '/admin/payments'));
   });
 
   // ---- Ads ----
   app.get('/admin/ads', requireAdmin, (req, res) => {
-    const status = ['active', 'payment_review', 'awaiting_payment', 'expired', 'blocked', 'all'].includes(req.query.status) ? req.query.status : 'active';
+    const status = ['active', 'payment_review', 'awaiting_payment', 'paused', 'expired', 'blocked', 'deleted', 'all'].includes(req.query.status) ? req.query.status : 'active';
     const q = V.str(req.query.q, 80);
     const where = []; const args = [];
-    if (status !== 'all') { where.push('a.status = ?'); args.push(status); }
+    if (status !== 'all') { where.push('a.status = ?'); args.push(status); } else where.push("a.status != 'deleted'");
     if (q) { where.push('(a.title LIKE ? OR a.id = ?)'); args.push(`%${q}%`, parseInt(q, 10) || -1); }
-    const rows = db.prepare(`SELECT a.*, c.name AS client_name, cat.name AS cat_name, p.name AS plan_name FROM ads a
-      JOIN clients c ON c.id = a.client_id JOIN categories cat ON cat.id = a.category_id LEFT JOIN plans p ON p.id = a.plan_id
+    const rows = db.prepare(`SELECT a.*, c.name AS client_name, COALESCE(pc.name || ' › ' || cat.name, cat.name) AS cat_name, p.name AS plan_name FROM ads a
+      JOIN clients c ON c.id = a.client_id JOIN categories cat ON cat.id = a.category_id LEFT JOIN categories pc ON pc.id = cat.parent_id LEFT JOIN plans p ON p.id = a.plan_id
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${status === 'active' ? 'a.rank_score DESC' : 'a.updated_at DESC'} LIMIT 300`).all(...args);
     res.html(page(req, 'Ads', adsView(req, rows, { status, q })));
   });
@@ -612,11 +741,27 @@ function register(app) {
     const ad = adById(req.params.id);
     if (ad && ad.status === 'blocked') {
       const now = Date.now();
-      const status = ad.expires_at && ad.expires_at > now ? 'active' : ad.paid_total_paise > 0 ? 'expired' : 'awaiting_payment';
+      const status = ad.paused_remaining_ms ? 'paused' : ad.expires_at && ad.expires_at > now ? 'active' : ad.paid_total_paise > 0 ? 'expired' : 'awaiting_payment';
       db.prepare('UPDATE ads SET status = ?, block_reason = NULL, updated_at = ? WHERE id = ?').run(status, now, ad.id);
       rescore(ad.id);
       req.flash('success', `Ad #${ad.id} unblocked (${status.replace('_', ' ')}).`);
     }
+    res.redirect(back(req, '/admin/ads'));
+  });
+  app.post('/admin/ads/:id/pause', requireAdmin, (req, res) => {
+    const ad = adById(req.params.id);
+    if (ad && life.pauseAd(ad.id, 'admin')) req.flash('success', `Ad #${ad.id} deactivated — its remaining paid days are saved.`);
+    res.redirect(back(req, '/admin/ads'));
+  });
+  app.post('/admin/ads/:id/resume', requireAdmin, (req, res) => {
+    const ad = adById(req.params.id);
+    if (ad && ad.paused_by === 'account') { req.flash('error', 'This ad is hidden because the seller account is deactivated. Reactivate the client instead.'); res.redirect(back(req, '/admin/ads')); return; }
+    if (ad && life.resumeAd(ad.id)) req.flash('success', `Ad #${ad.id} is live again.`);
+    res.redirect(back(req, '/admin/ads'));
+  });
+  app.post('/admin/ads/:id/delete', requireAdmin, (req, res) => {
+    const ad = adById(req.params.id);
+    if (ad && life.deleteAd(ad.id)) req.flash('success', `Ad #${ad.id} deleted.`);
     res.redirect(back(req, '/admin/ads'));
   });
   app.post('/admin/ads/:id/boost', requireAdmin, (req, res) => {
@@ -631,7 +776,7 @@ function register(app) {
   });
   app.post('/admin/ads/:id/top', requireAdmin, (req, res) => {
     const ad = adById(req.params.id);
-    if (ad) { db.prepare('UPDATE ads SET is_top = ? WHERE id = ?').run(ad.is_top ? 0 : 1, ad.id); rescore(ad.id); }
+    if (ad) { const m = ad.top_slots ? 0 : ALL_SLOTS; db.prepare('UPDATE ads SET is_top = ?, top_slots = ? WHERE id = ?').run(m ? 1 : 0, m, ad.id); rescore(ad.id); }
     res.redirect(back(req, '/admin/ads'));
   });
   app.post('/admin/ads/:id/extend', requireAdmin, (req, res) => {
@@ -699,22 +844,102 @@ function register(app) {
     req.flash('success', 'Plans saved.');
     res.redirect('/admin/settings');
   });
-  app.post('/admin/categories', requireAdmin, (req, res) => {
-    const b = req.body; const ids = [].concat(b.id || []);
+  // ---- Categories: main → sub ----
+  const catCounts = () => Object.fromEntries(db.prepare("SELECT category_id, COUNT(*) n FROM ads WHERE status != 'deleted' GROUP BY category_id").all().map((r) => [r.category_id, r.n]));
+  app.get('/admin/categories', requireAdmin, (req, res) => {
+    res.html(page(req, 'Categories', categoriesView(req, Cat.tree({ includeInactive: true }), catCounts())));
+  });
+  app.post('/admin/categories/add', requireAdmin, (req, res) => {
+    const name = V.str(req.body.name, 40);
+    const parent = req.body.parent_id ? Cat.byId(req.body.parent_id) : null;
+    if (!name) { req.flash('error', 'Enter a name.'); res.redirect('/admin/categories'); return; }
+    if (req.body.parent_id && (!parent || parent.parent_id)) { req.flash('error', 'Choose a main category.'); res.redirect('/admin/categories'); return; }
+    const icon = V.str(req.body.icon, 4) || (parent ? parent.icon : '📦');
+    const sort = parseInt(req.body.sort, 10) || 99;
+    db.prepare('INSERT INTO categories (name, slug, icon, sort, is_active, parent_id) VALUES (?,?,?,?,1,?)')
+      .run(name, Cat.makeSlug(name, parent ? parent.slug : ''), icon, sort, parent ? parent.id : null);
+    req.flash('success', parent ? `Sub-category "${name}" added under ${parent.name}.` : `Main category "${name}" added.`);
+    res.redirect('/admin/categories');
+  });
+  app.post('/admin/categories/:id', requireAdmin, (req, res) => {
+    const c = Cat.byId(req.params.id);
+    if (!c) { res.redirect('/admin/categories'); return; }
+    const name = V.str(req.body.name, 40) || c.name;
+    const icon = V.str(req.body.icon, 4) || c.icon;
+    const sort = Number.isFinite(parseInt(req.body.sort, 10)) ? parseInt(req.body.sort, 10) : c.sort;
+    const active = req.body.is_active === '0' ? 0 : 1;
+    let parentId = c.parent_id;
+    if (c.parent_id && req.body.parent_id) {       // a sub-category can be moved under another main category
+      const p = Cat.byId(req.body.parent_id);
+      if (p && !p.parent_id) parentId = p.id;
+    }
+    db.prepare('UPDATE categories SET name = ?, icon = ?, sort = ?, is_active = ?, parent_id = ? WHERE id = ?').run(name, icon, sort, active, parentId, c.id);
+    req.flash('success', `"${name}" saved${active ? '' : ' — deactivated (hidden from the site menus and new ads; existing ads keep running)'}.`);
+    res.redirect('/admin/categories');
+  });
+  app.post('/admin/categories/:id/delete', requireAdmin, (req, res) => {
+    const c = Cat.byId(req.params.id);
+    if (!c) { res.redirect('/admin/categories'); return; }
+    if (db.prepare('SELECT 1 FROM categories WHERE parent_id = ? LIMIT 1').get(c.id)) {
+      req.flash('error', `"${c.name}" still has sub-categories. Delete or move them first.`); res.redirect('/admin/categories'); return;
+    }
+    const used = db.prepare('SELECT COUNT(*) n FROM ads WHERE category_id = ?').get(c.id).n;
+    if (used) {
+      const to = Cat.byId(req.body.move_to);
+      if (!to || to.id === c.id) { req.flash('error', `"${c.name}" has ${used} ad(s). Choose where to move them, then delete.`); res.redirect('/admin/categories'); return; }
+      db.prepare('UPDATE ads SET category_id = ? WHERE category_id = ?').run(to.id, c.id);
+    }
+    db.prepare('DELETE FROM categories WHERE id = ?').run(c.id);
+    req.flash('success', `"${c.name}" deleted${used ? ` — ${used} ad(s) moved to ${Cat.label(req.body.move_to)}` : ''}.`);
+    res.redirect('/admin/categories');
+  });
+  app.post('/admin/slots', requireAdmin, (req, res) => {
     tx(() => {
-      ids.forEach((id, i) => {
-        const name = V.str([].concat(b.name)[i], 40); if (!name) return;
-        const icon = V.str([].concat(b.icon)[i], 4) || '📦'; const sort = parseInt([].concat(b.sort)[i], 10) || 0; const active = [].concat(b.active)[i] === '0' ? 0 : 1;
-        if (id === 'new') {
-          let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'cat';
-          if (db.prepare('SELECT 1 FROM categories WHERE slug = ?').get(slug)) slug += `-${Date.now().toString(36)}`;
-          db.prepare('INSERT INTO categories (name, slug, icon, sort, is_active) VALUES (?,?,?,?,?)').run(name, slug, icon, sort, active);
-        } else db.prepare('UPDATE categories SET name=?, icon=?, sort=?, is_active=? WHERE id=?').run(name, icon, sort, active, parseInt(id, 10));
-      });
+      for (const sl of SLOTS) {
+        const price = Math.round(Number(req.body[`price_${sl.slot}`]) * 100);
+        if (!Number.isFinite(price) || price < 0) continue;
+        db.prepare('INSERT INTO top_slots (slot, price_per_day_paise, is_active) VALUES (?, ?, ?) ON CONFLICT(slot) DO UPDATE SET price_per_day_paise = excluded.price_per_day_paise, is_active = excluded.is_active')
+          .run(sl.slot, price, req.body[`active_${sl.slot}`] === '0' ? 0 : 1);
+      }
     });
-    req.flash('success', 'Categories saved.');
+    req.flash('success', 'TOP slot prices saved.');
     res.redirect('/admin/settings');
   });
+  app.post('/admin/automation', requireAdmin, (req, res) => {
+    const num = (v) => String(Math.max(0, Math.min(10080, parseInt(v, 10) || 0)));
+    setSetting('auto_approve_minutes', num(req.body.auto_approve_minutes));
+    setSetting('auto_confirm_payment_minutes', num(req.body.auto_confirm_payment_minutes));
+    const em = V.str(req.body.notify_email, 120);
+    if (!em || V.isValidEmail(em)) setSetting('notify_email', em);
+    req.flash('success', 'Saved.');
+    res.redirect('/admin/settings');
+  });
+  app.post('/admin/test-email', requireAdmin, async (req, res) => {
+    const to = getSettings().notify_email || req.admin.email;
+    const r = await sendEmail(to, `Test email from ${getSettings().site_name}`, ['It works! Your email settings are correct.']);
+    req.flash(r.ok ? 'success' : 'error', r.ok ? `Test email sent to ${to}.` : r.status === 'not_configured' ? 'Email is not set up yet (SMTP_* in .env). The message was saved in Messages instead.' : `Email failed: ${r.error}`);
+    res.redirect('/admin/settings');
+  });
+  app.post('/admin/test-sms', requireAdmin, async (req, res) => {
+    const phone = V.normalizePhone(req.body.phone);
+    if (!V.isValidPhone(phone)) { req.flash('error', 'Enter a valid 10-digit mobile number.'); res.redirect('/admin/settings'); return; }
+    const r = await sendSmsOtp(phone, '123456');
+    req.flash(r.ok ? 'success' : 'error', r.ok ? `Test SMS sent to ${phone}.` : r.status === 'not_configured' ? 'SMS is not set up (SMS_PROVIDER in .env).' : `SMS failed: ${r.error}`);
+    res.redirect('/admin/settings');
+  });
+  app.get('/admin/messages', requireAdmin, (req, res) => {
+    const rows = db.prepare('SELECT * FROM outbox ORDER BY id DESC LIMIT 200').all();
+    res.html(page(req, 'Messages', html`
+      <div class="page-head"><div><h1>Messages</h1><p class="muted">Every email and SMS the site sent. When email/SMS is not set up yet, messages (including OTP codes) are kept here so you can still test.</p></div></div>
+      ${rows.length ? html`<div class="table-wrap card"><table class="table">
+        <thead><tr><th>Time</th><th>Type</th><th>To</th><th>Subject / message</th><th>Status</th></tr></thead>
+        <tbody>${rows.map((m) => html`<tr>
+          <td>${fmtDate(m.created_at)}</td><td>${m.channel === 'sms' ? '📱 SMS' : '📧 Email'}</td><td>${m.to_addr}</td>
+          <td><details><summary>${m.subject || m.body.slice(0, 60)}</summary><pre class="msg-body">${m.body}</pre></details></td>
+          <td>${m.status === 'sent' ? html`<span class="pill pill-ok">Sent</span>` : m.status === 'failed' ? html`<span class="pill pill-bad" title="${m.error}">Failed</span><div class="small muted">${String(m.error || '').slice(0, 80)}</div>` : html`<span class="pill pill-warn">Not set up</span>`}</td></tr>`)}
+        </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No messages yet.</p></div>`}`));
+  });
+
   app.post('/admin/admins', requireAdmin, (req, res) => {
     const email = V.str(req.body.email, 120).toLowerCase(); const name = V.str(req.body.name, 60);
     if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6) { req.flash('error', 'Enter name, valid email and a password of 6+ characters.'); res.redirect('/admin/settings'); return; }

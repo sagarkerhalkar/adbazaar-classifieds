@@ -2,8 +2,10 @@
 /**
  * Ranking algorithm — decides the order of ads on every listing page.
  *
- *  score = TOP pin bonus            (paid "Show on top" add-on — always above normal ads)
- *        + plan priority × weight   (29-day > 15-day > 7-day)
+ *  TOP ads are handled separately: during the 3-hour time slot(s) a client paid for,
+ *  the ad is listed in the "TOP ads" section above everything else (see src/slots.js).
+ *
+ *  score = plan priority × weight   (29-day > 15-day > 7-day)
  *        + log(amount paid) × weight (more money paid → higher)
  *        + freshness                 (decays with a half-life, so ads slowly move down over time)
  *        + engagement                (log of views, small effect)
@@ -17,7 +19,6 @@
 const { db } = require('./db');
 
 const WEIGHTS = {
-  TOP_BONUS: 1000,
   PLAN_PRIORITY: 60,
   PAID_AMOUNT: 40,          // × log10(1 + rupees paid)
   FRESHNESS: 100,
@@ -34,7 +35,6 @@ function computeScore(ad, planPriority, now = Date.now()) {
   const ageH = Math.max(0, (now - (ad.starts_at || now)) / 3600_000);
   const leftH = (ad.expires_at - now) / 3600_000;
   let score = 0;
-  if (ad.is_top) score += W.TOP_BONUS;
   score += (planPriority || 1) * W.PLAN_PRIORITY;
   score += Math.log10(1 + (ad.paid_total_paise || 0) / 100) * W.PAID_AMOUNT;
   score += W.FRESHNESS * Math.pow(0.5, ageH / W.FRESHNESS_HALF_LIFE_H);
@@ -58,7 +58,7 @@ function rescore(adId = 0) {
 // Expire finished ads and refresh every active ad's score.
 function runMaintenance() {
   const now = Date.now();
-  const expired = db.prepare("UPDATE ads SET status = 'expired', is_top = 0, rank_score = -1, updated_at = ? WHERE status = 'active' AND expires_at <= ?").run(now, now);
+  const expired = db.prepare("UPDATE ads SET status = 'expired', is_top = 0, top_slots = 0, rank_score = -1, updated_at = ? WHERE status = 'active' AND expires_at <= ?").run(now, now);
   rescore(0);
   return { expired: Number(expired.changes) };
 }
