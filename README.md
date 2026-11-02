@@ -47,7 +47,12 @@ Expired ads are removed from the listing. Scores are recalculated every 5 minute
 
 > 👉 **New to this? Follow [GUIDE.md](GUIDE.md).** It's a step-by-step guide covering install, test data, Wi-Fi access, your domain through a free Cloudflare Tunnel, and auto-start.
 
-**Windows (easiest):** open the `windows` folder and double-click, in order:
+**Windows — one command** (in Command Prompt; installs to `D:\AdBazaar`):
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://raw.githubusercontent.com/sagarkerhalkar/adbazaar-classifieds/main/windows/install.ps1 | iex"
+```
+
+**Windows (manual):** open the `windows` folder and double-click, in order:
 1. `1-setup.bat`: checks Node.js, creates your `.env` settings file and opens it in Notepad.
 2. `2-start.bat`: starts the app in a window (close the window to stop it).
 3. Optional: `autostart-ON.bat` starts AdBazaar hidden in the background every time you log in to Windows. `autostart-OFF.bat` turns that off.

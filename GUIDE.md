@@ -15,6 +15,24 @@ Later, when everything works, you move it to a cloud server (Part 12).
 
 ---
 
+## ⚡ Fastest way: ONE command (installs everything on the D: drive)
+
+1. Press the **Windows key**, type `cmd`, and press **Enter**.
+2. Copy this whole line, paste it with **right-click**, and press **Enter**:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://raw.githubusercontent.com/sagarkerhalkar/adbazaar-classifieds/main/windows/install.ps1 | iex"
+```
+
+3. Answer the questions: your admin email, password, UPI ID, test data (Y), and auto-start (Y). Click **Yes** if Windows asks for permission.
+
+It installs Node.js and cloudflared if they're missing, downloads AdBazaar to **`D:\AdBazaar`** (or `C:\AdBazaar` if you have no D: drive), picks a **free port** by itself, adds the test data, allows your Wi-Fi devices through the firewall, turns on **auto-start**, puts an **AdBazaar** shortcut on your desktop, and opens the site. 🎉
+
+**To update later**, run the same line again. Your settings and data are kept.
+Then continue with **Part 8 / Part 9** below for the internet link and your domain. Parts 1–5 and 10 are the manual way to do what this command already did.
+
+---
+
 ## Part 1 — Install Node.js (one time, 5 minutes)
 
 Node.js is the "engine" that runs AdBazaar.
@@ -39,16 +57,17 @@ Check that it worked:
 1. Open **https://github.com/sagarkerhalkar/adbazaar-classifieds**.
 2. Click the green **`Code`** button, then **`Download ZIP`**.
 3. Right-click the downloaded ZIP and choose **Extract All…**.
-4. Move the extracted folder to `C:\AdBazaar`. A short path without spaces is best.
+4. Move the extracted folder to `D:\AdBazaar`. A short path without spaces is best.
 
-So you now have `C:\AdBazaar\server.js`, `C:\AdBazaar\windows\`, and so on.
+So you now have `D:\AdBazaar\server.js`, `D:\AdBazaar\windows\`, and so on.
 
 **If you use Git:**
 ```
-cd C:\
+D:
+cd \
 git clone https://github.com/sagarkerhalkar/adbazaar-classifieds.git AdBazaar
 ```
-(Later, to get updates: `cd C:\AdBazaar` then `git pull`.)
+(Later, to get updates: `cd D:\AdBazaar` then `git pull`.)
 
 ---
 
@@ -65,7 +84,7 @@ netstat -ano | findstr :4780
 - **Lines printed** → another program uses it. Try `:4781`, `:4790` and so on until nothing prints, and use that number below.
 
 ### 3.2 Create your settings file
-1. Open `C:\AdBazaar\windows`.
+1. Open `D:\AdBazaar\windows`.
 2. Double-click **`1-setup.bat`**. It checks Node.js and opens your settings file (`.env`) in Notepad.
 3. Change these lines:
 
@@ -102,7 +121,7 @@ If you see **"Port 4780 is already used by another program"**, go back to Part 3
 
 ## Part 5 — Add test data (sellers, ads, payments)
 
-1. Open the folder `C:\AdBazaar`.
+1. Open the folder `D:\AdBazaar`.
 2. Click in the **address bar** at the top of the folder window, type `cmd`, and press **Enter**. A Command Prompt opens already in the right folder.
 3. Type:
 ```
@@ -209,7 +228,7 @@ With this, `https://test.yourdomain.com` opens AdBazaar running on **your comput
 4. Click **Add route**.
 
 ### 9.4 Tell AdBazaar its address
-1. Open `C:\AdBazaar\.env` in Notepad and add this line (with your domain):
+1. Open `D:\AdBazaar\.env` in Notepad and add this line (with your domain):
 ```
 BASE_URL=https://test.yourdomain.com
 ```
@@ -237,7 +256,7 @@ To turn auto-start off: **`windows\autostart-OFF.bat`**.
 
 ## Part 11 — Everyday cheat sheet
 
-| I want to… | Do this (in `C:\AdBazaar\windows`) |
+| I want to… | Do this (in `D:\AdBazaar\windows`) |
 |---|---|
 | Start, and see the messages | `2-start.bat` (keep the window open) |
 | Start hidden in the background | `3-start-in-background.bat` |
@@ -247,8 +266,8 @@ To turn auto-start off: **`windows\autostart-OFF.bat`**.
 | Let phones on Wi-Fi open it | `allow-lan-access.bat` (Run as administrator) |
 | Get a temporary internet link | `cloudflare-quick-test.bat` |
 | Start with Windows: on / off | `autostart-ON.bat` / `autostart-OFF.bat` |
-| See errors | Open `C:\AdBazaar\storage\server.log` in Notepad |
-| Back up everything | Stop the app, then copy the whole `C:\AdBazaar\storage` folder (database + uploaded files) |
+| See errors | Open `D:\AdBazaar\storage\server.log` in Notepad |
+| Back up everything | Stop the app, then copy the whole `D:\AdBazaar\storage` folder (database + uploaded files) |
 
 ### Problems and fixes
 | Problem | Fix |
@@ -259,7 +278,7 @@ To turn auto-start off: **`windows\autostart-OFF.bat`**.
 | Domain shows **502 Bad Gateway** | The tunnel works, but AdBazaar isn't running or the port is wrong. Start it, and check the Service URL port. |
 | Camera doesn't start | You're on an `http://192.168…` address. Use `localhost` or your `https://` domain. Click **Allow** when the browser asks for the camera. |
 | Video call stuck on "Connecting…" on some mobile networks | Add a free TURN server in `.env` (`TURN_URL`, `TURN_USERNAME`, `TURN_PASSWORD`, for example from metered.ca). |
-| Forgot admin password | In `C:\AdBazaar` open cmd and run: `npm run create-admin -- you@gmail.com NewPassword123` |
+| Forgot admin password | In `D:\AdBazaar` open cmd and run: `npm run create-admin -- you@gmail.com NewPassword123` |
 | "Node.js is not installed" | Do Part 1 again, then restart the PC. |
 
 ---
