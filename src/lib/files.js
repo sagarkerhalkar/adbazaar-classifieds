@@ -90,7 +90,7 @@ const safeName = (n) => (typeof n === 'string' && /^[a-z0-9]+-[a-f0-9]{24}\.(jpg
 
 function removeFile(area, name) {
   if (!safeName(name)) return;
-  fs.rm(path.join(DIRS[area], name), { force: true }, () => {});
+  try { fs.rmSync(path.join(DIRS[area], name), { force: true }); } catch { /* ignore */ }
 }
 
 module.exports = { ROOT, DIRS, sendFile, staticDir, saveUpload, saveDataUrl, safeName, removeFile, UploadError };

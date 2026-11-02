@@ -45,16 +45,28 @@ Expired ads are removed from the listing. Scores are recalculated every 5 minute
 
 ## Run locally
 
+**Windows (easiest):** open the `windows` folder and double-click, in order:
+1. `1-setup.bat`: checks Node.js, creates your `.env` settings file and opens it in Notepad.
+2. `2-start.bat`: starts the app in a window (close the window to stop it).
+3. Optional: `autostart-ON.bat` starts AdBazaar hidden in the background every time you log in to Windows. `autostart-OFF.bat` turns that off.
+
+Other helpers: `3-start-in-background.bat`, `stop.bat`, `open-site.bat`. Logs go to `storage\server.log`.
+
+**Any OS (terminal):**
 ```bash
 git clone https://github.com/sagarkerhalkar/adbazaar-classifieds.git
 cd adbazaar-classifieds
-cp .env.example .env          # set ADMIN_EMAIL / ADMIN_PASSWORD, UPI_ID
-npm start                     # → http://localhost:3000
-npm run seed:demo             # optional: demo seller + sample ads
+cp .env.example .env          # set ADMIN_EMAIL / ADMIN_PASSWORD / PORT
+npm start                     # → http://localhost:4780
+npm run seed:test             # test clients, ads & payments (password Test@1234)
+npm run seed:remove           # remove only the test data
 npm test                      # unit tests
 ```
-- Admin login: `http://localhost:3000/admin/login`. Use the email and password from `.env`. If `ADMIN_PASSWORD` is not set, a random one is printed in the console on first start.
-- Camera and video calls work on `localhost` and on **HTTPS** sites. Browsers block the camera on plain HTTP.
+**Auto-start on Linux/Mac:** `npm i -g pm2 && pm2 start ecosystem.config.js && pm2 save && pm2 startup`. Then run the command that `pm2 startup` prints.
+
+- **Ports:** set `PORT` in `.env` (default 4780). If that port is busy, the app stops with a clear message so you can pick another one. Without a `PORT` setting, it tries 3000, 3001 and so on. It never starts twice.
+- **Admin login:** `http://localhost:4780/admin/login`, using the email and password from `.env`.
+- Camera and video calls work on `localhost` and on **HTTPS** sites. To test on your own domain from this computer, use a Cloudflare Tunnel. See the setup guide.
 
 ## Deploy (VPS, e.g. Ubuntu)
 

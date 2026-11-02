@@ -50,13 +50,66 @@ app.use((req) => {
   }
 });
 
-app.get('/healthz', (req, res) => res.json({ ok: true }));
+app.get('/healthz', (req, res) => res.json({ ok: true, app: 'adbazaar' }));
 require('./src/routes/public').register(app);
 require('./src/routes/client').register(app);
 require('./src/routes/admin').register(app);
 
 startScheduler(Number(process.env.SCHEDULER_MINUTES || 5) * 60_000);
 
-const PORT = Number(process.env.PORT || 3000);
+// ---- Start listening ----
+// If PORT is set in .env we use exactly that port (needed for tunnels / reverse proxies)
+// and stop with a clear message if it's busy. Without PORT we try 3000, 3001, … automatically.
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => console.log(`AdBazaar running on http://localhost:${PORT}`));
+const fixedPort = Boolean(process.env.PORT);
+
+// storage/server.pid and storage/server-url.txt let the helper scripts (stop, open-site) find the running app.
+const RUN_DIR = path.join(__dirname, 'storage');
+const PID_FILE = path.join(RUN_DIR, 'server.pid');
+const URL_FILE = path.join(RUN_DIR, 'server-url.txt');
+fs.mkdirSync(RUN_DIR, { recursive: true });
+
+function cleanup() {
+  try { if (fs.readFileSync(PID_FILE, 'utf8').trim() === String(process.pid)) { fs.rmSync(PID_FILE, { force: true }); fs.rmSync(URL_FILE, { force: true }); } } catch { /* ignore */ }
+}
+process.on('exit', cleanup);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) process.on(sig, () => process.exit(0));
+
+function start(port, triesLeft) {
+  const server = app.listen(port, HOST, () => {
+    const url = `http://localhost:${port}`;
+    fs.writeFileSync(PID_FILE, String(process.pid));
+    fs.writeFileSync(URL_FILE, url);
+    console.log(`[${new Date().toLocaleString('en-IN')}] AdBazaar running on ${url}`);
+    console.log(`Admin panel:      ${url}/admin/login`);
+  });
+  server.on('error', (err) => {
+    if (err.code !== 'EADDRINUSE') throw err;
+    if (!fixedPort && triesLeft > 0) {
+      console.warn(`Port ${port} is busy, trying ${port + 1}…`);
+      start(port + 1, triesLeft - 1);
+    } else {
+      console.error(`\nPort ${port} is already used by another program.`);
+      console.error(`Choose another free port in your .env file, e.g.  PORT=${port + 11}`);
+      console.error('Check which ports are busy:  Windows: netstat -ano | findstr LISTENING   Linux/Mac: ss -ltn  (or lsof -i -P | grep LISTEN)\n');
+      process.exit(1);
+    }
+  });
+}
+// Don't start a second copy if AdBazaar is already running (e.g. auto-start + double-click).
+(async () => {
+  try {
+    const prev = fs.readFileSync(URL_FILE, 'utf8').trim();
+    const r = await fetch(`${prev}/healthz`, { signal: AbortSignal.timeout(1500) });
+    if ((await r.json()).app === 'adbazaar') {
+      console.log(`AdBazaar is already running at ${prev} — not starting a second copy.`);
+      console.log('To restart it: stop it first (windows\\stop.bat, or "pm2 restart adbazaar").');
+      process.exitCode = 0;
+      return;
+    }
+  } catch {
+    // Not running — remove leftovers from a crash so helper scripts don't report a stale address.
+    fs.rmSync(PID_FILE, { force: true }); fs.rmSync(URL_FILE, { force: true });
+  }
+  start(Number(process.env.PORT || 3000), 20);
+})();

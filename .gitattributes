@@ -1,0 +1,3 @@
+*.bat -text
+*.vbs -text
+*.sh text eol=lf

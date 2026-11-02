@@ -84,7 +84,8 @@ function clientsView(req, rows, filter) {
 
 function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
   const settings = req.settings;
-  const base = process.env.BASE_URL || `http://${req.headers.host}`;
+  const proto = (process.env.TRUST_PROXY === '1' && String(req.headers['x-forwarded-proto'] || '').split(',')[0]) || 'http';
+  const base = (process.env.BASE_URL || `${proto}://${req.headers.host}`).replace(/\/+$/, '');
   const callLink = `${base}/kyc/call/${c.status_token}`;
   const statusLink = `${base}/kyc/status/${c.status_token}`;
   const waMsg = encodeURIComponent(`Hello ${c.name}, this is ${settings.site_name}. Please join your verification video call here: ${callLink}`);
