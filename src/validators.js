@@ -28,7 +28,7 @@ function normalizePhone(s) {
 const str = (v, max = 500) => String(v ?? '').trim().slice(0, max);
 
 function validatePassword(pw) {
-  if (String(pw || '').length < 8) return 'Password must be at least 8 characters.';
+  if (String(pw || '').length < 6) return 'Password must be at least 6 characters.';
   return null;
 }
 

@@ -9,8 +9,8 @@ const { db } = require('../src/db');
 const { hashPassword } = require('../src/lib/security');
 
 const [email, password, name = 'Admin'] = process.argv.slice(2);
-if (!email || !password || password.length < 10) {
-  console.error('Usage: node scripts/create-admin.js <email> <password (10+ chars)> [name]');
+if (!email || !password || password.length < 6) {
+  console.error('Usage: node scripts/create-admin.js <email> <password (6+ chars)> [name]');
   process.exit(1);
 }
 const existing = db.prepare('SELECT id FROM admins WHERE email = ?').get(email.toLowerCase());

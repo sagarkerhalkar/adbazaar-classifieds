@@ -204,7 +204,7 @@ function newClientView(req, v = {}, error) {
         </div>
       </fieldset>
       <fieldset><legend>Login</legend>
-        ${field('Password', html`<input name="password" type="text" minlength="8" autocomplete="off" placeholder="Leave empty to auto-generate">`)}
+        ${field('Password', html`<input name="password" type="text" minlength="6" autocomplete="off" placeholder="Leave empty to auto-generate">`)}
         <label class="check"><input type="checkbox" name="approve_now" value="1" checked> I have verified this client — approve now so they can log in and post ads</label>
       </fieldset>
       <button class="btn btn-accent btn-lg">Create client</button>
@@ -335,14 +335,14 @@ function settingsView(req, { s, plans, cats, admins }) {
       <form method="post" action="/admin/admins" class="form">
         ${csrf(req)}
         <div class="row2">${field('Name', html`<input name="name" required maxlength="60">`)}${field('Email', html`<input name="email" type="email" required>`)}</div>
-        ${field('Password', html`<input name="password" type="password" minlength="10" required autocomplete="new-password">`, 'At least 10 characters')}
+        ${field('Password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`, 'At least 6 characters')}
         <button class="btn btn-sm">Add admin</button>
       </form>
       <h2>Change my password</h2>
       <form method="post" action="/admin/password" class="form">
         ${csrf(req)}
         ${field('Current password', html`<input name="current" type="password" required autocomplete="current-password">`)}
-        ${field('New password', html`<input name="password" type="password" minlength="10" required autocomplete="new-password">`)}
+        ${field('New password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`)}
         <button class="btn btn-sm">Update password</button>
       </form>
     </section>
@@ -428,7 +428,7 @@ function register(app) {
     if (!V.isValidPAN(v.pan_number)) return fail('PAN is not valid.');
     if (!req.files.aadhaar_file?.[0] || !req.files.pan_file?.[0]) return fail('Upload Aadhaar and PAN documents.');
     const password = b.password ? String(b.password) : randomToken(9);
-    if (password.length < 8) return fail('Password must be at least 8 characters.');
+    if (password.length < 6) return fail('Password must be at least 6 characters.');
 
     const saved = [];
     try {
@@ -717,7 +717,7 @@ function register(app) {
   });
   app.post('/admin/admins', requireAdmin, (req, res) => {
     const email = V.str(req.body.email, 120).toLowerCase(); const name = V.str(req.body.name, 60);
-    if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 10) { req.flash('error', 'Enter name, valid email and a password of 10+ characters.'); res.redirect('/admin/settings'); return; }
+    if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6) { req.flash('error', 'Enter name, valid email and a password of 6+ characters.'); res.redirect('/admin/settings'); return; }
     if (db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) { req.flash('error', 'Admin already exists.'); res.redirect('/admin/settings'); return; }
     db.prepare('INSERT INTO admins (name, email, password_hash, created_at) VALUES (?,?,?,?)').run(name, email, hashPassword(req.body.password), Date.now());
     req.flash('success', 'Admin added.');
@@ -726,7 +726,7 @@ function register(app) {
   app.post('/admin/password', requireAdmin, (req, res) => {
     const a = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.admin.id);
     if (!verifyPassword(req.body.current, a.password_hash)) { req.flash('error', 'Current password is incorrect.'); res.redirect('/admin/settings'); return; }
-    if (String(req.body.password || '').length < 10) { req.flash('error', 'New password must be 10+ characters.'); res.redirect('/admin/settings'); return; }
+    if (String(req.body.password || '').length < 6) { req.flash('error', 'New password must be 6+ characters.'); res.redirect('/admin/settings'); return; }
     db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(req.body.password), a.id);
     req.flash('success', 'Password updated.');
     res.redirect('/admin/settings');

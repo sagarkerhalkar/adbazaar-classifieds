@@ -155,11 +155,11 @@ if ($firstInstall) {
   do { $email = Read-Host 'Admin email' } while ($email -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$')
   do {
     $pw = ''
-    $sec = Read-Host 'Admin password (min 10 characters, you will not see it while typing)' -AsSecureString
+    $sec = Read-Host 'Admin password (min 6 characters, you will not see it while typing)' -AsSecureString
     $pw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
-    if ($pw.Length -lt 10) { Say 'Too short - use at least 10 characters.' Yellow }
+    if ($pw.Length -lt 6) { Say 'Too short - use at least 6 characters.' Yellow }
     elseif ($pw.Contains('"') -and $pw.Contains("'")) { Say 'Please do not use both kinds of quote marks.' Yellow; $pw = '' }
-  } while ($pw.Length -lt 10)
+  } while ($pw.Length -lt 6)
   $upi = Read-Host 'Your UPI ID for payments, e.g. name@okhdfcbank (press Enter to skip, add later in Admin > Settings)'
   $lines = SetEnvLine $lines 'ADMIN_EMAIL' $email
   # Quote the password so characters like # or spaces are kept exactly.

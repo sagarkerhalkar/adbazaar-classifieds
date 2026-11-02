@@ -50,8 +50,8 @@ function registerView(req, v = {}, error) {
           ${field('Email *', html`<input name="email" type="email" required maxlength="120" value="${v.email}">`)}
         </div>
         <div class="row2">
-          ${field('Password *', html`<input name="password" type="password" required minlength="8" autocomplete="new-password">`, 'At least 8 characters')}
-          ${field('Confirm password *', html`<input name="password2" type="password" required minlength="8" autocomplete="new-password">`)}
+          ${field('Password *', html`<input name="password" type="password" required minlength="6" autocomplete="new-password">`, 'At least 6 characters')}
+          ${field('Confirm password *', html`<input name="password2" type="password" required minlength="6" autocomplete="new-password">`)}
         </div>
       </fieldset>
 
@@ -622,8 +622,8 @@ function register(app) {
           ${csrf(req)}
           ${field('Current password', html`<input type="password" name="current" required autocomplete="current-password">`)}
           <div class="row2">
-            ${field('New password', html`<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
-            ${field('Confirm new password', html`<input type="password" name="password2" required minlength="8" autocomplete="new-password">`)}
+            ${field('New password', html`<input type="password" name="password" required minlength="6" autocomplete="new-password">`)}
+            ${field('Confirm new password', html`<input type="password" name="password2" required minlength="6" autocomplete="new-password">`)}
           </div>
           <button class="btn">Update password</button>
         </form>
