@@ -69,6 +69,16 @@
     });
   });
 
+  // Email setup: show the help text for the chosen provider
+  $$('[data-mail-form]').forEach((form) => {
+    const sel = form.querySelector('[data-mail-provider]');
+    const show = () => {
+      $$('[data-for]', form).forEach((el) => { el.hidden = el.dataset.for !== sel.value; });
+      const d = form.querySelector('details'); if (d && sel.value === 'other') d.open = true;
+    };
+    sel.addEventListener('change', show); show();
+  });
+
   // Uppercase helper for PAN
   $$('input.upper').forEach((i) => i.addEventListener('input', () => { i.value = i.value.toUpperCase(); }));
 })();

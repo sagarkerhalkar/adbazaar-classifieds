@@ -340,16 +340,24 @@ function categoriesView(req, mains, counts) {
 
 function messagingSetupCard(req, s) {
   const prov = smsProvider();
+  const host = s.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com';
+  const mailProv = s.mail_provider || (/brevo|sendinblue/.test(host) ? 'brevo' : host === 'smtp.gmail.com' ? 'gmail' : 'other');
   return html`
   <section class="card setup-card" id="email-setup">
     <h2>📧 Email & 📱 SMS setup ${emailConfigured() ? html`<span class="pill pill-ok">Email ready</span>` : html`<span class="pill pill-warn">Email not set up</span>`} ${smsConfigured() ? html`<span class="pill pill-ok">SMS ready</span>` : html`<span class="pill pill-muted">SMS off</span>`}</h2>
     <div class="cols2">
-      <form method="post" action="/admin/messaging/email" class="form">
+      <form method="post" action="/admin/messaging/email" class="form" data-mail-form>
         ${csrf(req)}
-        <p class="small muted"><strong>Free with Gmail:</strong> 1) turn on 2-Step Verification in your Google account, 2) open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>, create one named "AdBazaar", 3) paste the 16 letters here. Works immediately — no restart.</p>
-        ${field('Gmail address (sender)', html`<input type="email" name="smtp_user" value="${s.smtp_user || process.env.SMTP_USER || ''}" placeholder="yourname@gmail.com" required>`)}
-        ${field('Gmail App Password (16 letters)', html`<input type="password" name="smtp_pass" autocomplete="new-password" placeholder="${(s.smtp_pass || process.env.SMTP_PASS) ? '•••••••••••••••• saved — type to replace' : 'abcd efgh ijkl mnop'}">`, 'Not your normal Gmail password. Spaces are fine.')}
-        <details><summary class="small">Other email provider (not Gmail)</summary>
+        ${field('Email service', html`<select name="provider" data-mail-provider>
+          <option value="gmail" ${mailProv === 'gmail' ? 'selected' : ''}>Gmail — needs a Google App Password</option>
+          <option value="brevo" ${mailProv === 'brevo' ? 'selected' : ''}>Brevo — free 300 emails/day, no Google settings</option>
+          <option value="other" ${mailProv === 'other' ? 'selected' : ''}>Other SMTP server</option></select>`)}
+        <p class="small muted" data-for="gmail"><strong>Gmail:</strong> 1) turn on 2-Step Verification (with your phone) in your Google account, 2) open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>, create one named "AdBazaar", 3) paste the 16 letters below. If Google says the setting is not available, use <strong>Brevo</strong> instead.</p>
+        <p class="small muted" data-for="brevo"><strong>Brevo (free):</strong> 1) sign up at <a href="https://www.brevo.com" target="_blank" rel="noopener">brevo.com</a>, 2) <em>Senders, domains &amp; IPs → Senders</em>: add your Gmail and click the link Brevo emails you, 3) <em>SMTP &amp; API → SMTP</em>: click <em>Generate a new SMTP key</em>, 4) copy the <em>Login</em> and the key below.</p>
+        ${field('Login / username', html`<input name="smtp_user" value="${s.smtp_user || process.env.SMTP_USER || ''}" placeholder="Gmail: yourname@gmail.com · Brevo: the Login shown on its SMTP page" required autocomplete="off">`)}
+        ${field('Password', html`<input type="password" name="smtp_pass" autocomplete="new-password" placeholder="${(s.smtp_pass || process.env.SMTP_PASS) ? '•••••••••••••••• saved — type to replace' : 'Gmail: 16-letter App Password · Brevo: SMTP key'}">`, 'Never your normal Gmail password. Spaces are fine.')}
+        ${field('Send emails as (your email address)', html`<input type="email" name="mail_from" value="${s.mail_from || ''}" placeholder="yourname@gmail.com">`, 'Gmail: leave empty. Brevo: the Gmail address you verified in Brevo.')}
+        <details ${mailProv === 'other' ? 'open' : ''}><summary class="small">Server & port (filled in automatically for Gmail and Brevo)</summary>
           <div class="row2">
             ${field('SMTP server', html`<input name="smtp_host" value="${s.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com'}">`)}
             ${field('Port', html`<input name="smtp_port" type="number" value="${s.smtp_port || process.env.SMTP_PORT || '465'}">`, '465 (SSL) or 587')}
@@ -953,14 +961,25 @@ function register(app) {
     res.redirect('/admin/settings');
   });
   app.post('/admin/messaging/email', requireAdmin, (req, res) => {
-    const user = V.str(req.body.smtp_user, 120).toLowerCase();
-    if (!V.isValidEmail(user)) { req.flash('error', 'Enter the Gmail address that will send the emails.'); res.redirect('/admin/settings#email-setup'); return; }
-    setSetting('smtp_user', user);
+    const provider = ['gmail', 'brevo', 'other'].includes(req.body.provider) ? req.body.provider : 'gmail';
+    const user = V.str(req.body.smtp_user, 120);
+    const mailFrom = V.str(req.body.mail_from, 120).toLowerCase();
+    const back = '/admin/settings#email-setup';
+    if (!user) { req.flash('error', 'Enter the login / username.'); res.redirect(back); return; }
+    if (provider === 'gmail' && !V.isValidEmail(user)) { req.flash('error', 'Enter your full Gmail address as the login.'); res.redirect(back); return; }
+    if (mailFrom && !V.isValidEmail(mailFrom)) { req.flash('error', '"Send emails as" must be an email address.'); res.redirect(back); return; }
+    if (provider === 'brevo' && !mailFrom) { req.flash('error', 'For Brevo, fill in "Send emails as" with the email address you verified in Brevo.'); res.redirect(back); return; }
+    setSetting('mail_provider', provider);
+    setSetting('smtp_user', provider === 'gmail' ? user.toLowerCase() : user);
     const pass = String(req.body.smtp_pass || '').trim();
     if (pass) setSetting('smtp_pass', pass);
-    setSetting('smtp_host', V.str(req.body.smtp_host, 120) || 'smtp.gmail.com');
-    setSetting('smtp_port', String(parseInt(req.body.smtp_port, 10) || 465));
-    if (!getSettings().notify_email) setSetting('notify_email', user);
+    const presets = { gmail: ['smtp.gmail.com', 465], brevo: ['smtp-relay.brevo.com', 587] };
+    const [host, port] = provider === 'other' ? [V.str(req.body.smtp_host, 120), parseInt(req.body.smtp_port, 10) || 587] : presets[provider];
+    if (!host) { req.flash('error', 'Enter the SMTP server.'); res.redirect(back); return; }
+    setSetting('smtp_host', host);
+    setSetting('smtp_port', String(port));
+    setSetting('mail_from', provider === 'gmail' ? '' : mailFrom);
+    if (!getSettings().notify_email) setSetting('notify_email', mailFrom || (V.isValidEmail(user) ? user.toLowerCase() : ''));
     req.flash('success', 'Email settings saved. Now click "Send test email to me" to check them.');
     res.redirect('/admin/settings#email-setup');
   });
@@ -980,7 +999,13 @@ function register(app) {
     const r = await sendEmail(to, `Test email from ${getSettings().site_name}`, ['It works! Your email settings are correct.']);
     let msg = `Test email sent to ${to}. Check the inbox (and Spam folder).`;
     if (!r.ok && r.status === 'not_configured') msg = 'Email is not set up yet — fill in your Gmail and App Password above.';
-    else if (!r.ok && /535|534|Username and Password|BadCredentials|auth/i.test(r.error || '')) msg = 'Gmail refused the login. Use an App Password (16 letters from myaccount.google.com/apppasswords), not your normal Gmail password, and make sure 2-Step Verification is ON.';
+    else if (!r.ok && /535|534|Username and Password|BadCredentials|auth/i.test(r.error || '')) {
+      const mp = getSettings().mail_provider;
+      msg = mp === 'brevo'
+        ? 'Brevo refused the login. Copy the "Login" and a new SMTP key from Brevo → SMTP & API → SMTP (not your Brevo password).'
+        : mp === 'other' ? 'The email server refused the login. Check the username and password.'
+        : 'Gmail refused the login. Use an App Password (16 letters from myaccount.google.com/apppasswords), not your normal Gmail password, and make sure 2-Step Verification is ON. If App Passwords are not available for your account, choose Brevo instead.';
+    } else if (!r.ok && /sender|not.*(valid|verified)|550|553/i.test(r.error || '')) msg = `The email service refused the sender address. In Brevo, verify the "Send emails as" address first. (${r.error})`;
     else if (!r.ok) msg = `Email failed: ${r.error}. Check the internet connection and the SMTP server/port.`;
     req.flash(r.ok ? 'success' : 'error', msg);
     res.redirect('/admin/settings#email-setup');

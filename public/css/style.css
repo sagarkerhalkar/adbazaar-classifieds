@@ -371,3 +371,7 @@ input.xs { width: 64px; }
 .msg-body { white-space: pre-wrap; font-size: .82rem; background: var(--bg); padding: 10px; border-radius: 8px; max-width: 560px; overflow-x: auto; }
 .danger-zone h2 { color: var(--bad); font-size: 1.05rem; }
 .danger-zone .btn + .small { margin-left: 8px; }
+
+/* Email & SMS setup box: keep both columns compact */
+.setup-card .cols2 { align-items: start; }
+.setup-card .cols2 > form { align-content: start; }

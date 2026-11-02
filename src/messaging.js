@@ -171,7 +171,9 @@ ${button ? `<p style="text-align:center;margin:22px 0"><a href="${esc(button.url
     record('email', to, subject, text, 'not_configured');
     return { ok: false, status: 'not_configured' };
   }
-  const from = cfg('MAIL_FROM') || `${site} <${cfg('SMTP_USER')}>`;
+  // "Send emails as" address (needed for Brevo etc., where the login is not an email you own).
+  const fromAddr = cfg('MAIL_FROM') || cfg('SMTP_USER');
+  const from = fromAddr.includes('<') ? fromAddr : `${site} <${fromAddr}>`;
   try {
     await smtpSend({
       host: cfg('SMTP_HOST'), port: Number(cfg('SMTP_PORT', '465')), user: cfg('SMTP_USER'), pass: cfg('SMTP_PASS').replace(/\s+/g, ''),

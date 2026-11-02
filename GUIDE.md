@@ -362,7 +362,7 @@ Each new seller confirms their **email** (and their **mobile**, if SMS is turned
 
 > Until you set this up, nothing is lost: every code and email is shown in **Admin → Messages**, so you can test everything right away.
 
-### 15.1 Email — free with Gmail (10 minutes, do this first)
+### 15.1 Email — free with Gmail (10 minutes)
 1. Use (or create) a Gmail account for the site, for example `adbazaar.help@gmail.com`.
 2. Turn on **2-Step Verification**: open https://myaccount.google.com/security → *2-Step Verification* → turn it on.
 3. Open **https://myaccount.google.com/apppasswords**, type `AdBazaar`, and click **Create**. Google shows a 16-letter password, like `abcd efgh ijkl mnop`. Copy it.
@@ -373,6 +373,24 @@ Each new seller confirms their **email** (and their **mobile**, if SMS is turned
 That's it, and no restart is needed. From now on every new seller gets the 6-digit code by email straight away. Gmail allows about 500 emails a day for free.
 
 > If the test says *"Gmail refused the login"*: you pasted your normal Gmail password, or 2-Step Verification is off. Use the 16-letter App Password.
+
+**Google says "The setting you are looking for is not available for your account"?** That happens when:
+- **2-Step Verification is not ON yet.** Turn it on with your **phone** (SMS code or Google prompt) at https://myaccount.google.com/signinoptions/twosv, wait a minute, then open the App passwords page again.
+- 2-Step Verification uses **only a security key or passkey**. Add your phone number as a second step too.
+- The account has **Advanced Protection**, or it is a **work/school (Google Workspace)** account. Google never gives App Passwords there. Use a normal personal @gmail.com account, or use Brevo below.
+- You are signed in with **another account**. Check the round picture at the top right.
+
+### 15.1b Email with Brevo — free, no Google settings needed
+Use this if App Passwords don't work for you. It's free for **300 emails a day**, and emails still come **from your Gmail address**.
+1. Sign up at **https://www.brevo.com** (free plan, no card needed).
+2. Go to **Senders, domains & IPs → Senders → Add a sender**, type your Gmail address, and click the confirmation link that Brevo emails to you.
+3. Go to **SMTP & API → SMTP** and click **Generate a new SMTP key**. Copy the key, and the **Login** shown on that page (it looks like `xxxxxx@smtp-brevo.com`).
+4. In AdBazaar **Admin → Settings → 📧 Email & 📱 SMS setup**:
+   - **Email service:** *Brevo*
+   - **Login / username:** the Brevo **Login** from step 3
+   - **Password:** the **SMTP key** from step 3
+   - **Send emails as:** your Gmail address (the one you confirmed in step 2)
+5. Click **Save email settings**, then **📧 Send test email to me**. ✅
 
 ### 15.2 SMS OTP — the free way (Android phone)
 No company gives free SMS forever. The free way is to let **your own Android phone** send the SMS, using your SIM plan's free SMS.
