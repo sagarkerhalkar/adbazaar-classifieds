@@ -174,6 +174,7 @@ addColumn('clients', 'deleted_at', 'INTEGER');
 addColumn('ads', 'paused_by', 'TEXT');                   // account | admin
 addColumn('ads', 'paused_remaining_ms', 'INTEGER');
 addColumn('ads', 'deleted_at', 'INTEGER');
+addColumn('clients', 'dob', 'TEXT');                     // date of birth YYYY-MM-DD (only 18+ can post ads)
 
 // ---- Seed defaults ----
 const now = Date.now();
@@ -238,11 +239,13 @@ const DEFAULT_SETTINGS = {
   support_phone: '', support_email: '',
   upi_qr_file: '',
   auto_approve_minutes: '5',          // approve verified clients automatically if admin doesn't act (0 = off)
-  auto_confirm_payment_minutes: '0',  // confirm UPI payments automatically (0 = off — risky: UTR is not checked)
+  require_mobile_otp: '1',            // mobile must be verified by SMS code when SMS is set up
   notify_email: process.env.ADMIN_EMAIL || '',
 };
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, v);
+// Payments are confirmed only by an admin (an older version had an auto-confirm option).
+db.prepare("DELETE FROM settings WHERE key = 'auto_confirm_payment_minutes'").run();
 
 function getSettings() {
   return Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map((r) => [r.key, r.value]));

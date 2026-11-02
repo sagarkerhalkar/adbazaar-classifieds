@@ -27,9 +27,41 @@ function normalizePhone(s) {
 
 const str = (v, max = 500) => String(v ?? '').trim().slice(0, max);
 
+// ---- Age (India time) ----
+const MIN_AGE = 18;
+const todayIST = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+
+/** Whole years between a YYYY-MM-DD birth date and today (India time). null if the date is invalid. */
+function ageFromDob(dob, today = todayIST()) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dob || '').trim());
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null; // e.g. 31 Feb
+  const [ty, tm, td] = today.split('-').map(Number);
+  let age = ty - y;
+  if (tm < mo || (tm === mo && td < d)) age -= 1;
+  return age;
+}
+
+/** Error message for a date of birth, or null if the person is 18–100. */
+function checkDob(dob) {
+  const age = ageFromDob(dob);
+  if (age == null) return 'Enter your date of birth.';
+  if (age < 0 || age > 100) return 'Enter a correct date of birth.';
+  if (age < MIN_AGE) return `Sorry — you must be ${MIN_AGE} years or older to post ads.`;
+  return null;
+}
+
+/** Latest allowed birth date for the date picker (exactly 18 years ago). */
+function maxDob() {
+  const [y, m, d] = todayIST().split('-');
+  return `${Number(y) - MIN_AGE}-${m}-${d}`;
+}
+
 function validatePassword(pw) {
   if (String(pw || '').length < 6) return 'Password must be at least 6 characters.';
   return null;
 }
 
-module.exports = { isValidAadhaar, isValidPAN, isValidPhone, isValidPincode, isValidEmail, normalizePhone, str, validatePassword };
+module.exports = { isValidAadhaar, isValidPAN, isValidPhone, isValidPincode, isValidEmail, normalizePhone, str, validatePassword, ageFromDob, checkDob, maxDob, MIN_AGE };

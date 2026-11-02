@@ -17,7 +17,8 @@ function baseUrl() {
   return (process.env.BASE_URL || lastOrigin || getSettings().last_origin || `http://localhost:${process.env.PORT || 4780}`).replace(/\/+$/, '');
 }
 const adminEmail = () => getSettings().notify_email || process.env.ADMIN_EMAIL || '';
-const phoneOtpRequired = () => smsConfigured();
+// Mobile OTP is compulsory whenever SMS sending is set up (Admin → Settings can switch it off).
+const phoneOtpRequired = () => smsConfigured() && getSettings().require_mobile_otp !== '0';
 
 // ---------------- OTP ----------------
 const OTP_TTL_MS = 10 * 60_000;

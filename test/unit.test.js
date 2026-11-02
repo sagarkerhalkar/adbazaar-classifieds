@@ -132,3 +132,13 @@ test('Razorpay checkout signature verification', () => {
   assert.ok(P.verifyCheckoutSignature('order_1', 'pay_1', sig));
   assert.ok(!P.verifyCheckoutSignature('order_1', 'pay_2', sig));
 });
+
+test('age check: only 18+ (birthday counted in India time)', () => {
+  assert.equal(V.ageFromDob('2008-11-02', '2026-11-02'), 18, '18 on the birthday');
+  assert.equal(V.ageFromDob('2008-11-03', '2026-11-02'), 17, 'one day short');
+  assert.equal(V.ageFromDob('2007-02-29', '2026-01-01'), null, 'invalid date');
+  assert.equal(V.ageFromDob('1990-05-15', '2026-11-02'), 36);
+  assert.equal(V.checkDob(''), 'Enter your date of birth.');
+  assert.match(V.checkDob('2015-01-01'), /18 years or older/);
+  assert.equal(V.checkDob('1990-05-15'), null);
+});

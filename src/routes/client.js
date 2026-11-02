@@ -28,6 +28,17 @@ function requireClient(req, res) {
   }
 }
 
+// Only people aged 18+ may post or pay for ads. Accounts made before the age check are asked once.
+function requireAdult(req, res) {
+  if (!req.seller) return;
+  const err = V.checkDob(req.seller.dob);
+  if (!err) return;
+  if (req.method === 'GET') { req.session.returnTo = req.url; res.redirect('/client/age'); return; }
+  if (String(req.headers['content-type'] || '').startsWith('application/json')) { res.status(403).json({ error: 'Please confirm your date of birth first (18+ only).' }); return; }
+  req.flash('error', 'Please confirm your date of birth first — only people aged 18 or older can post ads.');
+  res.redirect('/client/age');
+}
+
 function ownAd(req, res) {
   const ad = db.prepare("SELECT * FROM ads WHERE id = ? AND client_id = ? AND status != 'deleted'").get(parseInt(req.params.id, 10) || 0, req.seller.id);
   if (!ad) { req.flash('error', 'Ad not found.'); res.redirect('/client'); return null; }
@@ -49,6 +60,10 @@ function registerView(req, v = {}, error) {
         <div class="row2">
           ${field('Full name (as on Aadhaar) *', html`<input name="name" required maxlength="80" value="${v.name}">`)}
           ${field('Business / shop name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Optional — shown on your ads')}
+        </div>
+        <div class="row2">
+          ${field('Date of birth *', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'As on your Aadhaar. You must be 18 or older.')}
+          <div></div>
         </div>
         <div class="row2">
           ${field('Mobile number *', html`<input name="phone" required inputmode="numeric" maxlength="13" pattern="[0-9+ ]{10,13}" value="${v.phone}" placeholder="98XXXXXXXX">`)}
@@ -103,6 +118,7 @@ function registerView(req, v = {}, error) {
         </div>
       </fieldset>
 
+      <label class="check"><input type="checkbox" name="adult" value="1" required> I confirm that I am <strong>18 years or older</strong>.</label>
       <label class="check"><input type="checkbox" name="consent" value="1" required> I confirm these details are true and I consent to ${req.settings.site_name} using my documents only for identity verification. I agree to the <a href="/terms" target="_blank">terms</a>.</label>
       <button class="btn btn-accent btn-lg">Submit for verification</button>
       <p class="muted small">Already registered? <a href="/client/login">Log in</a></p>
@@ -438,11 +454,14 @@ function register(app) {
       name: V.str(b.name, 80), business_name: V.str(b.business_name, 80), email: V.str(b.email, 120).toLowerCase(),
       phone: V.normalizePhone(b.phone), address: V.str(b.address, 300), city: V.str(b.city, 60), state: V.str(b.state, 60),
       pincode: V.str(b.pincode, 6), aadhaar_number: String(b.aadhaar_number || '').replace(/\s+/g, ''), pan_number: V.str(b.pan_number, 10).toUpperCase(),
+      dob: V.str(b.dob, 10),
     };
     const fail = (msg) => res.status(400).html(renderPage(req, { title: 'Register as seller', body: registerView(req, v, msg), scripts: ['/public/js/camera.js'] }));
 
     if (!rateLimit(`register:${req.ip}`, 10, 3600_000)) return fail('Too many attempts. Please try again later.');
     if (v.name.length < 3) return fail('Please enter your full name.');
+    const dobErr = V.checkDob(v.dob); if (dobErr) return fail(dobErr);
+    if (!b.adult) return fail('Please confirm that you are 18 years or older.');
     if (!V.isValidPhone(v.phone)) return fail('Enter a valid 10-digit Indian mobile number.');
     if (!V.isValidEmail(v.email)) return fail('Enter a valid email address.');
     const pwErr = V.validatePassword(b.password); if (pwErr) return fail(pwErr);
@@ -469,9 +488,9 @@ function register(app) {
       const newId = tx(() => {
         const r = db.prepare(`INSERT INTO clients (name, business_name, email, phone, password_hash, address, city, state, pincode,
           aadhaar_last4, pan_number, aadhaar_file, aadhaar_back_file, pan_file, address_proof_file, photo_file, live_photo_file,
-          status, status_token, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'unverified', ?, ?)`)
+          status, status_token, created_at, dob) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'unverified', ?, ?, ?)`)
           .run(v.name, v.business_name, v.email, v.phone, hashPassword(b.password), v.address, v.city, v.state, v.pincode,
-            v.aadhaar_number.slice(-4), v.pan_number, files.aadhaar, files.aadhaar_back, files.pan, files.address, files.photo, live, token, now);
+            v.aadhaar_number.slice(-4), v.pan_number, files.aadhaar, files.aadhaar_back, files.pan, files.address, files.photo, live, token, now, v.dob);
         db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'selfie', ?)").run(r.lastInsertRowid, live, now);
         return Number(r.lastInsertRowid);
       });
@@ -619,6 +638,31 @@ function register(app) {
     res.redirect('/client');
   });
 
+  // ---- Age confirmation (18+) for accounts that don't have a date of birth yet ----
+  app.get('/client/age', requireClient, (req, res) => {
+    if (!V.checkDob(req.seller.dob)) { res.redirect('/client'); return; }
+    res.html(renderPage(req, { title: 'Confirm your age', portal: 'client', body: html`
+      <section class="card narrow">
+        <h1>Confirm your age</h1>
+        <p class="muted">Only people aged <strong>18 or older</strong> can post ads. Please enter your date of birth as on your Aadhaar — we ask this only once.</p>
+        <form method="post" action="/client/age" class="form">
+          ${csrf(req)}
+          ${field('Date of birth', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01">`)}
+          <label class="check"><input type="checkbox" name="adult" value="1" required> I confirm that I am 18 years or older.</label>
+          <button class="btn btn-accent">Continue</button>
+        </form>
+      </section>` }));
+  });
+  app.post('/client/age', requireClient, (req, res) => {
+    const dob = V.str(req.body.dob, 10);
+    const err = V.checkDob(dob) || (req.body.adult ? null : 'Please tick the box to confirm you are 18 or older.');
+    if (err) { req.flash('error', err); res.redirect('/client/age'); return; }
+    db.prepare('UPDATE clients SET dob = ? WHERE id = ?').run(dob, req.seller.id);
+    const to = req.session.returnTo; delete req.session.returnTo;
+    req.flash('success', 'Thank you — age confirmed.');
+    res.redirect(to && to.startsWith('/client/') ? to : '/client/ads/new');
+  });
+
   // ---- Client deactivates their own account ----
   app.post('/client/account/deactivate', requireClient, (req, res) => {
     const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.seller.id);
@@ -647,10 +691,10 @@ function register(app) {
   // Create / edit ads (no admin approval needed — only payment)
   const cats = () => Cat.tree();
 
-  app.get('/client/ads/new', requireClient, (req, res) => {
+  app.get('/client/ads/new', requireClient, requireAdult, (req, res) => {
     res.html(renderPage(req, { title: 'Post ad', portal: 'client', body: adFormView(req, { cats: cats() }) }));
   });
-  app.post('/client/ads/new', requireClient, (req, res) => {
+  app.post('/client/ads/new', requireClient, requireAdult, (req, res) => {
     const { ad, error } = readAdForm(req);
     const fail = (msg) => res.status(400).html(renderPage(req, { title: 'Post ad', portal: 'client', body: adFormView(req, { ad, cats: cats(), error: msg }) }));
     if (error) return fail(error);
@@ -730,7 +774,7 @@ function register(app) {
   // Payment page
   const activePlans = () => db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY sort, days').all();
 
-  app.get('/client/ads/:id/pay', requireClient, (req, res) => {
+  app.get('/client/ads/:id/pay', requireClient, requireAdult, (req, res) => {
     const ad = ownAd(req, res); if (!ad) return;
     if (ad.status === 'blocked') { req.flash('error', 'This ad was blocked by the admin.'); res.redirect('/client'); return; }
     if (ad.status === 'paused') { req.flash('error', 'This ad is deactivated by the admin. Please contact support.'); res.redirect('/client'); return; }
@@ -745,7 +789,7 @@ function register(app) {
   }
 
   // Manual UPI: client submits UTR → admin confirms → ad goes live.
-  app.post('/client/ads/:id/pay/upi', requireClient, (req, res) => {
+  app.post('/client/ads/:id/pay/upi', requireClient, requireAdult, (req, res) => {
     const ad = ownAd(req, res); if (!ad) return;
     const back = `/client/ads/${ad.id}/pay`;
     if (ad.status === 'blocked') { res.redirect('/client'); return; }
@@ -769,7 +813,7 @@ function register(app) {
   });
 
   // Razorpay: create order (amount is always computed on the server)
-  app.post('/client/ads/:id/pay/razorpay', requireClient, async (req, res) => {
+  app.post('/client/ads/:id/pay/razorpay', requireClient, requireAdult, async (req, res) => {
     if (!P.razorpayEnabled()) { res.status(400).json({ error: 'Online payments are not enabled.' }); return; }
     const ad = db.prepare('SELECT * FROM ads WHERE id = ? AND client_id = ?').get(parseInt(req.params.id, 10) || 0, req.seller.id);
     if (!ad || ad.status === 'blocked') { res.status(404).json({ error: 'Ad not found' }); return; }

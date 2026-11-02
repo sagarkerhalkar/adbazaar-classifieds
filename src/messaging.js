@@ -20,9 +20,17 @@ const crypto = require('node:crypto');
 const { db, getSettings } = require('./db');
 
 const env = (k, d = '') => String(process.env[k] ?? d).trim();
+// Settings saved in Admin → Settings → "Email & SMS setup" win over .env (no restart needed).
+function cfg(k, d = '') {
+  try {
+    const v = getSettings()[k.toLowerCase()];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  } catch { /* ignore */ }
+  return env(k, d);
+}
 
 // ------------------------------------------------------------------ EMAIL
-const emailConfigured = () => Boolean(env('SMTP_HOST') && env('SMTP_USER') && env('SMTP_PASS'));
+const emailConfigured = () => Boolean(cfg('SMTP_HOST') && cfg('SMTP_USER') && cfg('SMTP_PASS'));
 
 function encodeHeader(s) {
   return /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`;
@@ -59,7 +67,7 @@ function buildMessage({ from, to, subject, text, html }) {
 // Minimal SMTP client: implicit TLS (port 465) or STARTTLS (587/25), AUTH LOGIN.
 function smtpSend({ host, port, user, pass, from, to, data, timeoutMs = 20000 }) {
   return new Promise((resolve, reject) => {
-    const implicitTls = port === 465 || env('SMTP_SECURE') === '1';
+    const implicitTls = port === 465 || cfg('SMTP_SECURE') === '1';
     let socket = implicitTls ? tls.connect({ host, port, servername: host }) : net.connect({ host, port });
     let buffer = '';
     let waiter = null;
@@ -163,10 +171,10 @@ ${button ? `<p style="text-align:center;margin:22px 0"><a href="${esc(button.url
     record('email', to, subject, text, 'not_configured');
     return { ok: false, status: 'not_configured' };
   }
-  const from = env('MAIL_FROM') || `${site} <${env('SMTP_USER')}>`;
+  const from = cfg('MAIL_FROM') || `${site} <${cfg('SMTP_USER')}>`;
   try {
     await smtpSend({
-      host: env('SMTP_HOST'), port: Number(env('SMTP_PORT', '465')), user: env('SMTP_USER'), pass: env('SMTP_PASS'),
+      host: cfg('SMTP_HOST'), port: Number(cfg('SMTP_PORT', '465')), user: cfg('SMTP_USER'), pass: cfg('SMTP_PASS').replace(/\s+/g, ''),
       from, to, data: buildMessage({ from, to, subject, text, html }),
     });
     record('email', to, subject, text, 'sent');
@@ -179,8 +187,15 @@ ${button ? `<p style="text-align:center;margin:22px 0"><a href="${esc(button.url
 }
 
 // ------------------------------------------------------------------ SMS
-const smsProvider = () => env('SMS_PROVIDER').toLowerCase();
-const smsConfigured = () => ['android', 'fast2sms', 'msg91', 'webhook'].includes(smsProvider());
+const smsProvider = () => cfg('SMS_PROVIDER').toLowerCase();
+function smsConfigured() {
+  const p = smsProvider();
+  if (p === 'android') return Boolean(cfg('SMS_GATEWAY_USER') && cfg('SMS_GATEWAY_PASS'));
+  if (p === 'fast2sms') return Boolean(cfg('FAST2SMS_API_KEY'));
+  if (p === 'msg91') return Boolean(cfg('MSG91_AUTH_KEY') && cfg('MSG91_TEMPLATE_ID'));
+  if (p === 'webhook') return Boolean(cfg('SMS_WEBHOOK_URL'));
+  return false;
+}
 
 async function httpCall(url, opts) {
   const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(15000) });
@@ -202,22 +217,22 @@ async function sendSmsOtp(phone10, otp) {
   try {
     if (p === 'android') {
       // SMS Gateway for Android (cloud: https://api.sms-gate.app/3rdparty/v1/messages, or the phone's local server)
-      const url = env('SMS_GATEWAY_URL', 'https://api.sms-gate.app/3rdparty/v1/messages');
-      const auth = Buffer.from(`${env('SMS_GATEWAY_USER')}:${env('SMS_GATEWAY_PASS')}`).toString('base64');
+      const url = cfg('SMS_GATEWAY_URL', 'https://api.sms-gate.app/3rdparty/v1/messages');
+      const auth = Buffer.from(`${cfg('SMS_GATEWAY_USER')}:${cfg('SMS_GATEWAY_PASS')}`).toString('base64');
       await httpCall(url, {
         method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ textMessage: { text: message }, phoneNumbers: [`+91${phone10}`] }),
       });
     } else if (p === 'fast2sms') {
-      const q = new URLSearchParams({ authorization: env('FAST2SMS_API_KEY'), route: 'otp', variables_values: otp, numbers: phone10 });
+      const q = new URLSearchParams({ authorization: cfg('FAST2SMS_API_KEY'), route: 'otp', variables_values: otp, numbers: phone10 });
       const t = await httpCall(`https://www.fast2sms.com/dev/bulkV2?${q}`, { method: 'GET' });
       if (/"return"\s*:\s*false/.test(t)) throw new Error(t.slice(0, 200));
     } else if (p === 'msg91') {
-      const q = new URLSearchParams({ template_id: env('MSG91_TEMPLATE_ID'), mobile: `91${phone10}`, otp });
-      const t = await httpCall(`https://control.msg91.com/api/v5/otp?${q}`, { method: 'POST', headers: { authkey: env('MSG91_AUTH_KEY') } });
+      const q = new URLSearchParams({ template_id: cfg('MSG91_TEMPLATE_ID'), mobile: `91${phone10}`, otp });
+      const t = await httpCall(`https://control.msg91.com/api/v5/otp?${q}`, { method: 'POST', headers: { authkey: cfg('MSG91_AUTH_KEY') } });
       if (/"type"\s*:\s*"error"/.test(t)) throw new Error(t.slice(0, 200));
     } else if (p === 'webhook') {
-      const url = env('SMS_WEBHOOK_URL').replace('{phone}', encodeURIComponent(phone10)).replace('{otp}', encodeURIComponent(otp))
+      const url = cfg('SMS_WEBHOOK_URL').replace('{phone}', encodeURIComponent(phone10)).replace('{otp}', encodeURIComponent(otp))
         .replace('{message}', encodeURIComponent(message));
       await httpCall(url, { method: 'GET' });
     }

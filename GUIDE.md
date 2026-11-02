@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager
 
 It installs Node.js and cloudflared if they're missing, downloads AdBazaar to **`D:\AdBazaar`** (or `C:\AdBazaar` if you have no D: drive), picks a **free port** by itself, adds the test data, allows your Wi-Fi devices through the firewall, turns on **auto-start**, puts an **AdBazaar** shortcut on your desktop, and opens the site. 🎉
 
-**To update later**, run the same line again. Your settings and data are kept.
+**To update later** (every time I add something new on GitHub): double-click the **"Update AdBazaar"** icon on your desktop, or run the same line again. It downloads the newest version, keeps your settings and data, asks no questions, and restarts the app.
 Then continue with **Part 8 / Part 9** below for the internet link and your domain. Parts 1–5 and 10 are the manual way to do what this command already did.
 
 ---
@@ -169,7 +169,7 @@ Use **two browsers**, for example Chrome for the admin and Edge (or an Incognito
 - [ ] Admin → **Clients** → **+ Add client**. Add a person yourself and take their photo with your webcam.
 
 **As a new seller (do this on `http://localhost:4780`, because the camera needs it):**
-- [ ] Click **Post your ad** → register → upload any photo as the Aadhaar/PAN → **Start camera**. It clicks automatically after 3 seconds. (The "recent photo" upload is optional, because the live photo is enough.)
+- [ ] Click **Post your ad** → register (the **date of birth** must make them 18 or older) → upload any photo as the Aadhaar/PAN → **Start camera**. It clicks automatically after 3 seconds. (The "recent photo" upload is optional, because the live photo is enough.)
 - [ ] Type the **6-digit email code**. If email isn't set up yet (Part 15), find the code in Admin → **Messages**.
 - [ ] Do nothing for 5 minutes: the client is **approved automatically** and both of you get an email. You can change the minutes in Admin → Settings.
 - [ ] Try to log in. It's blocked until you approve. ✅
@@ -362,37 +362,29 @@ Each new seller confirms their **email** (and their **mobile**, if SMS is turned
 
 > Until you set this up, nothing is lost: every code and email is shown in **Admin → Messages**, so you can test everything right away.
 
-### 15.1 Email — free with Gmail (10 minutes)
+### 15.1 Email — free with Gmail (10 minutes, do this first)
 1. Use (or create) a Gmail account for the site, for example `adbazaar.help@gmail.com`.
-2. Turn on **2-Step Verification**: https://myaccount.google.com/security
-3. Open **https://myaccount.google.com/apppasswords**, type `AdBazaar`, and click **Create**. Google shows a 16-letter password. Copy it.
-4. Open `D:\AdBazaar\.env` in Notepad and fill in:
-```
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_USER=adbazaar.help@gmail.com
-SMTP_PASS=abcdefghijklmnop
-```
-   (`SMTP_PASS` is the 16 letters without spaces. It is **not** your normal Gmail password.)
-5. Restart: `windows\stop.bat`, then `windows\3-start-in-background.bat`.
-6. Go to Admin → **Settings** → **Send test email**. ✅ Gmail allows roughly 500 emails a day for free.
+2. Turn on **2-Step Verification**: open https://myaccount.google.com/security → *2-Step Verification* → turn it on.
+3. Open **https://myaccount.google.com/apppasswords**, type `AdBazaar`, and click **Create**. Google shows a 16-letter password, like `abcd efgh ijkl mnop`. Copy it.
+4. In AdBazaar go to **Admin → Settings**. The first box at the top is **📧 Email & 📱 SMS setup**.
+5. Type your **Gmail address**, paste the **16-letter App Password** (spaces are fine), and click **Save email settings**.
+6. Click **📧 Send test email to me** and check your inbox (and the Spam folder). ✅
+
+That's it, and no restart is needed. From now on every new seller gets the 6-digit code by email straight away. Gmail allows about 500 emails a day for free.
+
+> If the test says *"Gmail refused the login"*: you pasted your normal Gmail password, or 2-Step Verification is off. Use the 16-letter App Password.
 
 ### 15.2 SMS OTP — the free way (Android phone)
 No company gives free SMS forever. The free way is to let **your own Android phone** send the SMS, using your SIM plan's free SMS.
 1. On a spare Android phone with a SIM, install **SMS Gateway for Android** (free, open source, from sms-gate.app or the Play Store).
 2. Open the app, turn on **Cloud server**, and note the **username** and **password** it shows.
-3. In `.env`:
-```
-SMS_PROVIDER=android
-SMS_GATEWAY_USER=the-username
-SMS_GATEWAY_PASS=the-password
-```
-4. Restart AdBazaar, then go to Admin → **Settings** → **Send test SMS**.
+3. In Admin → **Settings → Email & SMS setup**, choose *Android phone — free*, paste the username and password, and click **Save SMS settings**.
+4. Click **📱 Send test SMS**.
 5. Keep that phone charged and online. Every OTP is sent from its SIM.
 
-**Paid alternatives** (more reliable, a few paise per SMS): `SMS_PROVIDER=fast2sms` with `FAST2SMS_API_KEY`, or `SMS_PROVIDER=msg91` with `MSG91_AUTH_KEY` and `MSG91_TEMPLATE_ID`. Indian telecom rules (DLT) apply to these providers; they guide you through it.
+**Paid alternatives** (more reliable, a few paise per SMS): choose *Fast2SMS* or *MSG91* in the same box. Indian telecom rules (DLT) apply to these providers; they guide you through it.
 
-If `SMS_PROVIDER` is empty, sellers only confirm their email.
+While SMS is **off**, sellers confirm only their email; the mobile number is still compulsory, just not verified by code. Once you turn SMS on, the mobile code becomes compulsory too. You can change that with the checkbox in *Approvals & notifications*.
 
 ---
 
@@ -400,7 +392,11 @@ If `SMS_PROVIDER` is empty, sellers only confirm their email.
 
 **★ TOP ads by time slot.** The day (India time) has 8 slots: 12–3 AM, 3–6 AM, 6–9 AM, 9 AM–12 PM, 12–3 PM, 3–6 PM, 6–9 PM and 9 PM–12 AM. When paying, a seller ticks the slots they want. During those hours, every day of their plan, their ad sits in the **TOP ads** section. You set the price per slot per day in Admin → **Settings → TOP ad time slots**, and you can stop selling a slot there too.
 
-**Auto-approve.** If you don't approve or reject a verified seller within **5 minutes**, they are approved automatically and you get an email. Change the minutes (or set 0 to turn it off) in Admin → Settings → *Approvals & notifications*. You can also auto-confirm UPI payments there, but that is **off** by default because the UTR is not checked against your bank.
+**Auto-approve.** After a seller confirms their email code, if you don't approve or reject them within **5 minutes**, they are approved automatically and you get an email. Change the minutes (or set 0 to turn it off) in Admin → Settings → *Approvals & notifications*.
+
+**Only 18+ can post ads.** Sellers enter their date of birth when registering and tick "I am 18 years or older"; anyone younger is refused. Sellers who registered before this check are asked for their date of birth once, before they can post or pay. On each client's page you see the date of birth and age, so you can match it with the Aadhaar.
+
+**Payments are never automatic.** Every UPI payment waits in Admin → **Payments** until you (or another admin) click **Confirm & go live**.
 
 **Photos & videos.** Each ad can have **5 photos** and **2 videos**, each up to **1 minute** (MP4/MOV from a phone, up to 90 MB). Sellers can change them any time: My ads → Edit.
 

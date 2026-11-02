@@ -138,12 +138,12 @@ tx(() => {
     const verified = status === 'unverified' ? null : created + 60_000;
     const r = db.prepare(`INSERT INTO clients (name, business_name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number,
       aadhaar_file, pan_file, photo_file, live_photo_file, status, status_token, video_call_at, admin_note, reviewed_at, created_at,
-      email_verified_at, phone_verified_at, submitted_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      email_verified_at, phone_verified_at, submitted_at, dob)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(name, biz, email, phone, pwHash, `${10 + i}, Test Street, Near Main Market`, city, state, pin, String(1000 + i * 1111).slice(-4), pan,
         docs.a, docs.p, docs.ph, docs.live, status, randomToken(24), status === 'video_call' ? now + 2 * HOUR : null, note || null,
         status === 'pending' || status === 'unverified' ? null : created + DAY, created,
-        verified, verified, status === 'unverified' ? null : created + 2 * 60_000);
+        verified, verified, status === 'unverified' ? null : created + 2 * 60_000, `${1975 + i * 3}-0${(i % 9) + 1}-1${i % 9}`);
     ids[key] = Number(r.lastInsertRowid);
     db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'selfie', ?)").run(ids[key], docs.live, created);
   });

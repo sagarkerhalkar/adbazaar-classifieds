@@ -29,8 +29,9 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 ---
 
 ## Also included
-- **One-time email OTP** (plus optional SMS OTP), confirmation emails, and admin notifications. Free Gmail SMTP, and free SMS from your own Android phone. See GUIDE Part 15.
-- **Auto-approve** sellers if the admin doesn't act within 5 minutes (configurable), with an email to both sides.
+- **One-time email OTP** (plus optional SMS OTP), confirmation emails, and admin notifications. Paste your Gmail App Password in Admin → Settings; SMS can be added later (free from your own Android phone). See GUIDE Part 15.
+- **Auto-approve** sellers (after the email OTP) if the admin doesn't act within 5 minutes (configurable), with an email to both sides. **Payments are always confirmed by an admin**; they are never automatic.
+- **18+ only:** date of birth is checked at registration and before posting; the admin sees the age next to the KYC documents.
 - **TOP ads by 3-hour time slots** (8 a day, price per slot per day, set by the admin).
 - **5 photos + 2 videos** (up to 1 minute each) per ad, changeable any time.
 - **Main categories → sub-categories**, managed by the admin (add, rename, move, deactivate, delete).

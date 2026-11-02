@@ -112,6 +112,7 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
         ${c.auto_approved ? html`<div><dt>Approval</dt><dd><span class="pill pill-info">Auto-approved</span></dd></div>` : ''}
         <div><dt>Aadhaar</dt><dd class="mono">XXXX XXXX ${c.aadhaar_last4}</dd></div>
         <div><dt>PAN</dt><dd class="mono">${c.pan_number}</dd></div>
+        <div><dt>Date of birth</dt><dd>${c.dob ? html`${fmtDay(Date.parse(`${c.dob}T00:00:00+05:30`))} <span class="pill ${V.ageFromDob(c.dob) >= 18 ? 'pill-ok' : 'pill-bad'}">${V.ageFromDob(c.dob)} yrs</span>` : html`<span class="muted">Not given yet</span>`}</dd></div>
         <div><dt>PIN</dt><dd>${c.pincode}</dd></div>
         <div class="wide"><dt>Address</dt><dd>${c.address}, ${c.city}, ${c.state} – ${c.pincode}</dd></div>
       </dl>
@@ -202,6 +203,7 @@ function newClientView(req, v = {}, error) {
       ${csrf(req)}
       <fieldset><legend>Client details</legend>
         <div class="row2">${field('Full name *', html`<input name="name" required maxlength="80" value="${v.name}">`)}${field('Business name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`)}</div>
+        <div class="row2">${field('Date of birth * (18+ only)', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'Check it against the Aadhaar card')}<div></div></div>
         <div class="row2">${field('Mobile *', html`<input name="phone" required maxlength="13" value="${v.phone}">`)}${field('Email (login ID) *', html`<input name="email" type="email" required maxlength="120" value="${v.email}">`)}</div>
         ${field('Address *', html`<textarea name="address" rows="2" required maxlength="300">${v.address}</textarea>`)}
         <div class="row3">${field('City *', html`<input name="city" required list="cities" value="${v.city}">`)}${cityDatalist()}${field('State *', stateSelect(v.state))}${field('PIN *', html`<input name="pincode" required maxlength="6" value="${v.pincode}">`)}</div>
@@ -336,9 +338,52 @@ function categoriesView(req, mains, counts) {
   </section>`;
 }
 
+function messagingSetupCard(req, s) {
+  const prov = smsProvider();
+  return html`
+  <section class="card setup-card" id="email-setup">
+    <h2>📧 Email & 📱 SMS setup ${emailConfigured() ? html`<span class="pill pill-ok">Email ready</span>` : html`<span class="pill pill-warn">Email not set up</span>`} ${smsConfigured() ? html`<span class="pill pill-ok">SMS ready</span>` : html`<span class="pill pill-muted">SMS off</span>`}</h2>
+    <div class="cols2">
+      <form method="post" action="/admin/messaging/email" class="form">
+        ${csrf(req)}
+        <p class="small muted"><strong>Free with Gmail:</strong> 1) turn on 2-Step Verification in your Google account, 2) open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>, create one named "AdBazaar", 3) paste the 16 letters here. Works immediately — no restart.</p>
+        ${field('Gmail address (sender)', html`<input type="email" name="smtp_user" value="${s.smtp_user || process.env.SMTP_USER || ''}" placeholder="yourname@gmail.com" required>`)}
+        ${field('Gmail App Password (16 letters)', html`<input type="password" name="smtp_pass" autocomplete="new-password" placeholder="${(s.smtp_pass || process.env.SMTP_PASS) ? '•••••••••••••••• saved — type to replace' : 'abcd efgh ijkl mnop'}">`, 'Not your normal Gmail password. Spaces are fine.')}
+        <details><summary class="small">Other email provider (not Gmail)</summary>
+          <div class="row2">
+            ${field('SMTP server', html`<input name="smtp_host" value="${s.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com'}">`)}
+            ${field('Port', html`<input name="smtp_port" type="number" value="${s.smtp_port || process.env.SMTP_PORT || '465'}">`, '465 (SSL) or 587')}
+          </div>
+        </details>
+        <div class="btn-row"><button class="btn btn-accent">Save email settings</button></div>
+      </form>
+      <form method="post" action="/admin/messaging/sms" class="form">
+        ${csrf(req)}
+        <p class="small muted"><strong>Free SMS:</strong> install "SMS Gateway for Android" (sms-gate.app) on a spare Android phone with a SIM, turn on <em>Cloud server</em> in the app and copy its username & password here. OTPs are sent from that phone's SIM.</p>
+        ${field('SMS service', html`<select name="sms_provider">
+          <option value="" ${!prov ? 'selected' : ''}>Off (email OTP only)</option>
+          <option value="android" ${prov === 'android' ? 'selected' : ''}>Android phone — free (SMS Gateway app)</option>
+          <option value="fast2sms" ${prov === 'fast2sms' ? 'selected' : ''}>Fast2SMS — paid</option>
+          <option value="msg91" ${prov === 'msg91' ? 'selected' : ''}>MSG91 — paid</option></select>`)}
+        <div class="row2">
+          ${field('Username / API key', html`<input name="sms_user" value="${s.sms_gateway_user || s.fast2sms_api_key || s.msg91_auth_key || ''}" autocomplete="off">`, 'Android: app username · Fast2SMS: API key · MSG91: auth key')}
+          ${field('Password / template ID', html`<input name="sms_pass" type="password" autocomplete="new-password" placeholder="${s.sms_gateway_pass || s.msg91_template_id ? '•••••• saved' : ''}">`, 'Android: app password · MSG91: template ID')}
+        </div>
+        <div class="btn-row"><button class="btn btn-accent">Save SMS settings</button></div>
+      </form>
+    </div>
+    <div class="btn-row">
+      <form method="post" action="/admin/test-email" class="inline">${csrf(req)}<button class="btn btn-sm">📧 Send test email to me</button></form>
+      <form method="post" action="/admin/test-sms" class="inline reject-form">${csrf(req)}<input name="phone" placeholder="10-digit mobile" maxlength="10"><button class="btn btn-sm">📱 Send test SMS</button></form>
+      <a class="btn btn-ghost btn-sm" href="/admin/messages">View sent messages</a>
+    </div>
+  </section>`;
+}
+
 function settingsView(req, { s, plans, cats, admins }) {
   return html`
   <div class="page-head"><h1>Settings</h1></div>
+  ${messagingSetupCard(req, s)}
   <section class="card">
     <h2>Pricing plans</h2>
     <p class="muted small">Price and ranking level for each run period. Higher ranking level = ad appears higher.</p>
@@ -383,20 +428,12 @@ function settingsView(req, { s, plans, cats, admins }) {
       <form method="post" action="/admin/automation" class="form">
         ${csrf(req)}
         ${field('Auto-approve clients after (minutes)', html`<input type="number" name="auto_approve_minutes" min="0" max="10080" value="${s.auto_approve_minutes}">`, 'If you don\'t approve or reject a verified client in this time, they are approved automatically and you get an email. 0 = off (always wait for you).')}
-        ${field('Auto-confirm UPI payments after (minutes)', html`<input type="number" name="auto_confirm_payment_minutes" min="0" max="10080" value="${s.auto_confirm_payment_minutes}">`, '⚠ Risky: the UTR is NOT checked against your bank. 0 = off (recommended) — you confirm each payment.')}
+        <label class="check"><input type="checkbox" name="require_mobile_otp" value="1" ${s.require_mobile_otp !== '0' ? 'checked' : ''}> Mobile number must be verified by SMS code (needs SMS set up above)</label>
+        <p class="small muted">Payments are never confirmed automatically — only you (or another admin) can confirm a payment.</p>
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
         <button class="btn btn-accent">Save</button>
       </form>
-      <h3>Email & SMS status</h3>
-      <ul class="list">
-        <li><span>Email (SMTP)</span>${emailConfigured() ? html`<span class="pill pill-ok">Ready</span>` : html`<span class="pill pill-warn">Not set up — see GUIDE Part 15</span>`}</li>
-        <li><span>SMS OTP${smsProvider() ? ` (${smsProvider()})` : ''}</span>${smsConfigured() ? html`<span class="pill pill-ok">Ready</span>` : html`<span class="pill pill-muted">Off — only email OTP is used</span>`}</li>
-      </ul>
-      <div class="btn-row">
-        <form method="post" action="/admin/test-email" class="inline">${csrf(req)}<button class="btn btn-sm">Send test email</button></form>
-        <form method="post" action="/admin/test-sms" class="inline reject-form">${csrf(req)}<input name="phone" placeholder="10-digit mobile" maxlength="10"><button class="btn btn-sm">Send test SMS</button></form>
-        <a class="btn btn-ghost btn-sm" href="/admin/messages">View sent messages</a>
-      </div>
+      <p class="small muted">Email & SMS: see the setup box at the top of this page.</p>
     </section>
   </div>
 
@@ -505,10 +542,11 @@ function register(app) {
     const v = {
       name: V.str(b.name, 80), business_name: V.str(b.business_name, 80), email: V.str(b.email, 120).toLowerCase(), phone: V.normalizePhone(b.phone),
       address: V.str(b.address, 300), city: V.str(b.city, 60), state: V.str(b.state, 60), pincode: V.str(b.pincode, 6),
-      aadhaar_number: String(b.aadhaar_number || '').replace(/\s+/g, ''), pan_number: V.str(b.pan_number, 10).toUpperCase(),
+      aadhaar_number: String(b.aadhaar_number || '').replace(/\s+/g, ''), pan_number: V.str(b.pan_number, 10).toUpperCase(), dob: V.str(b.dob, 10),
     };
     const fail = (msg) => res.status(400).html(page(req, 'Add client', newClientView(req, v, msg), ['/public/js/camera.js']));
     if (v.name.length < 3) return fail('Enter the full name.');
+    const dobErr = V.checkDob(v.dob); if (dobErr) return fail(dobErr.replace('you must be', 'the client must be'));
     if (!V.isValidPhone(v.phone)) return fail('Enter a valid 10-digit mobile number.');
     if (!V.isValidEmail(v.email)) return fail('Enter a valid email.');
     if (db.prepare('SELECT 1 FROM clients WHERE email = ?').get(v.email)) return fail('A client with this email already exists.');
@@ -529,10 +567,10 @@ function register(app) {
       const approve = b.approve_now === '1';
       const id = tx(() => {
         const r = db.prepare(`INSERT INTO clients (email_verified_at, phone_verified_at, submitted_at, name, business_name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number,
-          aadhaar_file, aadhaar_back_file, pan_file, address_proof_file, photo_file, live_photo_file, status, status_token, created_by_admin, reviewed_by, reviewed_at, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)`)
+          aadhaar_file, aadhaar_back_file, pan_file, address_proof_file, photo_file, live_photo_file, status, status_token, created_by_admin, reviewed_by, reviewed_at, created_at, dob)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)`)
           .run(now, now, now, v.name, v.business_name, v.email, v.phone, hashPassword(password), v.address, v.city, v.state, v.pincode, v.aadhaar_number.slice(-4), v.pan_number,
-            f.a, f.ab, f.p, f.ad, f.ph, live, approve ? 'approved' : 'pending', randomToken(24), approve ? req.admin.id : null, approve ? now : null, now);
+            f.a, f.ab, f.p, f.ad, f.ph, live, approve ? 'approved' : 'pending', randomToken(24), approve ? req.admin.id : null, approve ? now : null, now, v.dob);
         if (live) db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'admin_webcam', ?)").run(r.lastInsertRowid, live, now);
         return Number(r.lastInsertRowid);
       });
@@ -643,7 +681,7 @@ function register(app) {
         <aside class="card call-side">
           <h3>Compare with documents</h3>
           <div class="docs small-docs">${docLink(c.photo_file, 'Uploaded photo')}${docLink(c.aadhaar_file, 'Aadhaar')}${docLink(c.pan_file, 'PAN')}</div>
-          <dl class="facts"><div><dt>Name</dt><dd>${c.name}</dd></div><div><dt>Aadhaar</dt><dd>XXXX ${c.aadhaar_last4}</dd></div><div><dt>PAN</dt><dd>${c.pan_number}</dd></div></dl>
+          <dl class="facts"><div><dt>Name</dt><dd>${c.name}</dd></div><div><dt>Aadhaar</dt><dd>XXXX ${c.aadhaar_last4}</dd></div><div><dt>PAN</dt><dd>${c.pan_number}</dd></div><div><dt>Date of birth</dt><dd>${c.dob || '—'}${c.dob ? ` (${V.ageFromDob(c.dob)} yrs)` : ''}</dd></div></dl>
           <form method="post" action="/admin/clients/${c.id}/status" class="form">${csrf(req)}
             <input type="hidden" name="note" value="${c.admin_note}">
             <button class="btn btn-ok btn-block" name="action" value="approve">✔ Approve client</button>
@@ -908,24 +946,51 @@ function register(app) {
   app.post('/admin/automation', requireAdmin, (req, res) => {
     const num = (v) => String(Math.max(0, Math.min(10080, parseInt(v, 10) || 0)));
     setSetting('auto_approve_minutes', num(req.body.auto_approve_minutes));
-    setSetting('auto_confirm_payment_minutes', num(req.body.auto_confirm_payment_minutes));
+    setSetting('require_mobile_otp', req.body.require_mobile_otp === '1' ? '1' : '0');
     const em = V.str(req.body.notify_email, 120);
     if (!em || V.isValidEmail(em)) setSetting('notify_email', em);
     req.flash('success', 'Saved.');
     res.redirect('/admin/settings');
   });
+  app.post('/admin/messaging/email', requireAdmin, (req, res) => {
+    const user = V.str(req.body.smtp_user, 120).toLowerCase();
+    if (!V.isValidEmail(user)) { req.flash('error', 'Enter the Gmail address that will send the emails.'); res.redirect('/admin/settings#email-setup'); return; }
+    setSetting('smtp_user', user);
+    const pass = String(req.body.smtp_pass || '').trim();
+    if (pass) setSetting('smtp_pass', pass);
+    setSetting('smtp_host', V.str(req.body.smtp_host, 120) || 'smtp.gmail.com');
+    setSetting('smtp_port', String(parseInt(req.body.smtp_port, 10) || 465));
+    if (!getSettings().notify_email) setSetting('notify_email', user);
+    req.flash('success', 'Email settings saved. Now click "Send test email to me" to check them.');
+    res.redirect('/admin/settings#email-setup');
+  });
+  app.post('/admin/messaging/sms', requireAdmin, (req, res) => {
+    const prov = ['android', 'fast2sms', 'msg91'].includes(req.body.sms_provider) ? req.body.sms_provider : '';
+    const user = V.str(req.body.sms_user, 200);
+    const pass = String(req.body.sms_pass || '').trim();
+    setSetting('sms_provider', prov);
+    if (prov === 'android') { if (user) setSetting('sms_gateway_user', user); if (pass) setSetting('sms_gateway_pass', pass); }
+    if (prov === 'fast2sms' && user) setSetting('fast2sms_api_key', user);
+    if (prov === 'msg91') { if (user) setSetting('msg91_auth_key', user); if (pass) setSetting('msg91_template_id', pass); }
+    req.flash('success', prov ? 'SMS settings saved. Send a test SMS to check them.' : 'SMS turned off — sellers verify by email only.');
+    res.redirect('/admin/settings#email-setup');
+  });
   app.post('/admin/test-email', requireAdmin, async (req, res) => {
     const to = getSettings().notify_email || req.admin.email;
     const r = await sendEmail(to, `Test email from ${getSettings().site_name}`, ['It works! Your email settings are correct.']);
-    req.flash(r.ok ? 'success' : 'error', r.ok ? `Test email sent to ${to}.` : r.status === 'not_configured' ? 'Email is not set up yet (SMTP_* in .env). The message was saved in Messages instead.' : `Email failed: ${r.error}`);
-    res.redirect('/admin/settings');
+    let msg = `Test email sent to ${to}. Check the inbox (and Spam folder).`;
+    if (!r.ok && r.status === 'not_configured') msg = 'Email is not set up yet — fill in your Gmail and App Password above.';
+    else if (!r.ok && /535|534|Username and Password|BadCredentials|auth/i.test(r.error || '')) msg = 'Gmail refused the login. Use an App Password (16 letters from myaccount.google.com/apppasswords), not your normal Gmail password, and make sure 2-Step Verification is ON.';
+    else if (!r.ok) msg = `Email failed: ${r.error}. Check the internet connection and the SMTP server/port.`;
+    req.flash(r.ok ? 'success' : 'error', msg);
+    res.redirect('/admin/settings#email-setup');
   });
   app.post('/admin/test-sms', requireAdmin, async (req, res) => {
     const phone = V.normalizePhone(req.body.phone);
     if (!V.isValidPhone(phone)) { req.flash('error', 'Enter a valid 10-digit mobile number.'); res.redirect('/admin/settings'); return; }
     const r = await sendSmsOtp(phone, '123456');
-    req.flash(r.ok ? 'success' : 'error', r.ok ? `Test SMS sent to ${phone}.` : r.status === 'not_configured' ? 'SMS is not set up (SMS_PROVIDER in .env).' : `SMS failed: ${r.error}`);
-    res.redirect('/admin/settings');
+    req.flash(r.ok ? 'success' : 'error', r.ok ? `Test SMS sent to ${phone}.` : r.status === 'not_configured' ? 'SMS is not set up yet — choose an SMS service above.' : `SMS failed: ${r.error}`);
+    res.redirect('/admin/settings#email-setup');
   });
   app.get('/admin/messages', requireAdmin, (req, res) => {
     const rows = db.prepare('SELECT * FROM outbox ORDER BY id DESC LIMIT 200').all();

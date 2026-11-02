@@ -121,15 +121,33 @@ if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
 
 # ---------- 4. Download / update the app ----------
 Step 'Downloading AdBazaar'
-$pidFile = Join-Path $AppDir 'storage\server.pid'
-if (Test-Path $pidFile) {
-  $oldPid = (Get-Content $pidFile -Raw).Trim()
-  if ($oldPid) { Stop-Process -Id ([int]$oldPid) -Force -ErrorAction SilentlyContinue }
-  Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-  Remove-Item (Join-Path $AppDir 'storage\server-url.txt') -Force -ErrorAction SilentlyContinue
-  Say 'Stopped the running copy for the update.'
-  Start-Sleep -Seconds 1
-}
+# Stop the running AdBazaar (ONLY AdBazaar's own node process - other node apps are left alone).
+$stopIds = @{}
+try {
+  $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+  $byId = @{}; foreach ($p in $procs) { $byId[[int]$p.ProcessId] = $p }
+  $dirLower = $AppDir.ToLower()
+  foreach ($p in $procs) {
+    if ($p.Name -ne 'node.exe') { continue }
+    $cmd = [string]$p.CommandLine; $par = $byId[[int]$p.ParentProcessId]; $pcmd = ''; if ($par) { $pcmd = [string]$par.CommandLine }
+    if ($pcmd -match 'storage\\server\.log' -or $cmd.ToLower().Contains($dirLower) -or $pcmd.ToLower().Contains($dirLower)) { $stopIds[[int]$p.ProcessId] = 1 }
+  }
+  $oldPort = 0
+  if (Test-Path (Join-Path $AppDir '.env')) { foreach ($l in Get-Content (Join-Path $AppDir '.env')) { if ($l -match '^\s*PORT\s*=\s*(\d+)') { $oldPort = [int]$Matches[1] } } }
+  if ($oldPort) {
+    $isAdb = $false
+    try { $isAdb = ((Invoke-RestMethod "http://127.0.0.1:$oldPort/healthz" -TimeoutSec 8).app -eq 'adbazaar') } catch { $isAdb = $false }
+    if ($isAdb) { foreach ($c in @(Get-NetTCPConnection -LocalPort $oldPort -State Listen -ErrorAction SilentlyContinue)) { $pp = $byId[[int]$c.OwningProcess]; if ($pp -and $pp.Name -eq 'node.exe') { $stopIds[[int]$c.OwningProcess] = 1 } } }
+  }
+  $pidFile = Join-Path $AppDir 'storage\server.pid'
+  if (Test-Path $pidFile) {
+    $sp = 0; [int]::TryParse((Get-Content $pidFile -Raw).Trim(), [ref]$sp) | Out-Null
+    $pp = $byId[$sp]; if ($pp -and $pp.Name -eq 'node.exe' -and ([string]$pp.CommandLine) -match 'server\.js') { $stopIds[$sp] = 1 }
+  }
+} catch { }
+foreach ($id in $stopIds.Keys) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+if ($stopIds.Count) { Say 'Stopped the running copy for the update.'; Start-Sleep -Seconds 2 }
+Remove-Item (Join-Path $AppDir 'storage\server.pid'), (Join-Path $AppDir 'storage\server-url.txt') -Force -ErrorAction SilentlyContinue
 $zip = Join-Path $env:TEMP 'adbazaar.zip'
 $tmp = Join-Path $env:TEMP 'adbazaar-unzip'
 Invoke-WebRequest "https://github.com/$Repo/archive/refs/heads/$Branch.zip" -OutFile $zip
@@ -148,6 +166,7 @@ Set-Location $AppDir
 # ---------- 5. Settings (.env) ----------
 Step 'Settings'
 $envPath = Join-Path $AppDir '.env'
+$isUpdate = Test-Path $envPath   # already installed here → update quietly, keep all settings
 # Moving from another computer? Restore the backup made by uninstall.ps1 (Desktop or Downloads).
 if (-not (Test-Path $envPath)) {
   $bk = Get-ChildItem ([Environment]::GetFolderPath('Desktop')), (Join-Path $env:USERPROFILE 'Downloads') -Filter 'AdBazaar-backup-*.zip' -ErrorAction SilentlyContinue |
@@ -189,6 +208,7 @@ if ($firstInstall) {
 }
 
 # Free port: keep the current one if free, otherwise find the next free one.
+$portBefore = $port
 if (-not (PortFree $port)) {
   $start = $port
   while (-not (PortFree $port)) { $port++; if ($port -gt $start + 200) { throw 'No free port found.' } }
@@ -203,14 +223,18 @@ Say "Using port $port" Green
 # ---------- 6. Firewall for phones on your Wi-Fi ----------
 Step 'Allowing phones/laptops on your Wi-Fi to open the site'
 $fw = "netsh advfirewall firewall delete rule name=AdBazaar >nul 2>&1 & netsh advfirewall firewall add rule name=AdBazaar dir=in action=allow protocol=TCP localport=$port profile=private,domain"
-try {
+$haveRule = $false
+try { $haveRule = [bool](Get-NetFirewallRule -DisplayName 'AdBazaar' -ErrorAction SilentlyContinue) } catch { $haveRule = $false }
+if ($isUpdate -and $haveRule -and $port -eq $portBefore) {
+  Say 'Firewall rule already in place - nothing to change.' Green
+} else { try {
   if (IsAdmin) { cmd /c $fw | Out-Null }
   else {
     Say 'A Windows permission window will pop up - click Yes (or No to skip).'
     Start-Process cmd.exe -ArgumentList "/c $fw" -Verb RunAs -Wait -WindowStyle Hidden
   }
   Say 'Firewall rule added (private networks only).' Green
-} catch { Say 'Skipped firewall rule. Wi-Fi devices may not reach the site until you run windows\allow-lan-access.bat as administrator.' Yellow }
+} catch { Say 'Skipped firewall rule. Wi-Fi devices may not reach the site until you run windows\allow-lan-access.bat as administrator.' Yellow } }
 
 # ---------- 7. Start the app ----------
 Step 'Starting AdBazaar'
@@ -241,7 +265,12 @@ if ($firstInstall) {
 Step 'Auto-start'
 $startup = [Environment]::GetFolderPath('Startup')
 $vbs = Join-Path $startup 'AdBazaar.vbs'
-$a = Ask 'Start AdBazaar automatically every time you log in to Windows? (Y/N)' 'Y'
+if ($isUpdate) {
+  # Update: keep whatever the user chose before (no questions).
+  if (Test-Path $vbs) { $a = 'Y' } else { $a = 'N' }
+} else {
+  $a = Ask 'Start AdBazaar automatically every time you log in to Windows? (Y/N)' 'Y'
+}
 if ($a -match '^[Yy]') {
   $line = 'CreateObject("WScript.Shell").Run """' + $AppDir + '\windows\start-hidden.vbs""", 0, False'
   [IO.File]::WriteAllText($vbs, $line + "`r`n")
@@ -260,18 +289,28 @@ try {
   $lnk.WorkingDirectory = $AppDir
   $lnk.WindowStyle = 7
   $lnk.Save()
+  # "Update AdBazaar" shortcut: double-click to get the newest version from GitHub (keeps your data & settings).
+  $up = $sh.CreateShortcut((Join-Path $desk 'Update AdBazaar.lnk'))
+  $up.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+  $up.Arguments = '-NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=''Tls12''; irm https://raw.githubusercontent.com/sagarkerhalkar/adbazaar-classifieds/main/windows/install.ps1 | iex; Read-Host ''Press Enter to close''"'
+  $up.WorkingDirectory = $env:USERPROFILE
+  $up.IconLocation = "$env:SystemRoot\System32\shell32.dll,238"
+  $up.Description = 'Update AdBazaar to the newest version (keeps your data)'
+  $up.Save()
 } catch { }
 
 # ---------- Done ----------
 Write-Host ''
 Say '=================================================' Green
-Say '   AdBazaar is installed and running!' Green
+if ($isUpdate) { Say '   AdBazaar is UPDATED to the newest version and running!' Green }
+else { Say '   AdBazaar is installed and running!' Green }
 Say '=================================================' Green
 Get-Content (Join-Path $AppDir 'storage\addresses.txt') | ForEach-Object { Say "  $_" }
 Write-Host ''
 if ($firstInstall) { Say "  Admin login:  $url/admin/login   (email: $email)" }
 Say '  Test sellers: rahul.test@example.com ... password Test@1234'
-Say "  Folder:       $AppDir      Desktop shortcut: AdBazaar"
+Say "  Folder:       $AppDir"
+Say '  Desktop:      "AdBazaar" opens the site · "Update AdBazaar" gets the newest version'
 Say '  Free internet link for testing:  double-click windows\cloudflare-quick-test.bat'
 Say '  Your own domain: see GUIDE.md Part 9'
 Write-Host ''
