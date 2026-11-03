@@ -162,7 +162,7 @@ Commit: `4e99b33`
   - the phone header stays on one row, and categories swipe on phones
   - the client video-call page has friendlier wording
 
-Commit: `COMMIT_PLACEHOLDER`
+Commit: `33859ac`
 
 ---
 
