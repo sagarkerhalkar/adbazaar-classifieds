@@ -504,7 +504,7 @@ Visitors can tap the ♡ on any ad to **save** it. Saved ads are kept in their o
 
 > The camera needs `localhost` or your `https://` domain (not the `http://192.168…` Wi-Fi address).
 
-**Test data pictures.** `npm run seed:test` downloads **real photos** for the test ads (a phone, TV, car, scooter, laptop…) from Pexels (free to use). Without internet it uses drawings instead. To refresh old test data: `npm run seed:remove`, then `npm run seed:test`. For the home page, Admin → **Home page → Banners → Add real sample photos to banners** puts photos of people using phones and laptops on your banners. You can also upload your own.
+**Test data pictures.** The test ads and banners use **real photos** that come with the app (see Part 22). You can also upload your own.
 
 ---
 
