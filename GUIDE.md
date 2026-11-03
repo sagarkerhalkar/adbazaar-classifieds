@@ -426,7 +426,7 @@ While SMS is **off**, sellers confirm only their email; the mobile number is sti
 - **Add a sub-category:** type its name in the box at the bottom of the card and click **+**.
 - **Rename, reorder, move:** click the ✏️ pencil. A small window opens.
 - **Hide / show:** click the 👁 eye (hidden = not in menus or new ads; running ads stay live).
-- **Delete:** click the 🗑 bin. If it has ads, choose where they move in the window. A main category can be deleted only after its sub-categories.
+- **Delete:** click the 🗑 bin. If it has ads, choose where they move in the window. Deleting a main category also deletes its sub-categories.
 
 Sellers must pick a sub-category when one exists.
 
