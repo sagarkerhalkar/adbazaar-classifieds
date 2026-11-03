@@ -165,7 +165,8 @@ Use **two browsers**, for example Chrome for the admin and Edge (or an Incognito
 - [ ] Admin → **Payments** → confirm Rahul's payment. His ad goes live on the home page.
 - [ ] Admin → **Clients** → Vikram → **Approve**. Then log in as vikram.test@example.com. It works now.
 - [ ] Admin → **Ads** → Block an ad, then Unblock it. Set a boost, and use "Make TOP".
-- [ ] Admin → **Settings** → change the prices, upload your UPI QR, and add a category.
+- [ ] Admin → **Settings** → change the prices (Plans tab), upload your UPI QR (Site & payments tab). Admin → **Categories** → add a sub-category.
+- [ ] Admin → **Reports** → look at the charts and the Rejected sellers / Rejected payments tabs, and download a CSV.
 - [ ] Admin → **Clients** → **+ Add client**. Add a person yourself and take their photo with your webcam.
 
 **As a new seller (do this on `http://localhost:4780`, because the camera needs it):**
@@ -366,7 +367,7 @@ Each new seller confirms their **email** (and their **mobile**, if SMS is turned
 1. Use (or create) a Gmail account for the site, for example `adbazaar.help@gmail.com`.
 2. Turn on **2-Step Verification**: open https://myaccount.google.com/security → *2-Step Verification* → turn it on.
 3. Open **https://myaccount.google.com/apppasswords**, type `AdBazaar`, and click **Create**. Google shows a 16-letter password, like `abcd efgh ijkl mnop`. Copy it.
-4. In AdBazaar go to **Admin → Settings**. The first box at the top is **📧 Email & 📱 SMS setup**.
+4. In AdBazaar go to **Admin → Settings** and click the **Email & SMS** tab.
 5. Type your **Gmail address**, paste the **16-letter App Password** (spaces are fine), and click **Save email settings**.
 6. Click **📧 Send test email to me** and check your inbox (and the Spam folder). ✅
 
@@ -385,7 +386,7 @@ Use this if App Passwords don't work for you. It's free for **300 emails a day**
 1. Sign up at **https://www.brevo.com** (free plan, no card needed).
 2. Go to **Senders, domains & IPs → Senders → Add a sender**, type your Gmail address, and click the confirmation link that Brevo emails to you.
 3. Go to **SMTP & API → SMTP** and click **Generate a new SMTP key**. Copy the key, and the **Login** shown on that page (it looks like `xxxxxx@smtp-brevo.com`).
-4. In AdBazaar **Admin → Settings → 📧 Email & 📱 SMS setup**:
+4. In AdBazaar **Admin → Settings → Email & SMS** tab:
    - **Email service:** *Brevo*
    - **Login / username:** the Brevo **Login** from step 3
    - **Password:** the **SMTP key** from step 3
@@ -396,13 +397,13 @@ Use this if App Passwords don't work for you. It's free for **300 emails a day**
 No company gives free SMS forever. The free way is to let **your own Android phone** send the SMS, using your SIM plan's free SMS.
 1. On a spare Android phone with a SIM, install **SMS Gateway for Android** (free, open source, from sms-gate.app or the Play Store).
 2. Open the app, turn on **Cloud server**, and note the **username** and **password** it shows.
-3. In Admin → **Settings → Email & SMS setup**, choose *Android phone — free*, paste the username and password, and click **Save SMS settings**.
+3. In Admin → **Settings → Email & SMS**, choose *Android phone — free*, paste the username and password, and click **Save SMS settings**.
 4. Click **📱 Send test SMS**.
 5. Keep that phone charged and online. Every OTP is sent from its SIM.
 
 **Paid alternatives** (more reliable, a few paise per SMS): choose *Fast2SMS* or *MSG91* in the same box. Indian telecom rules (DLT) apply to these providers; they guide you through it.
 
-While SMS is **off**, sellers confirm only their email; the mobile number is still compulsory, just not verified by code. Once you turn SMS on, the mobile code becomes compulsory too. You can change that with the checkbox in *Approvals & notifications*.
+While SMS is **off**, sellers confirm only their email; the mobile number is still compulsory, just not verified by code. Once you turn SMS on, the mobile code becomes compulsory too. You can change that with the checkbox in Settings → **Approvals**.
 
 ---
 
