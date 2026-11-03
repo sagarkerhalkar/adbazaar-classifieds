@@ -446,7 +446,7 @@ Sellers must pick a sub-category when one exists.
 
 ## Part 17 — The new look (3 Nov)
 
-**Home page.** At the top, a turning **3D ring** shows the ads that are TOP right now (drag it, swipe it on a phone, or use the ‹ › buttons). Below it are round category icons, then the ads with a **filter panel** (sub-category, type, city) and a **sort** menu (best match, newest, price low→high, price high→low). TOP ads always stay first.
+**Search and category pages.** Results have a **filter panel** (sub-category, type, city) and a **sort** menu (best match, newest, price low→high, price high→low). TOP ads always stay first. The home page itself is described in Part 18.
 
 **Ad page.** Photos on the left. On the right, a box that stays in view with the price, the seller, **Show phone number** and **WhatsApp**. Description, videos, details and safety tips are in **tabs**, so the page stays short.
 
