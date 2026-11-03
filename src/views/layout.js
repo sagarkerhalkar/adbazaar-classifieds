@@ -2,6 +2,8 @@
 const { html, raw } = require('../lib/html');
 const { assetUrl } = require('../lib/files');
 const { icon } = require('./icons');
+const Cat = require('../categories');
+const { getHome, cityList } = require('../homeconfig');
 
 function flashes(req) {
   const list = req.takeFlash ? req.takeFlash() : [];
@@ -26,13 +28,30 @@ function publicHeader(req, s) {
         <button class="hsearch-go" aria-label="Search">${icon('search', { size: 20 })}</button>
       </form>
       <nav class="hactions">
+        <a href="/saved" class="hlink" data-saved-link>${icon('heart')}<span>Saved</span><span class="badge-count" data-saved-count hidden></span></a>
         ${req.seller
     ? html`<a href="/client" class="hlink">${icon('user')}<span>My ads</span></a>`
     : html`<a href="/client/login" class="hlink">${icon('user')}<span>Login</span></a>`}
         <a href="${req.seller ? '/client/ads/new' : '/client/register'}" class="btn btn-sell">${icon('plus', { size: 18 })}<span>Post ad</span></a>
       </nav>
     </div>
-  </header>`;
+  </header>
+  ${catBar(req)}`;
+}
+
+// ---- Category bar under the public header (OLX style) ----
+function catBar(req) {
+  let cats = [];
+  try { cats = Cat.tree(); } catch { return ''; }
+  const cur = req.path === '/' ? String((req.query || {}).cat || '') : '';
+  const isActive = (c) => cur === c.slug || c.subs.some((sc) => sc.slug === cur);
+  return html`<nav class="catbar" aria-label="Categories"><div class="wrap catbar-inner">
+    <details class="catbar-all">
+      <summary>${icon('grid', { size: 18 })}All categories ${icon('down', { size: 16 })}</summary>
+      <div class="megamenu">${cats.map((c) => html`<div class="mm-col"><a class="mm-main" href="/?cat=${c.slug}">${c.icon} ${c.name}</a>${c.subs.map((sc) => html`<a href="/?cat=${sc.slug}">${sc.name}</a>`)}</div>`)}</div>
+    </details>
+    ${cats.slice(0, 8).map((c) => html`<a class="catbar-link ${isActive(c) ? 'active' : ''}" href="/?cat=${c.slug}">${c.name}</a>`)}
+  </div></nav>`;
 }
 
 // ---- Seller (client) header ----
@@ -71,6 +90,7 @@ function adminSidebar(req, s, counts = {}) {
       ${item('/admin/payments', 'card', 'Payments', counts.pay)}
       ${item('/admin/ads', 'layers', 'Ads')}
       ${item('/admin/categories', 'tag', 'Categories')}
+      ${item('/admin/home', 'home', 'Home page')}
       ${item('/admin/reports', 'chart', 'Reports', counts.reports)}
       ${item('/admin/messages', 'mail', 'Messages')}
       ${item('/admin/settings', 'settings', 'Settings')}
@@ -130,22 +150,42 @@ ${scriptsHtml(scripts)}
     ? html`<header class="topbar"><div class="wrap topbar-inner"><a class="logo" href="/"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span><span class="logo-tag">Admin</span></a></div></header>`
     : publicHeader(req, s);
 
+  const home = getHome(s);
   return html`${head(req, s, title, description)}
 <body class="portal-${portal}">
+${portal === 'public' && home.announcement ? html`<div class="announce">${home.announcement}</div>` : ''}
 ${header}
 <main class="wrap main">
 ${flashes(req)}
 ${body}
 </main>
-<footer class="footer">
+${portal === 'public' ? bigFooter(req, s, home) : html`<footer class="footer">
   <div class="wrap footer-inner">
     <div class="footer-brand"><span class="logo-mark sm">${icon('tag', { size: 14 })}</span> ${s.site_name}<span class="muted">Happy buying, happy selling.</span></div>
-    <div class="footer-links"><a href="/terms">Terms</a><a href="/safety">Safety tips</a><a href="/client/register">Sell on ${s.site_name}</a>${s.support_phone ? html`<span>${icon('phone', { size: 14 })} ${s.support_phone}</span>` : ''}</div>
+    <div class="footer-links"><a href="/terms">Terms</a><a href="/safety">Safety tips</a><a href="/">View site</a></div>
   </div>
-</footer>
+</footer>`}
 ${scriptsHtml(scripts)}
 </body>
 </html>`;
+}
+
+function bigFooter(req, s, home) {
+  let cats = [];
+  try { cats = Cat.tree().slice(0, 8); } catch { /* ignore */ }
+  return html`<footer class="bigfooter">
+  <div class="wrap bigfooter-grid">
+    <div class="bf-brand">
+      <a class="logo" href="/"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span></a>
+      <p>${home.footer_about}</p>
+      ${s.support_phone || s.support_email ? html`<p class="bf-contact">${s.support_phone ? html`<span>${icon('phone', { size: 15 })} ${s.support_phone}</span>` : ''}${s.support_email ? html`<span>${icon('mail', { size: 15 })} ${s.support_email}</span>` : ''}</p>` : ''}
+    </div>
+    <div><h4>Popular categories</h4>${cats.map((c) => html`<a href="/?cat=${c.slug}">${c.name}</a>`)}</div>
+    <div><h4>Popular cities</h4>${cityList(home).slice(0, 8).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${c}</a>`)}</div>
+    <div><h4>Help</h4><a href="/safety">Safety tips</a><a href="/terms">Terms of use</a><a href="/client/register">Sell on ${s.site_name}</a><a href="/client/login">Seller login</a><a href="/saved">Saved ads</a></div>
+  </div>
+  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. All rights reserved.</div></div>
+</footer>`;
 }
 
 function renderError(req, status, title, message) {

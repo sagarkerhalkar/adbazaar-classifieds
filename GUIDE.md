@@ -466,3 +466,42 @@ Every list has a **Download CSV** button that opens in Excel.
 **Pop-ups instead of grey boxes.** "Are you sure?" questions now open a small window. Messages slide in at the top right and close by themselves.
 
 **If something still looks old,** press **Ctrl + F5** once. After this update the browser always picks up new files by itself.
+
+---
+
+## Part 18 — Marketplace home page, Home page editor, video call any seller (3 Nov, evening)
+
+**Home page (like OLX).** From top to bottom:
+- an optional **notice bar**
+- the search bar, and a **category bar** with *All categories* (a full menu of every category and sub-category)
+- **sliding banners**
+- **category tiles**
+- the **TOP ads** strip
+- **popular cities**
+- **Fresh recommendations**, with a *Load more ads* button
+- a *Have something to sell?* band, and a full footer
+
+Visitors can tap the ♡ on any ad to **save** it. Saved ads are kept in their own browser; open them with **Saved** at the top.
+
+**Change the home page yourself: Admin → Home page.**
+- **Banners tab:** up to 8 banners that slide every 5 seconds.
+  - Click **Edit banner** to change the headline, small text, button text and the page the button opens (for example `/?cat=vehicles`), plus the colour and a big emoji.
+  - You can also upload your own wide picture (about 1600 × 400). Switch **Show on site** on or off, move banners up or down, or delete them.
+  - **Add a banner** creates a new one, hidden until you switch it on.
+- **Sections & texts tab:**
+  - turn the category tiles, TOP strip, popular cities and sell band on or off
+  - write the notice bar text (leave it empty to hide the bar)
+  - change the headings, the list of popular cities and the footer text
+
+**Delete the default categories.** In Admin → Categories, the 🗑 bin now works on a **main** category too. It deletes the main category **with all its sub-categories**; if they have ads, you choose where those ads move. Categories you delete never come back by themselves.
+
+**Video call any seller, any time.** Open a client in Admin → Clients and click **📹 Video call now**. Then:
+- If the seller has the site open (logged in, or on their status page), their screen **rings** with a pop-up: *Join call* / *Not now*.
+- They also get an **email** with the join link.
+- When they join, you see and hear each other.
+- Click **End call** when you're done, and their phone stops ringing.
+- The call link works for 15 minutes after you click.
+
+> The camera needs `localhost` or your `https://` domain (not the `http://192.168…` Wi-Fi address).
+
+**Test data pictures.** `npm run seed:test` now gives the test ads proper product pictures (a phone, TV, car, scooter, books…) instead of coloured shapes. To refresh old test data: `npm run seed:remove`, then `npm run seed:test`.

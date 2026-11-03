@@ -5,8 +5,9 @@ const path = require('node:path');
 const { db, parseImages, parseVideos } = require('../db');
 const { currentSlot, SLOTS } = require('../slots');
 const Cat = require('../categories');
-const { html, fmtDate, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
+const { html, raw, fmtDate, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { icon } = require('../views/icons');
+const { getHome, cityList } = require('../homeconfig');
 const { renderPage } = require('../views/layout');
 const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist } = require('../views/components');
 const { DIRS, sendFile, safeName } = require('../lib/files');
@@ -29,7 +30,7 @@ const SORTS = {
   price_desc: 'top_now DESC, a.price_paise IS NULL, a.price_paise DESC, a.rank_score DESC',
 };
 
-function listAds({ q, city, cat, kind, page, sort }) {
+function listAds({ q, city, cat, kind, page, sort, excludeTop = false }) {
   const where = ["a.status = 'active'", 'a.expires_at > ?', SELLER_OK];
   const args = [Date.now()];
   if (q) {
@@ -44,6 +45,7 @@ function listAds({ q, city, cat, kind, page, sort }) {
     args.push(...ids);
   }
   if (kind === 'product' || kind === 'service') { where.push('a.kind = ?'); args.push(kind); }
+  if (excludeTop) { where.push('((a.top_slots >> ?) & 1) = 0'); args.push(currentSlot()); }
   const w = where.join(' AND ');
   const total = db.prepare(`SELECT COUNT(*) AS n FROM ads a ${CAT_JOIN} WHERE ${w}`).get(...args).n;
   // Ads that bought the CURRENT 3-hour slot always come first (TOP), then the chosen order.
@@ -56,17 +58,75 @@ function listAds({ q, city, cat, kind, page, sort }) {
   return { rows, total, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), slot };
 }
 
-function ringCard(ad) {
-  let images = [];
-  try { images = JSON.parse(ad.images || '[]'); } catch { /* ignore */ }
-  return html`<a class="ring-card" href="${adUrl(ad)}" draggable="false">
-    ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" draggable="false" loading="lazy">` : html`<div class="thumb-ph">${ad.cat_icon || '📦'}</div>`}
-    ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
-    <span class="rc-body"><span class="rc-title">${ad.title}</span><span class="rc-price">${priceText(ad)}</span><span class="muted small">${ad.city}</span></span>
-  </a>`;
+function bannerSlider(slides) {
+  const list = slides.filter((x) => x.active && (x.title || x.image));
+  if (!list.length) return '';
+  return html`<section class="banner" data-banner aria-roledescription="carousel" aria-label="Highlights">
+    <div class="banner-track">
+      ${list.map((x, i) => html`<div class="slide theme-${x.theme} ${x.image ? 'has-img' : ''} ${i === 0 ? 'active' : ''}" data-slide role="group" aria-label="${i + 1} of ${list.length}">
+        ${x.image ? html`<img class="slide-img" src="${imgUrl(x.image)}" alt="" ${i ? raw('loading="lazy"') : ''}>` : html`<div class="slide-art" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="slide-emoji">${x.art || '★'}</span></div>`}
+        <div class="slide-text">
+          ${x.title ? html`<h2>${x.title}</h2>` : ''}
+          ${x.subtitle ? html`<p>${x.subtitle}</p>` : ''}
+          ${x.button && x.link ? html`<a class="btn btn-lg ${x.theme === 'marigold' ? 'btn-primary' : 'btn-sell'}" href="${x.link}">${x.button}</a>` : ''}
+        </div>
+      </div>`)}
+    </div>
+    ${list.length > 1 ? html`
+      <button type="button" class="banner-nav prev" data-banner-prev aria-label="Previous">${icon('chevronLeft')}</button>
+      <button type="button" class="banner-nav next" data-banner-next aria-label="Next">${icon('chevron')}</button>
+      <div class="banner-dots">${list.map((_, i) => html`<button type="button" class="${i === 0 ? 'active' : ''}" data-banner-dot="${i}" aria-label="Show ${i + 1}"></button>`)}</div>` : ''}
+  </section>`;
 }
 
-function homeView(req, { cats, data, filters, cities, featured }) {
+function loadMore(filters, data) {
+  if (filters.page >= data.totalPages) return '';
+  const p = new URLSearchParams();
+  for (const k of ['q', 'city', 'cat', 'kind', 'sort']) if (filters[k] && !(k === 'sort' && filters[k] === 'best')) p.set(k, filters[k]);
+  p.set('page', filters.page + 1);
+  return html`<div class="loadmore" data-loadmore><a class="btn btn-lg" href="/?${p}" data-load-more>Load more ads</a><span class="muted small">Showing ${Math.min(filters.page * PAGE_SIZE, data.total)} of ${data.total}</span></div>`;
+}
+
+function homeLanding(req, { cats, data, filters, cities, tops, home }) {
+  const site = req.settings.site_name;
+  const popular = cityList(home);
+  const counts = Object.fromEntries(cities.map((c) => [c.city.toLowerCase(), c.n]));
+  return html`
+  ${bannerSlider(home.slides)}
+
+  ${home.show.categories ? html`<section class="section">
+    <div class="section-head"><h2>Browse categories</h2></div>
+    <div class="cattiles">${cats.map((c) => html`<a class="cattile" href="/?cat=${c.slug}"><span class="cattile-ic">${c.icon}</span><span>${c.name}</span></a>`)}</div>
+  </section>` : ''}
+
+  ${home.show.top && tops.length ? html`<section class="section topstrip" data-scroller>
+    <div class="section-head"><h2><span class="star">★</span> ${home.top_title}</h2>
+      <div class="btn-row" style="margin:0;align-items:center"><span class="muted small">Featured now · ${SLOTS[data.slot].label}</span>
+      <button type="button" class="round-btn" data-scroll-prev aria-label="Scroll left">${icon('chevronLeft', { size: 18 })}</button><button type="button" class="round-btn" data-scroll-next aria-label="Scroll right">${icon('chevron', { size: 18 })}</button></div></div>
+    <div class="hscroll" data-scroll-track>${tops.map(adCard)}</div>
+  </section>` : ''}
+
+  ${home.show.cities && popular.length ? html`<section class="section">
+    <div class="section-head"><h2>Popular cities</h2></div>
+    <div class="citychips">${popular.map((c) => html`<a class="citychip" href="/?city=${encodeURIComponent(c)}">${icon('pin', { size: 15 })}${c}${counts[c.toLowerCase()] ? html`<span>${counts[c.toLowerCase()]}</span>` : ''}</a>`)}</div>
+  </section>` : ''}
+
+  <section class="section" data-results>
+    <div class="section-head"><h2>${home.fresh_title}</h2><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}</span></div>
+    ${data.rows.length ? html`<div class="grid">${data.rows.map(adCard)}</div>` : html`
+      <div class="empty card center"><div class="empty-icon">🛍️</div><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/client/register">Post your ad</a></div>`}
+    ${loadMore(filters, data)}
+  </section>
+
+  ${home.show.sell ? html`<section class="sellband">
+    <div class="sell-art" aria-hidden="true"><span>🛵</span><span>📷</span><span>🛋️</span></div>
+    <div><h2>${home.sell_title}</h2><p>${home.sell_text}</p>
+      <p class="small sell-time">${icon('clock', { size: 15 })} Login check takes ${approveTimeText(req.settings.auto_approve_minutes)} · payment confirmation ${PAYMENT_TIME_TEXT}</p></div>
+    <a class="btn btn-sell btn-lg" href="/client/register">${icon('plus', { size: 18 })} Post your ad</a>
+  </section>` : ''}`;
+}
+
+function homeResults(req, { cats, data, filters, cities }) {
   // cats = main categories with .subs. The selected slug may be a main or a sub category.
   const sel = Cat.bySlug(filters.cat);
   const activeMain = sel ? cats.find((m) => m.id === (sel.parent_id || sel.id)) : null;
@@ -78,56 +138,35 @@ function homeView(req, { cats, data, filters, cities, featured }) {
     const s = p.toString();
     return s ? `/?${s}` : '/';
   };
-  const filtered = filters.q || filters.city || filters.cat || filters.kind || filters.page > 1;
-  const heading = filters.q ? `Results for “${filters.q}”` : activeSub ? activeSub.name : activeMain ? activeMain.name : 'Fresh ads near you';
-  const anyTop = featured.some((a) => a.is_top);
+  const heading = filters.q ? `Results for “${filters.q}”` : activeSub ? activeSub.name : activeMain ? activeMain.name : filters.city ? `Ads in ${filters.city}` : 'All ads';
   return html`
-  ${!filtered ? html`
-  <section class="hero">
-    <div>
-      <h1>${req.settings.tagline || 'Buy and sell with verified people'}</h1>
-      <p>Find great deals and helpful local services in a few taps. No sign-up, just browse and call.</p>
-      <div class="hero-trust">
-        <span>${icon('star', { size: 18 })} Trusted local sellers</span>
-        <span>${icon('eye', { size: 18 })} Free to browse</span>
-        <span>${icon('bolt', { size: 18 })} ${data.total} live ad${data.total === 1 ? '' : 's'}</span>
-      </div>
-    </div>
-    <div class="ring-stage" data-ring tabindex="0" aria-label="${anyTop ? 'TOP ads right now' : 'Featured ads'}. Use arrow keys or drag to turn.">
-      ${featured.length ? html`<div class="ring">${featured.map(ringCard)}</div>
-        <div class="ring-nav"><button type="button" data-ring-prev aria-label="Previous">‹</button><span class="small" style="align-self:center">${anyTop ? `★ TOP now · ${SLOTS[data.slot].label}` : 'Featured'}</span><button type="button" data-ring-next aria-label="Next">›</button></div>`
-      : html`<div class="ring-empty"><div><div class="empty-icon">★</div><p>TOP ads appear here.<br>Be the first — <a href="/client/register" style="color:#fff;text-decoration:underline">post an ad</a>.</p></div></div>`}
-    </div>
-  </section>` : ''}
-
-  <nav class="catrail" aria-label="Categories">
-    <a class="cat ${!filters.cat ? 'active' : ''}" href="${q({ cat: '', page: '' })}"><span class="cat-ic">🗂️</span>All</a>
-    ${cats.map((c) => html`<a class="cat ${activeMain && activeMain.id === c.id ? 'active' : ''}" href="${q({ cat: c.slug, page: '' })}"><span class="cat-ic">${c.icon}</span>${c.name}</a>`)}
-  </nav>
-
+  <nav class="crumbs"><a href="/">Home</a>${activeMain ? html` › <a href="${q({ cat: activeMain.slug, page: '' })}">${activeMain.name}</a>` : ''}${activeSub ? html` › <span>${activeSub.name}</span>` : ''}${filters.city ? html` › <span>${filters.city}</span>` : ''}</nav>
+  ${activeMain && activeMain.subs.length ? html`<div class="subcats">
+    <a class="chip ${!activeSub ? 'active' : ''}" href="${q({ cat: activeMain.slug, page: '' })}">All ${activeMain.name}</a>
+    ${activeMain.subs.map((sc) => html`<a class="chip ${activeSub && activeSub.id === sc.id ? 'active' : ''}" href="${q({ cat: sc.slug, page: '' })}">${sc.name}</a>`)}
+  </div>` : ''}
   <div class="listing">
     <aside class="filters" data-filters>
-      ${activeMain && activeMain.subs.length ? html`<div class="f-group"><h3>${activeMain.name}</h3>
-        <a class="f-opt ${!activeSub ? 'active' : ''}" href="${q({ cat: activeMain.slug, page: '' })}">All ${activeMain.name}</a>
-        ${activeMain.subs.map((sc) => html`<a class="f-opt ${activeSub && activeSub.id === sc.id ? 'active' : ''}" href="${q({ cat: sc.slug, page: '' })}">${sc.name}</a>`)}
-      </div>` : ''}
+      <div class="f-group"><h3>Categories</h3>
+        <a class="f-opt ${!filters.cat ? 'active' : ''}" href="${q({ cat: '', page: '' })}">All categories</a>
+        ${cats.map((c) => html`<a class="f-opt ${activeMain && activeMain.id === c.id ? 'active' : ''}" href="${q({ cat: c.slug, page: '' })}">${c.icon} ${c.name}</a>`)}
+      </div>
       <div class="f-group"><h3>Type</h3>
         ${[['', 'Everything'], ['product', 'Products'], ['service', 'Services']].map(([k, l]) => html`<a class="f-opt ${filters.kind === k ? 'active' : ''}" href="${q({ kind: k, page: '' })}">${l}</a>`)}
       </div>
       ${cities.length ? html`<div class="f-group"><h3>City</h3>
         <a class="f-opt ${!filters.city ? 'active' : ''}" href="${q({ city: '', page: '' })}">All cities</a>
-        ${cities.slice(0, 8).map((c) => html`<a class="f-opt ${c.city.toLowerCase() === filters.city.toLowerCase() ? 'active' : ''}" href="${q({ city: c.city, page: '' })}">${c.city} <span class="muted small" style="margin-left:auto">${c.n}</span></a>`)}
+        ${cities.slice(0, 10).map((c) => html`<a class="f-opt ${c.city.toLowerCase() === filters.city.toLowerCase() ? 'active' : ''}" href="${q({ city: c.city, page: '' })}">${c.city} <span class="muted small" style="margin-left:auto">${c.n}</span></a>`)}
       </div>` : ''}
     </aside>
-
-    <section>
+    <section data-results>
       <div class="sortbar">
-        <div><h2>${heading}</h2><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}${filters.city ? ` in ${filters.city}` : ''}</span></div>
+        <div><h1 class="results-h">${heading}</h1><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}</span></div>
         <div class="btn-row" style="margin:0">
           <button type="button" class="btn btn-sm only-filters" data-toggle-filters>${icon('layers', { size: 16 })} Filters</button>
           <form method="get" action="/" class="inline">
             ${Object.entries(base).filter(([k, v]) => v && k !== 'sort').map(([k, v]) => html`<input type="hidden" name="${k}" value="${v}">`)}
-            <select name="sort" aria-label="Sort" onchange="this.form.submit()" style="padding:7px 10px">
+            <select name="sort" aria-label="Sort" data-autosubmit style="padding:7px 10px">
               ${[['best', 'Best match'], ['new', 'Newest first'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low']].map(([k, l]) => html`<option value="${k}" ${filters.sort === k ? 'selected' : ''}>${l}</option>`)}
             </select>
           </form>
@@ -140,16 +179,16 @@ function homeView(req, { cats, data, filters, cities, featured }) {
           <p class="muted">Try another word, city or category.</p>
           <a class="btn btn-primary" href="/">Show all ads</a>
         </div>`}
-      ${pager(filters.page, data.totalPages, Object.fromEntries(Object.entries(base).filter(([, v]) => v)))}
+      ${loadMore(filters, data)}
     </section>
-  </div>
+  </div>`;
+}
 
-  ${!filtered ? html`
-  <section class="sellband">
-    <div><h2>Sell on ${req.settings.site_name}</h2><p class="muted">Register in about 3 minutes. Login check takes ${approveTimeText(Number(req.settings.auto_approve_minutes || 1))}; your ad goes live once payment is confirmed (${PAYMENT_TIME_TEXT}).</p></div>
-    <ol class="steps"><li><strong>Register</strong><span>Quick and free</span></li><li><strong>Get verified</strong><span>About ${approveTimeText(Number(req.settings.auto_approve_minutes || 1)).replace('about ', '')}</span></li><li><strong>Post & pay</strong><span>7, 15 or 29 days</span></li></ol>
-    <a class="btn btn-sell btn-lg" href="/client/register">Start selling</a>
-  </section>` : ''}`;
+// Saved ads: ids come from the visitor's browser (localStorage), nothing is stored on the server.
+function savedView(ads) {
+  return html`
+  <div class="page-head"><div><h1>Saved ads</h1><p class="muted">Ads you saved with the ♥ button. They are kept in this browser only.</p></div></div>
+  ${ads.length ? html`<div class="grid">${ads.map(adCard)}</div>` : html`<div class="empty card center"><div class="empty-icon">♡</div><h3>No saved ads yet</h3><p class="muted">Tap the heart on any ad to keep it here.</p><a class="btn btn-primary" href="/">Browse ads</a></div>`}`;
 }
 
 function adView(req, { ad, images, videos = [], related }) {
@@ -234,17 +273,25 @@ function register(app) {
     const data = listAds(filters);
     const cities = db.prepare(`SELECT city, COUNT(*) AS n FROM ads a WHERE status = 'active' AND expires_at > ? AND ${SELLER_OK} GROUP BY city COLLATE NOCASE ORDER BY n DESC LIMIT 12`).all(Date.now());
     const activeCat = filters.cat ? Cat.label((Cat.bySlug(filters.cat) || {}).id) : '';
-    // The 3D ring shows ads in the current TOP slot; if there are fewer than 3, it is topped up with the best-ranked ads.
-    let featured = [];
-    if (!filters.q && !filters.city && !filters.cat && !filters.kind && filters.page === 1) {
+    const landing = !filters.q && !filters.city && !filters.cat && !filters.kind;
+    let body;
+    if (landing) {
+      const home = getHome(req.settings);
       const slot = currentSlot();
-      featured = db.prepare(`SELECT a.*, ${CAT_COLS}, ((a.top_slots >> ?) & 1) AS top_now FROM ads a ${CAT_JOIN}
-        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} ORDER BY top_now DESC, a.rank_score DESC LIMIT 10`).all(slot, Date.now());
-      featured.forEach((r) => { r.is_top = r.top_now; });
-      const tops = featured.filter((a) => a.is_top);
-      featured = tops.length >= 3 ? tops : featured.slice(0, Math.max(tops.length, 8));
-    }
-    res.html(renderPage(req, { title: activeCat || (filters.q ? `Search: ${filters.q}` : ''), body: homeView(req, { cats, data, filters, cities, featured }) }));
+      const tops = home.show.top ? db.prepare(`SELECT a.*, ${CAT_COLS}, 1 AS is_top FROM ads a ${CAT_JOIN}
+        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND ((a.top_slots >> ?) & 1) = 1 ORDER BY a.rank_score DESC LIMIT 16`).all(Date.now(), slot) : [];
+      const fresh = tops.length ? listAds({ ...filters, excludeTop: true }) : data;
+      body = homeLanding(req, { cats, data: fresh, filters, cities, tops, home });
+    } else body = homeResults(req, { cats, data, filters, cities });
+    res.html(renderPage(req, { title: activeCat || (filters.q ? `Search: ${filters.q}` : ''), body }));
+  });
+
+  app.get('/saved', (req, res) => {
+    const ids = String(req.query.ids || '').split(',').map((x) => parseInt(x, 10)).filter((n) => n > 0).slice(0, 100);
+    const ads = ids.length ? db.prepare(`SELECT a.*, ${CAT_COLS}, ((a.top_slots >> ?) & 1) AS is_top FROM ads a ${CAT_JOIN}
+      WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.id IN (${ids.map(() => '?').join(',')})`).all(currentSlot(), Date.now(), ...ids) : [];
+    ads.sort((x, y) => ids.indexOf(y.id) - ids.indexOf(x.id));
+    res.html(renderPage(req, { title: 'Saved ads', body: savedView(ads) }));
   });
 
   app.get('/c/:slug', (req, res) => res.redirect(`/?cat=${encodeURIComponent(req.params.slug)}`));

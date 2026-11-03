@@ -36,6 +36,13 @@ const P = {
   menu: 'M4 7h16M4 12h16M4 17h16',
   video: 'M3 6.5h12v11H3zM15 10l6-3.5v11L15 14',
   bolt: 'M13 3 5 13.5h6L10 21l8-10.5h-6z',
+  heart: 'M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z',
+  chevron: 'M9 6l6 6-6 6',
+  chevronLeft: 'M15 6l-6 6 6 6',
+  down: 'M6 9l6 6 6-6',
+  image: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5h.01',
+  arrowUp: 'M12 19V5M6 11l6-6 6 6',
+  arrowDown: 'M12 5v14M6 13l6 6 6-6',
 };
 
 /** icon('home') → inline <svg>. */

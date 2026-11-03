@@ -145,5 +145,26 @@ Commit: `4e99b33`
 
 ---
 
+## 11. Home page like OLX / Skokka, editable by me, delete default categories, video call any seller — 3 Nov 17:08
+
+> i want home page like indiaskokka.com or olx and i can able to change this page, i want it must be international level not local level, its looking that its created by local college project … i can able to delete the default category and i can do the video call from this portal to login guy if required and still app is too too dirty
+
+**What was built:**
+- **Marketplace home page:**
+  - a notice bar, a category bar with an All-categories menu, and sliding banners
+  - category tiles, a TOP ads strip and popular cities
+  - Fresh recommendations with Load more, saved ads ♡, and a full footer
+- **Admin → Home page:** edit or add banners (text, button, link, colour, your own picture), show or hide sections, and change the notice bar, headings, cities and footer text.
+- **Categories:** deleting a main category now deletes its sub-categories too (ads move to the category you choose). Deleted default categories never come back.
+- **Video call any seller:** Admin → client → **Video call now**. The seller's open page rings with a pop-up and sound, and they also get an email link. Ending the call stops the ringing.
+- **Polish:**
+  - the test ads now have real-looking product pictures
+  - the phone header stays on one row, and categories swipe on phones
+  - the client video-call page has friendlier wording
+
+Commit: `COMMIT_PLACEHOLDER`
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

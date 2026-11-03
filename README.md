@@ -39,6 +39,9 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 
 - **Design:** a 3D ring of TOP ads on the home page, a category rail, filters and sorting, a tabbed ad page, a 4-step KYC wizard, an admin sidebar with tabbed settings, card-based category management with pop-up editors, and Reports (charts, rejected sellers and payments, ad complaints, all sellers, CSV export). Uses system fonts, no external assets, and respects `prefers-reduced-motion`.
 
+- **Home page editor** (Admin → Home page): sliding banners with your own pictures, a notice bar, show/hide sections, headings, popular cities and footer text. The home page is marketplace-style (category bar with an all-categories menu, banners, category tiles, a TOP strip, popular cities, fresh ads with Load more, and saved ads ♡).
+- **Video call any seller** from the admin portal. The seller's open page rings (pop-up plus sound) and they get an email link (`src/rtc.js`, `public/js/ring.js`).
+
 ## Ranking algorithm (`src/ranking.js`)
 
 ```

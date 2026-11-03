@@ -159,10 +159,10 @@ function reactivated(c) {
 }
 
 function videoCall(c, at) {
-  fire(sendEmail(c.email, `Video verification call — ${getSettings().site_name}`, [
+  fire(sendEmail(c.email, `${at ? 'Video call' : 'We are calling you now'} — ${getSettings().site_name}`, [
     `Hello ${c.name},`,
-    `We would like to verify you over a short video call${at ? ` on ${fmtDate(at)}` : ''}.`,
-    'Open the link below on your phone or laptop, allow camera and microphone, and keep your Aadhaar and PAN cards ready.',
+    at ? `We would like to talk to you over a short video call on ${fmtDate(at)}.` : 'Our team is calling you on video right now.',
+    'Open the link below on your phone or laptop and allow the camera and microphone. Keep the ID you registered with nearby.',
   ], { text: 'Join video call', url: `${baseUrl()}/kyc/call/${c.status_token}` }));
 }
 

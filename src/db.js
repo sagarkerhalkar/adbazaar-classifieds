@@ -179,7 +179,8 @@ addColumn('clients', 'dob', 'TEXT');
 addColumn('clients', 'id_type', 'TEXT', "UPDATE clients SET id_type = 'aadhaar' WHERE aadhaar_file IS NOT NULL OR aadhaar_last4 != ''");
 addColumn('clients', 'id_number', 'TEXT', "UPDATE clients SET id_number = aadhaar_last4 WHERE id_type = 'aadhaar'");
 addColumn('clients', 'id_file', 'TEXT', "UPDATE clients SET id_file = aadhaar_file WHERE id_type = 'aadhaar'");
-addColumn('clients', 'id_back_file', 'TEXT', "UPDATE clients SET id_back_file = aadhaar_back_file WHERE id_type = 'aadhaar'");                     // date of birth YYYY-MM-DD (only 18+ can post ads)
+addColumn('clients', 'id_back_file', 'TEXT', "UPDATE clients SET id_back_file = aadhaar_back_file WHERE id_type = 'aadhaar'");
+addColumn('clients', 'call_ring_at', 'INTEGER');   // admin is calling this seller now (video call from the admin portal)                     // date of birth YYYY-MM-DD (only 18+ can post ads)
 
 // ---- Seed defaults ----
 const now = Date.now();
@@ -191,7 +192,9 @@ if (!db.prepare('SELECT 1 FROM plans LIMIT 1').get()) {
   ins.run('Premium — 29 days', 29, 59900, 79900, 3, 3);
 }
 
-if (!db.prepare('SELECT 1 FROM categories LIMIT 1').get()) {
+// Default categories are created only once. If you delete them in Admin → Categories they never come back.
+const catsSeeded = db.prepare("SELECT 1 FROM settings WHERE key = 'cats_seeded'").get();
+if (!catsSeeded && !db.prepare('SELECT 1 FROM categories LIMIT 1').get()) {
   const ins = db.prepare('INSERT INTO categories (name, slug, icon, sort) VALUES (?, ?, ?, ?)');
   [
     ['Mobiles & Electronics', 'electronics', '📱'], ['Vehicles', 'vehicles', '🚗'],
@@ -202,6 +205,7 @@ if (!db.prepare('SELECT 1 FROM categories LIMIT 1').get()) {
     ['Events & Catering', 'events', '🎉'], ['Pets', 'pets', '🐾'], ['Other', 'other', '📦'],
   ].forEach(([n, s, i], idx) => ins.run(n, s, i, idx));
 }
+if (!catsSeeded) db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('cats_seeded', '1')").run();
 
 // Default sub-categories (added once; you can rename / delete / add more in Admin → Categories)
 if (!db.prepare("SELECT 1 FROM settings WHERE key = 'subcats_seeded'").get()) {

@@ -181,15 +181,15 @@ function callView(req, c, { role, eventsUrl, signalUrl, snapshotUrl }) {
   return html`
   <section class="card call-card">
     <div class="call-head">
-      <h1>${role === 'admin' ? html`KYC video call — ${c.name}` : 'Verification video call'}</h1>
+      <h1>${role === 'admin' ? html`Video call — ${c.name}` : `Video call with ${req.settings.site_name}`}</h1>
       <span class="pill pill-muted" data-call-state>Connecting…</span>
     </div>
     <div class="call-grid" data-call
       data-role="${role}" data-events-url="${eventsUrl}" data-signal-url="${signalUrl}"
-      data-snapshot-url="${snapshotUrl || ''}" data-ice='${JSON.stringify(rtc.iceServers())}'>
+      data-snapshot-url="${snapshotUrl || ''}" data-end-url="${role === 'admin' ? `/admin/clients/${c.id}/ring/end` : ''}" data-ice='${JSON.stringify(rtc.iceServers())}'>
       <div class="call-remote">
         <video autoplay playsinline data-remote-video></video>
-        <div class="call-wait" data-call-wait>${role === 'admin' ? 'Waiting for the client to join… Share the call link with them.' : 'Waiting for the verification officer to join…'}</div>
+        <div class="call-wait" data-call-wait>${role === 'admin' ? 'Waiting for the client to join… Share the call link with them.' : 'Connecting you to our team…'}</div>
         <div class="camera-count" data-call-count hidden></div>
       </div>
       <div class="call-local"><video autoplay playsinline muted data-local-video></video><span>You</span></div>
@@ -202,7 +202,7 @@ function callView(req, c, { role, eventsUrl, signalUrl, snapshotUrl }) {
         <button class="btn" data-call-autosnap>⏱️ Auto-capture (3s)</button>` : ''}
       <button class="btn btn-danger" data-call-hangup>End call</button>
     </div>
-    ${role === 'admin' ? html`<div class="snapshots" data-call-snapshots></div>` : html`<p class="muted small">Keep the ID you registered with (Aadhaar, PAN or Passport) ready. The officer may ask you to show it on camera and will take a live photo during the call.</p>`}
+    ${role === 'admin' ? html`<div class="snapshots" data-call-snapshots></div>` : html`<p class="muted small">Allow the camera and microphone when your browser asks. Keep the ID you registered with nearby in case we ask to see it.</p>`}
   </section>`;
 }
 
@@ -555,7 +555,7 @@ function register(app) {
   // Client side of the KYC video call (no login needed — secret link)
   app.get('/kyc/call/:token', (req, res) => {
     const c = clientByToken(req.params.token);
-    if (!c || c.status !== 'video_call') { res.redirect(c ? `/kyc/status/${c.status_token}` : '/'); return; }
+    if (!rtc.callAllowed(c)) { res.redirect(c ? `/kyc/status/${c.status_token}` : '/'); return; }
     res.html(renderPage(req, {
       title: 'Video verification',
       body: callView(req, c, { role: 'client', eventsUrl: `/rtc/c/${c.status_token}/events`, signalUrl: `/rtc/c/${c.status_token}/signal` }),
@@ -564,13 +564,28 @@ function register(app) {
   });
   app.get('/rtc/c/:token/events', (req, res) => {
     const c = clientByToken(req.params.token);
-    if (!c || c.status !== 'video_call') { res.status(403).send('Forbidden'); return; }
+    if (!rtc.callAllowed(c)) { res.status(403).send('Forbidden'); return; }
     rtc.openStream(req, res, `kyc-${c.id}`, 'client');
   });
   app.post('/rtc/c/:token/signal', (req, res) => {
     const c = clientByToken(req.params.token);
-    if (!c || c.status !== 'video_call') { res.status(403).json({ ok: false }); return; }
+    if (!rtc.callAllowed(c)) { res.status(403).json({ ok: false }); return; }
     res.json({ ok: rtc.relay(`kyc-${c.id}`, 'client', req.body) });
+  });
+
+  // Is the admin calling this seller right now? Polled by the seller's pages (logged in, or the status link).
+  const ringInfo = (c) => (rtc.ringActive(c) && rtc.callAllowed(c)
+    ? { ringing: true, at: c.call_ring_at, live: rtc.adminInRoom(c.id), url: `/kyc/call/${c.status_token}`, from: req0name() }
+    : { ringing: false });
+  const req0name = () => getSettings().site_name;
+  app.get('/client/ring', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!req.seller) { res.json({ ringing: false }); return; }
+    res.json(ringInfo(db.prepare('SELECT * FROM clients WHERE id = ?').get(req.seller.id)));
+  });
+  app.get('/kyc/ring/:token', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ringInfo(clientByToken(req.params.token)));
   });
 
   // Login / logout

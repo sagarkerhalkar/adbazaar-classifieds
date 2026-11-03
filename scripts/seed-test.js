@@ -57,6 +57,13 @@ const COLORS = [[232, 69, 44], [43, 108, 176], [31, 157, 85], [107, 63, 160], [2
 const img = (i, area = 'ads', shape = ['circle', 'square', 'diamond'][i % 3]) =>
   saveUpload({ filename: 'test.png', data: png(640, 480, COLORS[i % COLORS.length], COLORS[(i + 3) % COLORS.length], shape) }, area);
 
+// Product pictures for the test ads (scripts/seed-images, one per ad + a second angle)
+const PHOTOS = ['iphone', 'tv', 'repair', 'headphones', 'tuition', 'english', 'drawing', 'scooter', 'car', 'carwash', 'makeup', 'salon', 'dresser', 'laptop'];
+const photo = (i, suffix = '') => {
+  const f = path.join(__dirname, 'seed-images', `${PHOTOS[i % PHOTOS.length]}${suffix}.jpg`);
+  return fs.existsSync(f) ? saveUpload({ filename: 'photo.jpg', data: fs.readFileSync(f) }, 'ads') : img(i);
+};
+
 // ---------- remove ----------
 function removeTestData() {
   const clients = db.prepare("SELECT * FROM clients WHERE email LIKE '%.test@example.com'").all();
@@ -150,7 +157,7 @@ tx(() => {
   });
 
   ADS.forEach(([key, cat, kind, title, desc, price, note, city, loc, plan, top, ago, state], i) => {
-    const images = [img(i), ...(i % 2 ? [img(i + 5)] : [])];
+    const images = [photo(i), photo(i, '-2')];
     const start = now - ago * DAY;
     const isLive = state === 'active';
     const paid = plan ? plan.price_paise + topCost(top, plan.days) : 0;

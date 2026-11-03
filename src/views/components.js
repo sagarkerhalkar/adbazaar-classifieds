@@ -30,22 +30,22 @@ const hasVideo = (ad) => { try { return JSON.parse(ad.videos || '[]').length > 0
 function adCard(ad) {
   let images = [];
   try { images = JSON.parse(ad.images || '[]'); } catch { /* ignore */ }
+  const place = `${ad.locality ? `${ad.locality}, ` : ''}${ad.city}`;
   return html`
   <article class="ad-card ${ad.is_top ? 'is-top' : ''}">
-    <a href="${adUrl(ad)}" class="ad-thumb">
-      ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="${ad.title}" loading="lazy">` : html`<div class="thumb-ph">${ad.cat_icon || '📦'}</div>`}
+    <a href="${adUrl(ad)}" class="ad-thumb" tabindex="-1" aria-hidden="true">
+      ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" loading="lazy">` : html`<div class="thumb-ph">${ad.cat_icon || '📦'}</div>`}
       ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
       ${images.length > 1 || hasVideo(ad) ? html`<span class="img-count">${images.length > 1 ? html`${icon('camera', { size: 12 })} ${images.length}` : ''}${hasVideo(ad) ? html` ${icon('video', { size: 12 })}` : ''}</span>` : ''}
     </a>
+    <button type="button" class="fav" data-fav="${ad.id}" aria-label="Save this ad" aria-pressed="false">${icon('heart', { size: 18 })}</button>
     <div class="ad-body">
-      <div class="ad-meta-top"><span class="chip-sm">${ad.cat_name || ''}</span><span class="kind kind-${ad.kind}">${ad.kind === 'service' ? 'Service' : 'Product'}</span></div>
+      <strong class="ad-price">${priceText(ad)}</strong>
       <h3 class="ad-title"><a href="${adUrl(ad)}">${ad.title}</a></h3>
-      <p class="ad-desc">${String(ad.description || '').slice(0, 140)}</p>
       <div class="ad-foot">
-        <strong class="ad-price">${priceText(ad)}</strong>
-        <span class="muted small">${icon('pin', { size: 13 })} ${ad.locality ? `${ad.locality}, ` : ''}${ad.city} · ${timeAgo(ad.starts_at || ad.created_at)}</span>
+        <span class="ad-place">${icon('pin', { size: 13 })} ${place}</span>
+        <span class="ad-when">${timeAgo(ad.starts_at || ad.created_at)}</span>
       </div>
-      <div class="verified small">${icon('star', { size: 13 })} Trusted seller</div>
     </div>
   </article>`;
 }

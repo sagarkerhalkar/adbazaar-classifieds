@@ -60,4 +60,10 @@ function iceServers() {
   return list;
 }
 
-module.exports = { openStream, relay, iceServers, broadcast };
+// The admin can video-call any seller ("Video call now"). The seller sees a ringing pop-up for RING_MS.
+const RING_MS = 15 * 60_000;
+const ringActive = (c) => Boolean(c && c.call_ring_at && Date.now() - c.call_ring_at < RING_MS);
+const callAllowed = (c) => Boolean(c && !['deleted', 'suspended'].includes(c.status) && (c.status === 'video_call' || ringActive(c)));
+const adminInRoom = (id) => { const r = rooms.get(`kyc-${id}`); return Boolean(r && r.admin.size); };
+
+module.exports = { RING_MS, ringActive, callAllowed, adminInRoom, openStream, relay, iceServers, broadcast };

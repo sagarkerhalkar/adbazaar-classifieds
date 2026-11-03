@@ -70,7 +70,9 @@
     });
     // Hide "move to" options that point at the item itself
     const self = b.dataset.fillSelf;
-    $$('option[data-opt]', d).forEach((o) => { o.hidden = o.disabled = o.value === self; });
+    const selfIds = String(self || '').split(',');
+    $$('option[data-opt]', d).forEach((o) => { o.hidden = o.disabled = selfIds.includes(o.value); });
+    $$('select', d).forEach((sel) => { if (sel.selectedOptions[0] && sel.selectedOptions[0].disabled) sel.value = ''; });
     d.showModal();
     const f = d.querySelector('input:not([type=hidden]),select'); if (f) f.focus();
   }));
@@ -145,39 +147,85 @@
     go(Math.min(Number(form.dataset.wizardStart || 0), steps.length - 1));
   });
 
-  // Home: 3D ring of TOP ads (drag, swipe, arrows, auto-turn)
-  $$('[data-ring]').forEach((stage) => {
-    const ring = stage.querySelector('.ring');
-    const cards = $$('.ring-card', ring);
-    const n = cards.length; if (!n) return;
-    const step = 360 / Math.max(n, 3);
-    const radius = Math.round((190 / 2) / Math.tan(Math.PI / Math.max(n, 3))) + 40;
-    cards.forEach((c, i) => { c.style.transform = 'rotateY(' + (i * step) + 'deg) translateZ(' + radius + 'px)'; });
-    let angle = 0;
-    const set = () => { ring.style.transform = 'translateZ(-' + radius + 'px) rotateY(' + angle + 'deg)'; };
-    set();
-    const turn = (dir) => { angle -= dir * step; set(); };
-    $$('[data-ring-prev]', stage).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); turn(-1); }));
-    $$('[data-ring-next]', stage).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); turn(1); }));
-    let timer = null;
-    const auto = () => { if (!reduced && n > 1) { clearInterval(timer); timer = setInterval(() => turn(1), 3500); } };
-    stage.addEventListener('mouseenter', () => clearInterval(timer));
-    stage.addEventListener('mouseleave', auto);
-    let x0 = null, a0 = 0, moved = false;
-    stage.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; x0 = e.clientX; a0 = angle; moved = false; ring.style.transition = 'none'; clearInterval(timer); });
-    window.addEventListener('pointermove', (e) => { if (x0 === null) return; const dx = e.clientX - x0; if (Math.abs(dx) > 5) moved = true; angle = a0 + dx * 0.4; set(); });
-    window.addEventListener('pointerup', () => {
-      if (x0 === null) return; x0 = null; ring.style.transition = '';
-      angle = Math.round(angle / step) * step; set(); auto();
-    });
-    stage.addEventListener('click', (e) => { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
-    stage.addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft') turn(-1); if (e.key === 'ArrowRight') turn(1); });
-    auto();
+  // Home banner slider: auto-plays every 5 s, arrows, dots, swipe; pauses on hover
+  $$('[data-banner]').forEach((box) => {
+    const slides = $$('[data-slide]', box); const dots = $$('[data-banner-dot]', box);
+    if (slides.length < 2) return;
+    let cur = 0, timer = null;
+    const go = (i) => {
+      cur = (i + slides.length) % slides.length;
+      slides.forEach((s, j) => s.classList.toggle('active', j === cur));
+      dots.forEach((d, j) => d.classList.toggle('active', j === cur));
+    };
+    const play = () => { clearInterval(timer); if (!reduced) timer = setInterval(() => go(cur + 1), 5000); };
+    box.querySelector('[data-banner-prev]').addEventListener('click', () => { go(cur - 1); play(); });
+    box.querySelector('[data-banner-next]').addEventListener('click', () => { go(cur + 1); play(); });
+    dots.forEach((d) => d.addEventListener('click', () => { go(Number(d.dataset.bannerDot)); play(); }));
+    box.addEventListener('mouseenter', () => clearInterval(timer));
+    box.addEventListener('mouseleave', play);
+    let x0 = null;
+    box.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    box.addEventListener('touchend', (e) => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) { go(cur + (dx < 0 ? 1 : -1)); play(); } x0 = null; });
+    play();
   });
 
+  // Horizontal strips (TOP ads): arrow buttons scroll by one screen
+  $$('[data-scroller]').forEach((sec) => {
+    const track = sec.querySelector('[data-scroll-track]'); if (!track) return;
+    const by = (dir) => track.scrollBy({ left: dir * track.clientWidth * 0.9, behavior: reduced ? 'auto' : 'smooth' });
+    const p = sec.querySelector('[data-scroll-prev]'), n = sec.querySelector('[data-scroll-next]');
+    if (p) p.addEventListener('click', () => by(-1));
+    if (n) n.addEventListener('click', () => by(1));
+  });
+
+  // Saved ads (♥): kept in this browser only
+  const SAVE_KEY = 'adbazaar_saved';
+  const readSaved = () => { try { return JSON.parse(localStorage.getItem(SAVE_KEY) || '[]').filter((n) => Number.isInteger(n)); } catch { return []; } };
+  const writeSaved = (list) => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(list.slice(0, 100))); } catch { /* storage off */ } };
+  const paintSaved = () => {
+    const list = readSaved();
+    $$('[data-fav]').forEach((b) => { const on = list.includes(Number(b.dataset.fav)); b.setAttribute('aria-pressed', on); b.setAttribute('aria-label', on ? 'Remove from saved' : 'Save this ad'); });
+    $$('[data-saved-link]').forEach((a) => { a.href = list.length ? '/saved?ids=' + list.join(',') : '/saved'; });
+    $$('[data-saved-count]').forEach((c) => { c.textContent = list.length; c.hidden = !list.length; });
+  };
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-fav]'); if (!b) return;
+    e.preventDefault();
+    const id = Number(b.dataset.fav); let list = readSaved();
+    list = list.includes(id) ? list.filter((x) => x !== id) : [id, ...list];
+    writeSaved(list); paintSaved();
+    b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+  });
+  paintSaved();
+  // On the Saved page, keep the address in sync with this browser's list
+  if (location.pathname === '/saved' && !location.search && readSaved().length) location.replace('/saved?ids=' + readSaved().join(','));
+
+  // "Load more ads": fetch the next page and append its cards
+  document.addEventListener('click', async (e) => {
+    const a = e.target.closest('[data-load-more]'); if (!a) return;
+    e.preventDefault();
+    const box = a.closest('[data-results]'); if (!box) { location.href = a.href; return; }
+    a.textContent = 'Loading…'; a.setAttribute('aria-busy', 'true');
+    try {
+      const r = await fetch(a.href, { credentials: 'same-origin' });
+      const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+      const next = doc.querySelector('[data-results]');
+      const grid = box.querySelector('.grid');
+      $$('.grid > *', next).forEach((card) => { card.classList.add('appear'); grid.appendChild(document.importNode(card, true)); });
+      const more = next.querySelector('[data-loadmore]'); const old = box.querySelector('[data-loadmore]');
+      if (more) old.replaceWith(document.importNode(more, true)); else old.remove();
+      paintSaved(); bindTilt();
+    } catch { location.href = a.href; }
+  });
+
+  // Selects that submit their form when changed (sort menu)
+  $$('select[data-autosubmit]').forEach((sel) => sel.addEventListener('change', () => sel.form.submit()));
+
   // Gentle 3D tilt on ad cards (mouse only, off when motion is reduced)
-  if (!reduced && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
-    $$('.ad-card').forEach((card) => {
+  function bindTilt() {
+    if (reduced || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    $$('.ad-card:not([data-tilt])').forEach((card) => {
+      card.dataset.tilt = '1';
       card.addEventListener('pointermove', (e) => {
         const r = card.getBoundingClientRect();
         const px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
@@ -186,6 +234,7 @@
       card.addEventListener('pointerleave', () => { card.style.transform = ''; });
     });
   }
+  bindTilt();
 
   // Line chart read-out: hairline snaps to the nearest day, tooltip shows the value
   $$('[data-linechart]').forEach((box) => {
@@ -309,4 +358,13 @@
 
   // Uppercase helper for PAN
   $$('input.upper').forEach((i) => i.addEventListener('input', () => { i.value = i.value.toUpperCase(); }));
+})();
+
+// Seller pages: listen for an incoming video call from the admin (loads public/js/ring.js)
+(function () {
+  const me = document.currentScript && document.currentScript.src;
+  if (document.body.classList.contains('portal-admin')) return;
+  const s = document.createElement('script');
+  s.src = '/public/js/ring.js' + (me && me.includes('?') ? me.slice(me.indexOf('?')) : '');
+  s.defer = true; document.body.appendChild(s);
 })();

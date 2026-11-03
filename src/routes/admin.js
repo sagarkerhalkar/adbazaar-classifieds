@@ -154,7 +154,13 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
       </form>` : ''}
 
       <div class="callbox">
-        <h3>🎥 Video call verification</h3>
+        <h3>🎥 Video call</h3>
+        ${c.status !== 'deleted' && c.status !== 'suspended' ? html`
+        <form method="post" action="/admin/clients/${c.id}/ring" class="callnow">
+          ${csrf(req)}
+          <button class="btn btn-primary">${icon('video', { size: 18 })} Video call now</button>
+          <span class="small muted">${rtc.ringActive(c) ? html`<strong class="ok">Ringing now</strong> — ` : ''}Their screen rings if they have ${req.settings.site_name} open, and they get an email with the join link.</span>
+        </form>` : ''}
         ${c.status === 'video_call' ? html`
           <p>Call ${c.video_call_at ? html`scheduled for <strong>${fmtDate(c.video_call_at)}</strong>` : 'requested'}. Send the client this link:</p>
           <div class="copy"><input readonly value="${callLink}" data-copy-src><button type="button" class="btn btn-sm" data-copy>Copy</button></div>
@@ -299,10 +305,12 @@ function categoriesView(req, mains, counts) {
   const total = (m) => n(m) + m.subs.reduce((t, sc) => t + n(sc), 0);
   const editBtn = (c, isSub) => html`<button type="button" class="icon-btn" title="Edit ${c.name}" aria-label="Edit ${c.name}" data-dialog-open="${isSub ? 'cat-edit-sub' : 'cat-edit-main'}"
     data-fill-action="/admin/categories/${c.id}" data-fill-name="${c.name}" data-fill-icon="${c.icon}" data-fill-sort="${c.sort}" data-fill-active="${c.is_active ? '1' : '0'}" data-fill-parent="${c.parent_id || ''}" data-fill-title="${c.name}">${icon('edit', { size: 15 })}</button>`;
-  const delBtn = (c, blocked) => blocked
-    ? html`<button type="button" class="icon-btn" disabled title="Delete its sub-categories first" style="opacity:.35">${icon('trash', { size: 15 })}</button>`
-    : html`<button type="button" class="icon-btn danger" title="Delete ${c.name}" aria-label="Delete ${c.name}" data-dialog-open="cat-delete"
-    data-fill-action="/admin/categories/${c.id}/delete" data-fill-title="${c.name}" data-fill-count="${n(c) ? `${n(c)} ad${n(c) === 1 ? '' : 's'} will be moved.` : 'It has no ads.'}" data-fill-self="${c.id}">${icon('trash', { size: 15 })}</button>`;
+  const delBtn = (c, subs = []) => {
+    const ads = n(c) + subs.reduce((t, sc) => t + n(sc), 0);
+    const what = [subs.length ? `Its ${subs.length} sub-categor${subs.length === 1 ? 'y' : 'ies'} will be deleted too.` : '', ads ? `${ads} ad${ads === 1 ? '' : 's'} must move to another category.` : 'It has no ads.'].filter(Boolean).join(' ');
+    return html`<button type="button" class="icon-btn danger" title="Delete ${c.name}" aria-label="Delete ${c.name}" data-dialog-open="cat-delete"
+    data-fill-action="/admin/categories/${c.id}/delete" data-fill-title="${c.name}" data-fill-count="${what}" data-fill-self="${[c.id, ...subs.map((sc) => sc.id)].join(',')}">${icon('trash', { size: 15 })}</button>`;
+  };
   const toggle = (c) => html`<form method="post" action="/admin/categories/${c.id}" class="inline">${csrf(req)}<input type="hidden" name="is_active" value="${c.is_active ? '0' : '1'}">
     <button class="icon-btn" title="${c.is_active ? 'Hide from site' : 'Show on site'}" aria-label="${c.is_active ? 'Hide' : 'Show'} ${c.name}">${icon(c.is_active ? 'eye' : 'x', { size: 15 })}</button></form>`;
   return html`
@@ -320,10 +328,10 @@ function categoriesView(req, mains, counts) {
       <div class="catcard-head">
         <div class="catcard-ic">${m.icon}</div>
         <div class="catcard-name"><strong>${m.name}</strong><small>${m.subs.length} sub-categor${m.subs.length === 1 ? 'y' : 'ies'} · ${total(m)} ad${total(m) === 1 ? '' : 's'}${m.is_active ? '' : ' · hidden'}</small></div>
-        ${toggle(m)}${editBtn(m, false)}${delBtn(m, m.subs.length > 0)}
+        ${toggle(m)}${editBtn(m, false)}${delBtn(m, m.subs)}
       </div>
       <div class="subchips">
-        ${m.subs.length ? m.subs.map((sc) => html`<span class="subchip ${sc.is_active ? '' : 'off'}">${sc.name}${n(sc) ? html` <span class="muted">${n(sc)}</span>` : ''}${editBtn(sc, true)}${delBtn(sc, false)}</span>`) : html`<span class="muted small">No sub-categories — ads go straight into ${m.name}.</span>`}
+        ${m.subs.length ? m.subs.map((sc) => html`<span class="subchip ${sc.is_active ? '' : 'off'}">${sc.name}${n(sc) ? html` <span class="muted">${n(sc)}</span>` : ''}${editBtn(sc, true)}${delBtn(sc)}</span>`) : html`<span class="muted small">No sub-categories — ads go straight into ${m.name}.</span>`}
       </div>
       <form method="post" action="/admin/categories/add" class="addsub">
         ${csrf(req)}<input type="hidden" name="parent_id" value="${m.id}">
@@ -711,11 +719,24 @@ function register(app) {
     res.redirect(`/admin/clients/${c.id}`);
   });
 
+  // ---- Call any seller now: their open page rings, and they get an email ----
+  app.post('/admin/clients/:id/ring', requireAdmin, (req, res) => {
+    const c = getClient(req.params.id);
+    if (!c || c.status === 'deleted' || c.status === 'suspended') { req.flash('error', 'This client cannot be called.'); res.redirect('/admin/clients'); return; }
+    db.prepare('UPDATE clients SET call_ring_at = ? WHERE id = ?').run(Date.now(), c.id);
+    notify.videoCall(c, null);
+    res.redirect(`/admin/clients/${c.id}/call`);
+  });
+  app.post('/admin/clients/:id/ring/end', requireAdmin, (req, res) => {
+    db.prepare('UPDATE clients SET call_ring_at = NULL WHERE id = ?').run(parseInt(req.params.id, 10) || 0);
+    res.json({ ok: true });
+  });
+
   // ---- KYC video call (admin side) ----
   app.get('/admin/clients/:id/call', requireAdmin, (req, res) => {
     const c = getClient(req.params.id);
     if (!c) { res.redirect('/admin/clients'); return; }
-    if (c.status !== 'video_call') { req.flash('error', 'Request a video call first.'); res.redirect(`/admin/clients/${c.id}`); return; }
+    if (!rtc.callAllowed(c)) { req.flash('error', 'Click "Video call now" first.'); res.redirect(`/admin/clients/${c.id}`); return; }
     const body = html`<nav class="crumbs"><a href="/admin/clients/${c.id}">← Back to ${c.name}</a></nav>
       <div class="cols-call">
         ${callView(req, c, { role: 'admin', eventsUrl: `/rtc/a/${c.id}/events`, signalUrl: `/rtc/a/${c.id}/signal`, snapshotUrl: `/admin/clients/${c.id}/snapshot` })}
@@ -878,6 +899,7 @@ function register(app) {
 
   // ---- Reports ----
   require('./reports').register(app, { requireAdmin, page });
+  require('./homeadmin').register(app, { requireAdmin, page });
   app.post('/admin/reports/:id/resolve', requireAdmin, (req, res) => {
     db.prepare('UPDATE reports SET resolved = 1 WHERE id = ?').run(parseInt(req.params.id, 10) || 0);
     res.redirect('/admin/reports#ad-reports');
@@ -955,17 +977,20 @@ function register(app) {
   app.post('/admin/categories/:id/delete', requireAdmin, (req, res) => {
     const c = Cat.byId(req.params.id);
     if (!c) { res.redirect('/admin/categories'); return; }
-    if (db.prepare('SELECT 1 FROM categories WHERE parent_id = ? LIMIT 1').get(c.id)) {
-      req.flash('error', `"${c.name}" still has sub-categories. Delete or move them first.`); res.redirect('/admin/categories'); return;
-    }
-    const used = db.prepare('SELECT COUNT(*) n FROM ads WHERE category_id = ?').get(c.id).n;
+    // A main category is deleted together with its sub-categories. Their ads move to the category you choose.
+    const ids = [c.id, ...db.prepare('SELECT id FROM categories WHERE parent_id = ?').all(c.id).map((r) => r.id)];
+    const marks = ids.map(() => '?').join(',');
+    const used = db.prepare(`SELECT COUNT(*) n FROM ads WHERE category_id IN (${marks})`).get(...ids).n;
+    let to = null;
     if (used) {
-      const to = Cat.byId(req.body.move_to);
-      if (!to || to.id === c.id) { req.flash('error', `"${c.name}" has ${used} ad(s). Choose where to move them, then delete.`); res.redirect('/admin/categories'); return; }
-      db.prepare('UPDATE ads SET category_id = ? WHERE category_id = ?').run(to.id, c.id);
+      to = Cat.byId(req.body.move_to);
+      if (!to || ids.includes(to.id)) { req.flash('error', `"${c.name}" has ${used} ad(s). Choose where to move them, then delete.`); res.redirect('/admin/categories'); return; }
     }
-    db.prepare('DELETE FROM categories WHERE id = ?').run(c.id);
-    req.flash('success', `"${c.name}" deleted${used ? ` — ${used} ad(s) moved to ${Cat.label(req.body.move_to)}` : ''}.`);
+    tx(() => {
+      if (used) db.prepare(`UPDATE ads SET category_id = ? WHERE category_id IN (${marks})`).run(to.id, ...ids);
+      db.prepare(`DELETE FROM categories WHERE id IN (${marks})`).run(...ids);
+    });
+    req.flash('success', `"${c.name}" deleted${ids.length > 1 ? ` with ${ids.length - 1} sub-categor${ids.length === 2 ? 'y' : 'ies'}` : ''}${used ? ` — ${used} ad(s) moved to ${Cat.label(to.id)}` : ''}.`);
     res.redirect('/admin/categories');
   });
   app.post('/admin/slots', requireAdmin, (req, res) => {

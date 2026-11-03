@@ -172,7 +172,10 @@
     const t = localStream && localStream.getVideoTracks()[0]; if (!t) return;
     t.enabled = !t.enabled; e.target.textContent = t.enabled ? '📷 Camera off' : '📷 Camera on';
   });
-  btn('hangup').addEventListener('click', () => { signal({ type: 'hangup' }); finish('You ended the call.'); });
+  // Admin: stop the seller's phone from ringing when the call ends
+  const endUrl = root.dataset.endUrl;
+  const stopRinging = () => { if (endUrl) fetch(endUrl, { method: 'POST', headers: { 'X-CSRF-Token': csrf }, keepalive: true }).catch(() => {}); };
+  btn('hangup').addEventListener('click', () => { signal({ type: 'hangup' }); stopRinging(); finish('You ended the call.'); });
   if (btn('snap')) btn('snap').addEventListener('click', snapshot);
   if (btn('autosnap')) btn('autosnap').addEventListener('click', autoSnap);
   window.addEventListener('beforeunload', () => { if (!ended) navigator.sendBeacon && signal({ type: 'hangup' }); });
