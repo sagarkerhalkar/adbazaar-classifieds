@@ -122,7 +122,7 @@ Commit: `673acca`
 - Clients who registered earlier keep their documents; their Aadhaar is shown as their ID.
 - **This conversation history is saved on GitHub** (this file).
 
-Commit: see the latest commit that adds `docs/CONVERSATION.md`.
+Commit: `94e3fa7`
 
 ---
 
