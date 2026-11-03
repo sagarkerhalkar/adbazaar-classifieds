@@ -2,11 +2,12 @@
 // Public site: anyone can browse live ads without logging in.
 
 const path = require('node:path');
-const { db, parseImages, parseVideos } = require('../db');
+const { db, parseImages, parseVideos, getSettings } = require('../db');
 const { currentSlot, SLOTS } = require('../slots');
 const Cat = require('../categories');
 const { html, raw, fmtDate, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { icon } = require('../views/icons');
+const Sp = require('./sponsors');
 const { getHome, cityList } = require('../homeconfig');
 const { renderPage } = require('../views/layout');
 const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist } = require('../views/components');
@@ -23,14 +24,23 @@ const CAT_JOIN = 'JOIN categories c ON c.id = a.category_id LEFT JOIN categories
 // Hide ads whose seller is no longer active (deactivated / blocked / deleted).
 const SELLER_OK = "a.client_id IN (SELECT id FROM clients WHERE status = 'approved')";
 
+// An ad is TOP right now if the seller bought the current 3-hour slot, or the admin pinned it (until a date, in chosen slots).
+// Only integers are put into this SQL.
+function TOP_NOW(slot = currentSlot(), now = Date.now()) {
+  const sl = Number(slot) | 0; const t = Math.floor(Number(now));
+  return `((((a.top_slots >> ${sl}) & 1) = 1) OR (COALESCE(a.admin_top_until, 0) > ${t} AND ((a.admin_top_slots >> ${sl}) & 1) = 1))`;
+}
+// Ranking (see src/ranking.js): TOP first, then admin boost, then the amount paid for the current run (more money = higher).
+// Ads that paid the same amount are shuffled on every new visit, so everyone in a price group gets a fair turn at the top.
+const SHUFFLE = (seed) => `((a.id * 2654435761 + ${Number(seed) | 0}) % 1000003)`;
 const SORTS = {
-  best: 'top_now DESC, a.rank_score DESC, a.starts_at DESC',
+  best: 'top_now DESC, a.admin_boost DESC, a.rank_score DESC, SHUFFLE',
   new: 'top_now DESC, a.starts_at DESC',
   price_asc: 'top_now DESC, (a.price_paise IS NULL OR a.price_paise = 0), a.price_paise ASC, a.rank_score DESC',
   price_desc: 'top_now DESC, a.price_paise IS NULL, a.price_paise DESC, a.rank_score DESC',
 };
 
-function listAds({ q, city, cat, kind, page, sort, excludeTop = false }) {
+function listAds({ q, city, cat, kind, page, sort, excludeTop = false, seed = 0 }) {
   const where = ["a.status = 'active'", 'a.expires_at > ?', SELLER_OK];
   const args = [Date.now()];
   if (q) {
@@ -45,15 +55,15 @@ function listAds({ q, city, cat, kind, page, sort, excludeTop = false }) {
     args.push(...ids);
   }
   if (kind === 'product' || kind === 'service') { where.push('a.kind = ?'); args.push(kind); }
-  if (excludeTop) { where.push('((a.top_slots >> ?) & 1) = 0'); args.push(currentSlot()); }
+  if (excludeTop) where.push(`NOT ${TOP_NOW()}`);
   const w = where.join(' AND ');
   const total = db.prepare(`SELECT COUNT(*) AS n FROM ads a ${CAT_JOIN} WHERE ${w}`).get(...args).n;
   // Ads that bought the CURRENT 3-hour slot always come first (TOP), then the chosen order.
   const slot = currentSlot();
-  const order = SORTS[sort] || SORTS.best;
-  const rows = db.prepare(`SELECT a.*, ${CAT_COLS}, ((a.top_slots >> ?) & 1) AS top_now
+  const order = (SORTS[sort] || SORTS.best).replace('SHUFFLE', SHUFFLE(seed));
+  const rows = db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS top_now
     FROM ads a ${CAT_JOIN} WHERE ${w}
-    ORDER BY ${order} LIMIT ? OFFSET ?`).all(slot, ...args, PAGE_SIZE, (page - 1) * PAGE_SIZE);
+    ORDER BY ${order} LIMIT ? OFFSET ?`).all(...args, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   rows.forEach((r) => { r.is_top = r.top_now; });
   return { rows, total, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), slot };
 }
@@ -113,16 +123,17 @@ function homeLanding(req, { cats, data, filters, cities, tops, home }) {
 
   <section class="section" data-results>
     <div class="section-head"><h2>${home.fresh_title}</h2><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}</span></div>
-    ${data.rows.length ? html`<div class="grid">${data.rows.map(adCard)}</div>` : html`
-      <div class="empty card center"><div class="empty-icon">🛍️</div><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/client/register">Post your ad</a></div>`}
+    ${data.rows.length ? html`<div class="grid">${Sp.weave(data.rows.map(adCard))}</div>` : html`
+      <div class="empty card center"><div class="empty-icon">🛍️</div><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/post">Post your ad</a></div>`}
     ${loadMore(filters, data)}
   </section>
 
+  ${Sp.card(Sp.pick('home'), 'wide')}
   ${home.show.sell ? html`<section class="sellband">
     <div class="sell-art" aria-hidden="true"><span>🛵</span><span>📷</span><span>🛋️</span></div>
     <div><h2>${home.sell_title}</h2><p>${home.sell_text}</p>
       <p class="small sell-time">${icon('clock', { size: 15 })} Login check takes ${approveTimeText(req.settings.auto_approve_minutes)} · payment confirmation ${PAYMENT_TIME_TEXT}</p></div>
-    <a class="btn btn-sell btn-lg" href="/client/register">${icon('plus', { size: 18 })} Post your ad</a>
+    <a class="btn btn-sell btn-lg" href="/post">${icon('plus', { size: 18 })} Post your ad</a>
   </section>` : ''}`;
 }
 
@@ -172,7 +183,7 @@ function homeResults(req, { cats, data, filters, cities }) {
           </form>
         </div>
       </div>
-      ${data.rows.length ? html`<div class="grid">${data.rows.map(adCard)}</div>` : html`
+      ${data.rows.length ? html`<div class="grid">${Sp.weave(data.rows.map(adCard))}</div>` : html`
         <div class="empty card center">
           <div class="empty-icon">🔎</div>
           <h3>No ads match this search</h3>
@@ -259,7 +270,27 @@ function adView(req, { ad, images, videos = [], related }) {
       </div>
     </aside>
   </div>
+  ${Sp.card(Sp.pick('ad_page'), 'wide')}
   ${related.length ? html`<section class="section"><div class="section-head"><h2>Similar ads</h2><a class="small" href="/?cat=${ad.cat_slug}">See all</a></div><div class="grid">${related.map(adCard)}</div></section>` : ''}`;
+}
+
+// Too many complaints about one ad from different people → the ad is removed and the seller is blocked from posting.
+function complaintCheck(adId, reason) {
+  const notify = require('../notify');
+  const life = require('../lifecycle');
+  const ad = db.prepare('SELECT a.*, c.name AS seller_name, c.status AS seller_status FROM ads a JOIN clients c ON c.id = a.client_id WHERE a.id = ?').get(adId);
+  if (!ad) return;
+  const people = db.prepare('SELECT COUNT(DISTINCT reporter_ip) n FROM reports WHERE ad_id = ?').get(adId).n;
+  const limit = Number(getSettings().complaint_block_threshold) || 0;
+  notify.adminAlert('complaint', `⚑ Complaint about "${ad.title}" (${reason}) — ${people} complaint(s) from different people`);
+  if (!limit || people < limit || ad.seller_status === 'suspended') return;
+  const why = `Blocked automatically: the ad "${ad.title}" got complaints from ${people} different people.`;
+  db.prepare("UPDATE ads SET status = 'blocked', block_reason = ?, rank_score = -1, updated_at = ? WHERE id = ?").run(why, Date.now(), ad.id);
+  if (life.blockClient(ad.client_id, why)) {
+    const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(ad.client_id);
+    notify.suspended(c, why);
+    notify.adminAlert('complaint', `⛔ ${ad.seller_name} was blocked automatically — "${ad.title}" got complaints from ${people} different people.`);
+  }
 }
 
 function register(app) {
@@ -269,6 +300,9 @@ function register(app) {
       kind: str(req.query.kind, 10), page: Math.max(1, Math.min(500, parseInt(req.query.page, 10) || 1)),
       sort: SORTS[req.query.sort] ? req.query.sort : 'best',
     };
+    // New shuffle for equal-paying ads on every fresh visit; "Load more" pages keep the same order.
+    if (filters.page === 1 || !req.session.shuffle) req.session.shuffle = Math.floor(Math.random() * 1_000_000);
+    filters.seed = req.session.shuffle;
     const cats = Cat.tree();
     const data = listAds(filters);
     const cities = db.prepare(`SELECT city, COUNT(*) AS n FROM ads a WHERE status = 'active' AND expires_at > ? AND ${SELLER_OK} GROUP BY city COLLATE NOCASE ORDER BY n DESC LIMIT 12`).all(Date.now());
@@ -279,7 +313,7 @@ function register(app) {
       const home = getHome(req.settings);
       const slot = currentSlot();
       const tops = home.show.top ? db.prepare(`SELECT a.*, ${CAT_COLS}, 1 AS is_top FROM ads a ${CAT_JOIN}
-        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND ((a.top_slots >> ?) & 1) = 1 ORDER BY a.rank_score DESC LIMIT 16`).all(Date.now(), slot) : [];
+        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND ${TOP_NOW(slot)} ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT 16`).all(Date.now()) : [];
       const fresh = tops.length ? listAds({ ...filters, excludeTop: true }) : data;
       body = homeLanding(req, { cats, data: fresh, filters, cities, tops, home });
     } else body = homeResults(req, { cats, data, filters, cities });
@@ -288,8 +322,8 @@ function register(app) {
 
   app.get('/saved', (req, res) => {
     const ids = String(req.query.ids || '').split(',').map((x) => parseInt(x, 10)).filter((n) => n > 0).slice(0, 100);
-    const ads = ids.length ? db.prepare(`SELECT a.*, ${CAT_COLS}, ((a.top_slots >> ?) & 1) AS is_top FROM ads a ${CAT_JOIN}
-      WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.id IN (${ids.map(() => '?').join(',')})`).all(currentSlot(), Date.now(), ...ids) : [];
+    const ads = ids.length ? db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW()} AS is_top FROM ads a ${CAT_JOIN}
+      WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.id IN (${ids.map(() => '?').join(',')})`).all(Date.now(), ...ids) : [];
     ads.sort((x, y) => ids.indexOf(y.id) - ids.indexOf(x.id));
     res.html(renderPage(req, { title: 'Saved ads', body: savedView(ads) }));
   });
@@ -315,9 +349,9 @@ function register(app) {
       }
     }
     const slot = currentSlot();
-    ad.is_top = (ad.top_slots >> slot) & 1;
-    const related = db.prepare(`SELECT a.*, ${CAT_COLS}, ((a.top_slots >> ?) & 1) AS is_top_now FROM ads a ${CAT_JOIN}
-      WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.category_id = ? AND a.id != ? ORDER BY is_top_now DESC, a.rank_score DESC LIMIT 4`).all(slot, Date.now(), ad.category_id, ad.id);
+    ad.is_top = ((ad.top_slots >> slot) & 1) || (ad.admin_top_until > Date.now() && ((ad.admin_top_slots >> slot) & 1)) ? 1 : 0;
+    const related = db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS is_top_now FROM ads a ${CAT_JOIN}
+      WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.category_id = ? AND a.id != ? ORDER BY is_top_now DESC, a.rank_score DESC LIMIT 4`).all(Date.now(), ad.category_id, ad.id);
     related.forEach((r) => { r.is_top = r.is_top_now; });
     let body = adView(req, { ad, images: parseImages(ad), videos: parseVideos(ad), related });
     if (!visible) body = html`<div class="flash flash-warn">Preview only — this ad is not live (${ad.status.replace('_', ' ')}). Visitors cannot see it.</div>${body}`;
@@ -332,6 +366,7 @@ function register(app) {
     const reason = str(req.body.reason, 80);
     if (!reason) { req.flash('error', 'Please choose a reason.'); res.redirect(adUrl(ad)); return; }
     db.prepare('INSERT INTO reports (ad_id, reason, details, reporter_ip, created_at) VALUES (?, ?, ?, ?, ?)').run(ad.id, reason, str(req.body.details, 500), req.ip, Date.now());
+    complaintCheck(ad.id, reason);
     req.flash('success', 'Thanks — our team will review this ad.');
     res.redirect(adUrl(ad));
   });
@@ -342,15 +377,7 @@ function register(app) {
     return sendFile(res, path.join(DIRS.ads, name), { cache: 'public, max-age=604800, immutable', req });
   });
 
-  app.get('/terms', (req, res) => res.html(renderPage(req, { title: 'Terms', body: html`<section class="card prose narrow">
-    <h1>Terms of use</h1>
-    <p>${req.settings.site_name} is a classifieds platform. Sellers are identity-verified before they can post, but buyers should still take normal precautions.</p>
-    <ul>
-      <li>Ads run for the paid period (e.g. 7, 15 or 29 days) and are removed automatically when it ends.</li>
-      <li>Payments for ad placement are non-refundable once an ad has gone live.</li>
-      <li>Prohibited: illegal goods or services, adult/escort services, weapons, drugs, counterfeit items, and misleading ads. Such ads are removed without refund and the account may be suspended.</li>
-      <li>Identity documents submitted for verification are used only for KYC and are never shown publicly.</li>
-    </ul></section>` })));
+  require('./legal').register(app);
 
   app.get('/safety', (req, res) => res.html(renderPage(req, { title: 'Safety tips', body: html`<section class="card prose narrow">
     <h1>Safety tips</h1>

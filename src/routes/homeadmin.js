@@ -59,7 +59,8 @@ function view(req, cfg) {
     </div>
 
     <div class="tab-panel" data-panel="banners">
-      <p class="muted small" style="margin-top:0">Banners slide by themselves every 5 seconds at the top of the home page. Up to 8.</p>
+      <div class="section-head" style="align-items:center"><p class="muted small" style="margin:0">Banners slide by themselves every 5 seconds at the top of the home page. Up to 8.</p>
+        <form method="post" action="/admin/home/sample-photos" class="inline">${csrf(req)}<button class="btn btn-sm">${icon('image', { size: 15 })} Add real sample photos to banners</button></form></div>
       <div class="bgrid">${cfg.slides.map((x, i) => slideCard(x, i, cfg.slides.length))}
         ${cfg.slides.length < 8 ? html`<form method="post" action="/admin/home/slides/add" class="bcard bcard-add">${csrf(req)}<button class="btn btn-lg">${icon('plus', { size: 20 })} Add a banner</button></form>` : ''}
       </div>
@@ -97,6 +98,20 @@ function register(app, { requireAdmin, page }) {
   const idx = (req, cfg) => { const i = parseInt(req.params.i, 10); return Number.isInteger(i) && i >= 0 && i < cfg.slides.length ? i : -1; };
 
   app.get('/admin/home', requireAdmin, (req, res) => res.html(page(req, 'Home page', view(req, getHome()))));
+
+  // Free photos of people using phones and laptops (Pexels), put on banners that have no picture yet.
+  app.post('/admin/home/sample-photos', requireAdmin, async (req, res) => {
+    const STOCK = require('../stockphotos');
+    const got = await STOCK.downloadAll(STOCK.BANNER_PHOTOS, 1600);
+    if (!got.size) { req.flash('error', 'Could not download photos — check the internet connection of this computer, or upload your own pictures.'); res.redirect('/admin/home#banners'); return; }
+    const cfg = getHome();
+    const pics = [...got.values()];
+    let n = 0;
+    cfg.slides.forEach((x) => { if (!x.image && pics[n]) { x.image = saveUpload({ filename: 'banner.jpg', data: pics[n] }, 'ads', { maxMb: 8 }); n += 1; } });
+    saveHome(cfg);
+    req.flash('success', n ? `${n} banner(s) now have a real photo. Photos from Pexels (free to use).` : 'All banners already have a picture.');
+    res.redirect('/admin/home#banners');
+  });
 
   app.post('/admin/home/slides/add', requireAdmin, (req, res) => {
     const cfg = getHome();

@@ -12,14 +12,15 @@ const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib
 const { saveUpload, saveDataUrl, removeFile, UploadError, sendFile, DIRS, safeName } = require('../lib/files');
 const V = require('../validators');
 const P = require('../payments');
+const W = require('../wallet');
 const rtc = require('../rtc');
 const { rescore, runMaintenance } = require('../ranking');
 const { callView } = require('./client');
 const Cat = require('../categories');
 const life = require('../lifecycle');
 const notify = require('../notify');
-const { SLOTS, ALL_SLOTS, slotLabels, slotPrices } = require('../slots');
-const { sendEmail, sendSmsOtp, emailConfigured, smsConfigured, smsProvider } = require('../messaging');
+const { SLOTS, ALL_SLOTS, slotLabels, slotPrices, maskFrom } = require('../slots');
+const { sendEmail, sendSmsOtp, emailConfigured, smsConfigured, smsProvider, sendAlert, alertChannels } = require('../messaging');
 
 const page = (req, title, body, scripts = []) => renderPage(req, { title, body, portal: 'admin', scripts });
 const back = (req, fallback) => {
@@ -32,7 +33,7 @@ function requireAdmin(req, res) {
   if (!req.admin) { res.redirect('/admin/login'); return; }
   req.adminCounts = {
     kyc: db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
-    pay: db.prepare("SELECT COUNT(*) n FROM payments WHERE status = 'pending'").get().n,
+    pay: db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n,
     reports: db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
   };
 }
@@ -116,6 +117,13 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
         <div><dt>Date of birth</dt><dd>${c.dob ? html`${fmtDay(Date.parse(`${c.dob}T00:00:00+05:30`))} <span class="pill ${V.ageFromDob(c.dob) >= 18 ? 'pill-ok' : 'pill-bad'}">${V.ageFromDob(c.dob)} yrs</span>` : html`<span class="muted">Not given yet</span>`}</dd></div>
         <div class="wide"><dt>Address (optional)</dt><dd>${[c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || html`<span class="muted">Not given</span>`}</dd></div>
       </dl>
+      <form method="post" action="/admin/clients/${c.id}/wallet" class="walletadmin">
+        ${csrf(req)}
+        <span><span class="muted small">Balance</span><strong>${rupees(c.wallet_paise || 0)}</strong></span>
+        <input type="number" name="amount" step="1" placeholder="₹ e.g. 100 or -100" required aria-label="Amount">
+        <input name="note" maxlength="120" placeholder="Note (seller sees it)" aria-label="Note">
+        <button class="btn btn-sm">Add / remove</button>
+      </form>
       <h3>Documents</h3>
       <div class="docs">
         ${docLink(c.id_file || c.aadhaar_file, `${(ID_TYPES[c.id_type] || ID_TYPES.aadhaar).label}`)}
@@ -246,10 +254,25 @@ function newClientView(req, v = {}, error) {
   </div>`;
 }
 
-function paymentsView(req, rows, status) {
+function topupsTable(req, rows) {
+  return html`<div class="table-wrap card"><table class="table">
+    <thead><tr><th>#</th><th>Date</th><th>Seller</th><th>Amount</th><th>UTR</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map((t) => html`<tr>
+      <td>T${t.id}</td><td>${fmtDate(t.created_at)}</td><td><a href="/admin/clients/${t.client_id}">${t.client_name}</a></td>
+      <td><strong>${rupees(t.amount_paise)}</strong></td>
+      <td class="mono">${t.utr}${t.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${t.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}</td>
+      <td>${pill(t.status === 'pending' ? 'payment_review' : t.status)}${t.admin_note ? html`<div class="small muted">${t.admin_note}</div>` : ''}</td>
+      <td class="actions">${t.status === 'pending' ? html`
+        <form method="post" action="/admin/topups/${t.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">✔ Confirm & add to balance</button></form>
+        <form method="post" action="/admin/topups/${t.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>` : ''}</td>
+    </tr>`)}</tbody></table></div>`;
+}
+
+function paymentsView(req, rows, status, topups = []) {
   const tabs = [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['all', 'All']];
   return html`
   <div class="page-head"><h1>Payments</h1></div>
+  ${topups.length ? html`<h2>Balance top-ups ${status === 'pending' ? 'to confirm' : ''}</h2>${topupsTable(req, topups)}<h2>Ad payments</h2>` : ''}
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${status === k ? 'active' : ''}" href="/admin/payments?status=${k}">${l}</a>`)}</div>
   ${rows.length ? html`<div class="table-wrap card"><table class="table">
     <thead><tr><th>#</th><th>Date</th><th>Client</th><th>Ad</th><th>Plan</th><th>Amount</th><th>Reference</th><th>Status</th><th></th></tr></thead>
@@ -258,14 +281,15 @@ function paymentsView(req, rows, status) {
       <td><a href="/admin/clients/${p.client_id}">${p.client_name}</a></td>
       <td><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></td>
       <td>${p.days} days${p.top_slots ? html`<div class="small"><span class="pill pill-top">TOP ${slotLabels(p.top_slots).join(', ')}</span></div>` : ''}</td>
-      <td><strong>${rupees(p.amount_paise)}</strong></td>
-      <td>${p.method === 'razorpay' ? html`Online<div class="small muted mono">${p.razorpay_payment_id || p.razorpay_order_id}</div>` : html`UPI <span class="mono">${p.utr}</span>${p.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${p.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}`}</td>
+      <td><strong>${rupees(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${p.method === 'wallet' ? 'all from balance' : html`UPI ${rupees(p.amount_paise - p.wallet_paise)} + balance ${rupees(p.wallet_paise)}`}</div>` : ''}</td>
+      <td>${p.method === 'wallet' ? html`Balance` : p.method === 'razorpay' ? html`Online<div class="small muted mono">${p.razorpay_payment_id || p.razorpay_order_id}</div>` : html`UPI <span class="mono">${p.utr}</span>${p.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${p.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}`}</td>
       <td>${pill(p.status)}${p.admin_note ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
       <td class="actions">${p.status === 'pending' ? html`
         <form method="post" action="/admin/payments/${p.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">✔ Confirm & go live</button></form>
-        <form method="post" action="/admin/payments/${p.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason" maxlength="200"><button class="btn btn-danger btn-sm">Reject</button></form>` : ''}</td>
-    </tr>`)}</tbody></table></div>` : html`<div class="card empty center"><p class="muted">Nothing here.</p></div>`}`;
+        <form method="post" action="/admin/payments/${p.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>` : p.status === 'paid' ? html`<a class="btn btn-sm" href="/admin/payments/${p.id}/receipt" target="_blank">${icon('receipt', { size: 15 })} Receipt</a>` : ''}</td>
+    </tr>`)}</tbody></table><datalist id="reject-reasons"><option value="UTR not found in our bank account"><option value="Amount received is less than the total"><option value="Payment sent to a wrong UPI ID"><option value="Same UTR already used"></datalist></div>` : html`<div class="card empty center"><p class="muted">Nothing here.</p></div>`}`;
 }
+
 
 function adsView(req, rows, f) {
   const tabs = [['active', 'Live'], ['payment_review', 'Payment review'], ['awaiting_payment', 'Unpaid'], ['paused', 'Deactivated'], ['expired', 'Expired'], ['blocked', 'Blocked'], ['deleted', 'Deleted'], ['all', 'All']];
@@ -279,7 +303,7 @@ function adsView(req, rows, f) {
       <td class="mono">${a.status === 'active' ? a.rank_score.toFixed(1) : '—'}</td>
       <td><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></td>
       <td><a href="/admin/clients/${a.client_id}">${a.client_name}</a></td>
-      <td>${pill(a.status)}${a.top_slots ? html` <span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
+      <td>${pill(a.status)}${a.top_slots ? html` <span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html` <span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html` <span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
       <td>${a.plan_name || '—'}<div class="small muted">${rupees(a.paid_total_paise)}</div></td>
       <td>${a.expires_at ? html`${fmtDay(a.expires_at)}<div class="small muted">${a.status === 'active' ? timeLeft(a.expires_at) : ''}</div>` : '—'}</td>
       <td>${a.views}</td>
@@ -287,15 +311,32 @@ function adsView(req, rows, f) {
         ${a.status === 'deleted' ? '' : a.status === 'blocked'
           ? html`<form method="post" action="/admin/ads/${a.id}/unblock" class="inline">${csrf(req)}<button class="btn btn-sm">Unblock</button></form>`
           : html`<form method="post" action="/admin/ads/${a.id}/block" class="inline reject-form">${csrf(req)}<input name="reason" placeholder="Reason" maxlength="200"><button class="btn btn-danger btn-sm">Block</button></form>`}
-        ${a.status === 'active' ? html`
-          <form method="post" action="/admin/ads/${a.id}/boost" class="inline boost-form">${csrf(req)}<input type="number" name="boost" min="-10" max="10" value="${a.admin_boost}" title="Manual ranking boost (-10…10)"><button class="btn btn-sm">Set boost</button></form>
-          <form method="post" action="/admin/ads/${a.id}/top" class="inline">${csrf(req)}<button class="btn btn-sm">${a.top_slots ? 'Remove TOP' : 'Make TOP (all day)'}</button></form>` : ''}
-        ${a.status === 'active' || a.status === 'expired' ? html`<form method="post" action="/admin/ads/${a.id}/extend" class="inline boost-form">${csrf(req)}<input type="number" name="days" min="1" max="365" value="7"><button class="btn btn-sm">+ days free</button></form>` : ''}
+        ${a.status === 'active' || a.status === 'expired' ? html`<button type="button" class="btn btn-primary btn-sm" data-dialog-open="ad-promote"
+          data-fill-action="/admin/ads/${a.id}/promote" data-fill-title="${a.title}" data-fill-boost="${a.admin_boost}"
+          data-fill-topdays="${a.admin_top_until > Date.now() ? Math.ceil((a.admin_top_until - Date.now()) / 86400_000) : ''}">${icon('bolt', { size: 14 })} Boost & TOP</button>` : ''}
         ${a.status === 'active' ? html`<form method="post" action="/admin/ads/${a.id}/pause" class="inline">${csrf(req)}<button class="btn btn-sm" title="Hide the ad; remaining paid days are saved">Deactivate</button></form>` : ''}
         ${a.status === 'paused' ? html`<form method="post" action="/admin/ads/${a.id}/resume" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">Reactivate</button></form><div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}
         ${a.status !== 'deleted' ? html`<form method="post" action="/admin/ads/${a.id}/delete" class="inline" data-confirm="Delete ad #${a.id} permanently? Photos and videos are removed.">${csrf(req)}<button class="btn btn-danger btn-sm">Delete</button></form>` : ''}
       </td></tr>`)}
-    </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No ads.</p></div>`}`;
+    </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No ads.</p></div>`}
+  <dialog class="modal" id="ad-promote" style="width:min(560px,calc(100vw - 32px))"><form method="post" data-fill="action">
+    ${csrf(req)}
+    <div class="modal-body"><h2>Boost & TOP — <span data-fill="title"></span></h2>
+      <h3 style="margin:0">Put it in TOP ads</h3>
+      <div class="row2">
+        ${field('For how many days', html`<input type="number" name="top_days" min="0" max="365" data-fill="topdays" placeholder="e.g. 3">`, '0 or empty = no admin TOP')}
+        ${field('…or until (India time)', html`<input type="datetime-local" name="top_until">`, 'Optional, overrides days')}
+      </div>
+      <div class="field"><span class="label">In these time slots</span>
+        <div class="slots" style="margin:0">${SLOTS.map((sl) => html`<label class="slot"><input type="checkbox" name="top_slots[]" value="${sl.slot}" checked><span><b>${sl.label}</b></span></label>`)}</div>
+      </div>
+      <div class="row2">
+        ${field('Ranking boost (−10 … +10)', html`<input type="number" name="boost" min="-10" max="10" data-fill="boost">`, 'Higher boost = above ads that paid the same')}
+        ${field('Add free days to the run', html`<input type="number" name="extend_days" min="0" max="365" value="0">`)}
+      </div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn" name="remove_top" value="1">Remove admin TOP</button><button class="btn btn-primary">Save</button></div>
+  </form></dialog>`;
 }
 
 function categoriesView(req, mains, counts) {
@@ -431,29 +472,59 @@ function settingsView(req, { s, plans, cats, admins }) {
     <button type="button" class="tab" data-tab="slots">${icon('star', { size: 16 })} TOP slots</button>
     <button type="button" class="tab" data-tab="approvals">${icon('clock', { size: 16 })} Approvals</button>
     <button type="button" class="tab" data-tab="email">${icon('mail', { size: 16 })} Email & SMS ${emailConfigured() ? '' : html`<span class="badge-count">!</span>`}</button>
+    <button type="button" class="tab" data-tab="alerts">${icon('bell', { size: 16 })} Alerts ${alertChannels().length ? html`<span class="pill pill-ok">${alertChannels().length}</span>` : ''}</button>
     <button type="button" class="tab" data-tab="site">${icon('settings', { size: 16 })} Site & payments</button>
+    <button type="button" class="tab" data-tab="legal">${icon('id', { size: 16 })} Business & legal ${!s.legal_name || !(s.grievance_email || s.support_email) ? html`<span class="badge-count">!</span>` : ''}</button>
     <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} Admins</button>
   </div>
   <div class="tab-panel" data-panel="email">${messagingSetupCard(req, s)}</div>
+  <section class="card tab-panel" data-panel="alerts">
+    <h2>Instant alerts on your phone</h2>
+    <p class="muted small">Get a message the moment a payment, a new seller or a complaint comes in. Set up one or more — all are free. Emails also go to the address in the Approvals tab. Every alert is kept in <a href="/admin/messages">Messages</a>.</p>
+    <form method="post" action="/admin/alerts" class="form">
+      ${csrf(req)}
+      <div class="field"><span class="label">Send me alerts for</span><div class="switch-list">
+        ${[['payment', 'Payments and balance top-ups to confirm'], ['seller', 'New sellers to verify'], ['complaint', 'Complaints about ads (and automatic blocks)'], ['sponsor', 'Enquiries from advertisers']].map(([k, l]) => html`<label class="check switch-line"><input type="checkbox" class="switch" name="alert_events[]" value="${k}" ${String(s.alert_events || 'payment,seller,complaint,sponsor').split(',').includes(k) ? 'checked' : ''}><span>${l}</span></label>`)}
+      </div></div>
+      <div class="cols2">
+        <fieldset><legend>WhatsApp</legend>
+          ${field('How', html`<select name="alert_wa_mode"><option value="">Off</option><option value="callmebot" ${s.alert_wa_mode === 'callmebot' ? 'selected' : ''}>My own WhatsApp (free, CallMeBot)</option><option value="cloud" ${s.alert_wa_mode === 'cloud' ? 'selected' : ''}>WhatsApp Business (Cloud API)</option></select>`)}
+          ${field('Your WhatsApp number', html`<input name="alert_wa_phone" value="${s.alert_wa_phone}" placeholder="98XXXXXXXX">`)}
+          ${field('CallMeBot API key', html`<input name="alert_wa_apikey" value="${s.alert_wa_apikey}" autocomplete="off">`, 'Own WhatsApp: open callmebot.com → WhatsApp, save the bot number shown there in your contacts, send it "I allow callmebot to send me messages" on WhatsApp, and paste the API key it replies with.')}
+          <details><summary class="small">WhatsApp Business (Cloud API) details</summary>
+            ${field('Access token', html`<input name="alert_wa_token" type="password" placeholder="${s.alert_wa_token ? '•••••• saved' : ''}" autocomplete="new-password">`)}
+            ${field('Phone number ID', html`<input name="alert_wa_phone_id" value="${s.alert_wa_phone_id}">`, 'From Meta for Developers → WhatsApp → API setup. Free-form messages arrive only within 24 hours after you message your business number.')}
+          </details>
+        </fieldset>
+        <fieldset><legend>Telegram & Google Chat</legend>
+          ${field('Telegram bot token', html`<input name="alert_telegram_token" type="password" placeholder="${s.alert_telegram_token ? '•••••• saved' : '123456:ABC…'}" autocomplete="new-password">`, 'In Telegram, chat with @BotFather → /newbot → copy the token.')}
+          ${field('Telegram chat ID', html`<input name="alert_telegram_chat" value="${s.alert_telegram_chat}" placeholder="e.g. 123456789">`, 'Send any message to your new bot, then open @userinfobot to see your ID.')}
+          ${field('Google Chat webhook URL', html`<input name="alert_gchat_webhook" value="${s.alert_gchat_webhook}" placeholder="https://chat.googleapis.com/v1/spaces/…">`, 'Google Chat space → Apps & integrations → Webhooks → Add. Needs a Google Workspace account.')}
+        </fieldset>
+      </div>
+      <div class="btn-row"><button class="btn btn-primary">Save alerts</button><button class="btn" formaction="/admin/alerts/test">Save & send a test alert</button></div>
+    </form>
+  </section>
   <section class="card tab-panel" data-panel="plans">
     <h2>Pricing plans</h2>
-    <p class="muted small">Price and ranking level for each run period. Higher ranking level = ad appears higher.</p>
+    <p class="muted small">Price and run period of each plan. Ads that pay more are shown higher; ads that paid the same are shuffled fairly on every visit. A discount (e.g. 20% on monthly and yearly subscriptions) applies to the plan and its TOP slots.</p>
     <form method="post" action="/admin/plans" class="form">
       ${csrf(req)}
       <div class="table-wrap"><table class="table plans-table">
-        <thead><tr><th>Name</th><th>Days</th><th>Price (₹)</th><th>Ranking level</th><th>Active</th></tr></thead>
+        <thead><tr><th>Name</th><th>Days</th><th>Price (₹)</th><th>Discount %</th><th>Customer pays</th><th>Active</th></tr></thead>
         <tbody>
           ${plans.map((p) => html`<tr>
             <td><input type="hidden" name="id[]" value="${p.id}"><input name="name[]" value="${p.name}" required maxlength="60"></td>
             <td><input type="number" name="days[]" value="${p.days}" min="1" max="365" required></td>
             <td><input type="number" name="price[]" value="${p.price_paise / 100}" min="0" step="1" required></td>
-            <td><input type="number" name="priority[]" value="${p.priority}" min="1" max="10" required></td>
+            <td><input type="hidden" name="priority[]" value="${p.priority}"><input type="number" name="discount[]" value="${p.discount_pct || 0}" min="0" max="90"></td>
+            <td class="mono">${rupees(P.quote(p, 0))}</td>
             <td><select name="active[]"><option value="1" ${p.is_active ? 'selected' : ''}>Yes</option><option value="0" ${!p.is_active ? 'selected' : ''}>No</option></select></td></tr>`)}
           <tr class="new-row">
             <td><input type="hidden" name="id[]" value="new"><input name="name[]" placeholder="+ New plan name" maxlength="60"></td>
             <td><input type="number" name="days[]" min="1" max="365" placeholder="days"></td>
             <td><input type="number" name="price[]" min="0" step="1" placeholder="₹"></td>
-            <td><input type="number" name="priority[]" min="1" max="10" value="1"></td>
+            <td><input type="hidden" name="priority[]" value="1"><input type="number" name="discount[]" min="0" max="90" value="0"></td><td></td>
             <td><select name="active[]"><option value="1">Yes</option><option value="0">No</option></select></td></tr>
         </tbody></table></div>
       <button class="btn btn-accent">Save plans</button>
@@ -481,6 +552,8 @@ function settingsView(req, { s, plans, cats, admins }) {
         <label class="check"><input type="checkbox" name="require_mobile_otp" value="1" ${s.require_mobile_otp !== '0' ? 'checked' : ''}> <span>Mobile number must be verified by SMS code (needs SMS set up above)</span></label>
         <p class="small muted">Payments are never confirmed automatically — only you (or another admin) can confirm a payment.</p>
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
+        ${field('Block a seller automatically after complaints from', html`<input type="number" name="complaint_block_threshold" min="0" max="100000" value="${s.complaint_block_threshold}">`, 'different people about the same ad. The ad is removed and the seller cannot post again. 0 = off (you decide).')}
+        ${field('Sponsored card in listings after every', html`<input type="number" name="sponsor_every" min="3" max="50" value="${s.sponsor_every}">`, 'ads (see Sponsors)')}
         <button class="btn btn-accent">Save</button>
       </form>
       <p class="small muted">Sellers see: login check takes ${approveTimeText(s.auto_approve_minutes)}; payment confirmation takes ${PAYMENT_TIME_TEXT}.</p>
@@ -498,6 +571,28 @@ function settingsView(req, { s, plans, cats, admins }) {
         <div class="row2">${field('Support phone', html`<input name="support_phone" maxlength="20" value="${s.support_phone}">`)}${field('Support email', html`<input name="support_email" type="email" maxlength="120" value="${s.support_email}">`)}</div>
         <p class="small muted">Online payments (Razorpay): ${P.razorpayEnabled() ? html`<strong class="ok">enabled</strong>` : html`<strong>not configured</strong> — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env`}</p>
         <button class="btn btn-accent">Save settings</button>
+      </form>
+    </section>
+    <section class="card tab-panel narrow-ish" data-panel="legal">
+      <h2>Business & legal details</h2>
+      <p class="muted small">Shown on receipts, the Contact page and in the Terms, Privacy and Refund policies. Indian law asks every website like this to show a Grievance Officer with contact details. Payment gateways (Razorpay etc.) check these pages before going live.</p>
+      <form method="post" action="/admin/legal" class="form">
+        ${csrf(req)}
+        ${field('Business / legal name', html`<input name="legal_name" maxlength="120" value="${s.legal_name}" placeholder="e.g. Sagar Enterprises (Proprietor: …)">`, 'Your registered business name, or your own name if you run it yourself')}
+        ${field('Business address', html`<textarea name="legal_address" rows="2" maxlength="300" placeholder="Full postal address with PIN code">${s.legal_address}</textarea>`)}
+        <div class="row2">
+          ${field('GSTIN (optional)', html`<input name="gstin" maxlength="15" value="${s.gstin}" class="upper" placeholder="22AAAAA0000A1Z5">`, 'If you have GST registration, receipts become tax invoices')}
+          ${field('City for courts & arbitration', html`<input name="jurisdiction_city" maxlength="60" value="${s.jurisdiction_city}" placeholder="e.g. Pune">`)}
+        </div>
+        ${field('Where the server is (shown in the Privacy policy)', html`<input name="data_location" maxlength="60" value="${s.data_location}" placeholder="e.g. India, or Switzerland">`)}
+        <h3>Grievance Officer</h3>
+        <div class="row3">
+          ${field('Name', html`<input name="grievance_name" maxlength="80" value="${s.grievance_name}">`)}
+          ${field('Email', html`<input name="grievance_email" type="email" maxlength="120" value="${s.grievance_email}">`)}
+          ${field('Phone', html`<input name="grievance_phone" maxlength="20" value="${s.grievance_phone}">`)}
+        </div>
+        <p class="small muted">These are standard policy templates. Before going public, have a lawyer read <a href="/terms" target="_blank">Terms</a>, <a href="/privacy" target="_blank">Privacy</a> and <a href="/refund-policy" target="_blank">Refund policy</a>.</p>
+        <button class="btn btn-primary">Save business details</button>
       </form>
     </section>
     <section class="tab-panel" data-panel="admins"><div class="cols2">
@@ -551,7 +646,7 @@ function register(app) {
   app.get('/admin', requireAdmin, (req, res) => {
     const startMonth = new Date(); startMonth.setDate(1); startMonth.setHours(0, 0, 0, 0);
     const since = Date.now() - 13 * 86400_000;
-    const dailyRows = db.prepare(`SELECT date(confirmed_at/1000, 'unixepoch', '+5 hours', '+30 minutes') AS day, SUM(amount_paise) AS total
+    const dailyRows = db.prepare(`SELECT date(confirmed_at/1000, 'unixepoch', '+5 hours', '+30 minutes') AS day, SUM(amount_paise - wallet_paise) AS total
       FROM payments WHERE status = 'paid' AND confirmed_at >= ? GROUP BY day`).all(since - 86400_000);
     const map = Object.fromEntries(dailyRows.map((r) => [r.day, r.total]));
     const daily = [];
@@ -563,8 +658,11 @@ function register(app) {
       pendingKyc: req.adminCounts.kyc, pendingPay: req.adminCounts.pay,
       liveAds: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'active'").get().n,
       approved: db.prepare("SELECT COUNT(*) n FROM clients WHERE status = 'approved'").get().n,
-      revMonth: db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM payments WHERE status='paid' AND confirmed_at >= ?").get(startMonth.getTime()).s,
-      revTotal: db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM payments WHERE status='paid'").get().s,
+      // Money actually received: ad payments (minus the part paid from balance) + confirmed balance top-ups
+      revMonth: db.prepare("SELECT COALESCE(SUM(amount_paise - wallet_paise),0) s FROM payments WHERE status='paid' AND confirmed_at >= ?").get(startMonth.getTime()).s
+        + db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM wallet_topups WHERE status='paid' AND confirmed_at >= ?").get(startMonth.getTime()).s,
+      revTotal: db.prepare("SELECT COALESCE(SUM(amount_paise - wallet_paise),0) s FROM payments WHERE status='paid'").get().s
+        + db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM wallet_topups WHERE status='paid'").get().s,
       kycList: db.prepare("SELECT * FROM clients WHERE status IN ('pending','video_call') ORDER BY created_at LIMIT 6").all(),
       payList: db.prepare("SELECT p.*, c.name AS client_name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.status = 'pending' ORDER BY p.id LIMIT 6").all(),
       daily, maxDaily: Math.max(0, ...daily.map((x) => x.total)),
@@ -701,6 +799,18 @@ function register(app) {
     res.redirect(`/admin/clients/${c.id}`);
   });
 
+  app.post('/admin/clients/:id/wallet', requireAdmin, (req, res) => {
+    const c = getClient(req.params.id);
+    const amount = Math.round(Number(req.body.amount) * 100);
+    if (!c || !Number.isFinite(amount) || !amount) { req.flash('error', 'Enter an amount, e.g. 100 or -100.'); res.redirect(back(req, '/admin/clients')); return; }
+    const note = V.str(req.body.note, 120) || (amount > 0 ? 'Added by our team' : 'Removed by our team');
+    const ok = amount > 0 ? W.credit(c.id, amount, 'admin', note) : W.debit(c.id, -amount, note);
+    if (!ok) { req.flash('error', 'The balance is lower than that amount.'); res.redirect(`/admin/clients/${c.id}`); return; }
+    if (amount > 0) notify.inbox(c.id, { kind: 'wallet', tone: 'success', title: `${rupees(amount)} added to your balance`, body: note, link: '/client/wallet', linkText: 'My balance' });
+    req.flash('success', `Balance ${amount > 0 ? 'increased' : 'reduced'} by ${rupees(Math.abs(amount))}.`);
+    res.redirect(`/admin/clients/${c.id}`);
+  });
+
   app.post('/admin/clients/:id/delete', requireAdmin, (req, res) => {
     const c = getClient(req.params.id);
     if (!c) { res.redirect('/admin/clients'); return; }
@@ -796,7 +906,38 @@ function register(app) {
       JOIN clients c ON c.id = p.client_id JOIN ads a ON a.id = p.ad_id
       WHERE ${status === 'all' ? "p.status != 'created'" : 'p.status = ?'} ORDER BY p.id ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 300`)
       .all(...(status === 'all' ? [] : [status]));
-    res.html(page(req, 'Payments', paymentsView(req, rows, status)));
+    const topups = db.prepare(`SELECT t.*, c.name AS client_name FROM wallet_topups t JOIN clients c ON c.id = t.client_id
+      WHERE ${status === 'all' ? '1' : 't.status = ?'} ORDER BY t.id DESC LIMIT 100`).all(...(status === 'all' ? [] : [status]));
+    res.html(page(req, 'Payments', paymentsView(req, rows, status, topups)));
+  });
+  // Balance top-ups: admin confirms the UPI money arrived → balance goes up (never automatic).
+  app.post('/admin/topups/:id/confirm', requireAdmin, (req, res) => {
+    const t = db.prepare("SELECT * FROM wallet_topups WHERE id = ? AND status = 'pending'").get(parseInt(req.params.id, 10) || 0);
+    if (t) {
+      tx(() => {
+        db.prepare("UPDATE wallet_topups SET status = 'paid', confirmed_by = ?, confirmed_at = ? WHERE id = ?").run(req.admin.id, Date.now(), t.id);
+        W.credit(t.client_id, t.amount_paise, 'topup', `UPI top-up (UTR ${t.utr})`);
+      });
+      notify.inbox(t.client_id, { kind: 'topup_ok', tone: 'success', title: `${rupees(t.amount_paise)} added to your balance`, body: 'Your top-up is confirmed. Use your balance on any ad.', link: '/client/ads/new', linkText: 'Post an ad' });
+      req.flash('success', `Top-up of ${rupees(t.amount_paise)} confirmed and added to the seller's balance.`);
+    }
+    res.redirect(back(req, '/admin/payments'));
+  });
+  app.post('/admin/topups/:id/reject', requireAdmin, (req, res) => {
+    const t = db.prepare("SELECT * FROM wallet_topups WHERE id = ? AND status = 'pending'").get(parseInt(req.params.id, 10) || 0);
+    if (t) {
+      const note = V.str(req.body.note, 200) || 'Payment not found';
+      db.prepare("UPDATE wallet_topups SET status = 'rejected', confirmed_by = ?, confirmed_at = ?, admin_note = ? WHERE id = ?").run(req.admin.id, Date.now(), note, t.id);
+      notify.inbox(t.client_id, { kind: 'topup_rejected', tone: 'error', title: `Top-up of ${rupees(t.amount_paise)} rejected`, body: `We could not find this payment (UTR ${t.utr}). Reason: ${note}. Check your UPI app and try again.`, link: '/client/wallet', linkText: 'My balance' });
+      req.flash('success', 'Top-up rejected. The seller sees the reason in their messages.');
+    }
+    res.redirect(back(req, '/admin/payments'));
+  });
+  app.get('/admin/payments/:id/receipt', requireAdmin, (req, res) => {
+    const { receiptData, receiptPage } = require('../views/receipt');
+    const p = receiptData(parseInt(req.params.id, 10) || 0);
+    if (!p || p.status !== 'paid') { req.flash('error', 'A receipt is available only for confirmed payments.'); res.redirect('/admin/payments'); return; }
+    res.html(receiptPage(req, p));
   });
   app.post('/admin/payments/:id/confirm', requireAdmin, (req, res) => {
     const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(parseInt(req.params.id, 10) || 0);
@@ -833,6 +974,7 @@ function register(app) {
     if (ad) {
       db.prepare("UPDATE ads SET status = 'blocked', block_reason = ?, rank_score = -1, updated_at = ? WHERE id = ?").run(V.str(req.body.reason, 200) || 'Removed by admin', Date.now(), ad.id);
       db.prepare('UPDATE reports SET resolved = 1 WHERE ad_id = ?').run(ad.id);
+      notify.adBlocked(ad, V.str(req.body.reason, 200));
       req.flash('success', `Ad #${ad.id} blocked.`);
     }
     res.redirect(back(req, '/admin/ads'));
@@ -879,6 +1021,36 @@ function register(app) {
     if (ad) { const m = ad.top_slots ? 0 : ALL_SLOTS; db.prepare('UPDATE ads SET is_top = ?, top_slots = ? WHERE id = ?').run(m ? 1 : 0, m, ad.id); rescore(ad.id); }
     res.redirect(back(req, '/admin/ads'));
   });
+  // One place for the admin's promotion tools: scheduled TOP (days or until a date, in chosen slots), boost, free days.
+  app.post('/admin/ads/:id/promote', requireAdmin, (req, res) => {
+    const ad = adById(req.params.id);
+    if (!ad) { res.redirect('/admin/ads'); return; }
+    const now = Date.now();
+    const msgs = [];
+    if (req.body.remove_top === '1') {
+      db.prepare('UPDATE ads SET admin_top_until = NULL WHERE id = ?').run(ad.id); msgs.push('admin TOP removed');
+    } else {
+      let until = null;
+      if (req.body.top_until) { const t = Date.parse(`${req.body.top_until}:00+05:30`); if (Number.isFinite(t) && t > now) until = t; }
+      const days = Math.max(0, Math.min(365, parseInt(req.body.top_days, 10) || 0));
+      if (!until && days) until = now + days * 86400_000;
+      const mask = (maskFrom(req.body.top_slots) & ALL_SLOTS) || ALL_SLOTS;
+      if (until) { db.prepare('UPDATE ads SET admin_top_until = ?, admin_top_slots = ? WHERE id = ?').run(until, mask, ad.id); msgs.push(`TOP until ${fmtDate(until)} (${slotLabels(mask).join(', ')})`); }
+    }
+    if (req.body.boost !== undefined && req.body.boost !== '') {
+      const boost = Math.max(-10, Math.min(10, parseInt(req.body.boost, 10) || 0));
+      db.prepare('UPDATE ads SET admin_boost = ? WHERE id = ?').run(boost, ad.id); msgs.push(`boost ${boost}`);
+    }
+    const extra = Math.max(0, Math.min(365, parseInt(req.body.extend_days, 10) || 0));
+    if (extra && (ad.status === 'active' || ad.status === 'expired')) {
+      const base = ad.status === 'active' && ad.expires_at > now ? ad.expires_at : now;
+      db.prepare("UPDATE ads SET status = 'active', starts_at = CASE WHEN status = 'expired' THEN ? ELSE starts_at END, expires_at = ?, updated_at = ? WHERE id = ?").run(now, base + extra * 86400_000, now, ad.id);
+      msgs.push(`+${extra} free day(s)`);
+    }
+    rescore(ad.id);
+    req.flash('success', `Ad #${ad.id}: ${msgs.join(' · ') || 'no change'}.`);
+    res.redirect(back(req, '/admin/ads'));
+  });
   app.post('/admin/ads/:id/extend', requireAdmin, (req, res) => {
     const ad = adById(req.params.id);
     const days = Math.max(1, Math.min(365, parseInt(req.body.days, 10) || 0));
@@ -898,8 +1070,26 @@ function register(app) {
   });
 
   // ---- Reports ----
+  // Live counters for the admin pages (polled every few seconds): new payments, sellers and complaints show up without refreshing.
+  app.get('/admin/live', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!req.admin) { res.status(401).json({ ok: false }); return; }
+    const last = db.prepare(`SELECT p.id, p.amount_paise, p.wallet_paise, c.name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.status = 'pending' ORDER BY p.id DESC LIMIT 1`).get();
+    const lastTop = db.prepare(`SELECT t.id, t.amount_paise, c.name FROM wallet_topups t JOIN clients c ON c.id = t.client_id WHERE t.status = 'pending' ORDER BY t.id DESC LIMIT 1`).get();
+    const lastSeller = db.prepare("SELECT id, name FROM clients WHERE status IN ('pending','video_call') ORDER BY id DESC LIMIT 1").get();
+    res.json({
+      ok: true,
+      kyc: db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
+      pay: db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n,
+      reports: db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
+      payKey: `${last ? last.id : 0}-${lastTop ? lastTop.id : 0}`,
+      payText: last ? `New payment ${rupees(last.amount_paise - (last.wallet_paise || 0))} from ${last.name}` : lastTop ? `Balance top-up ${rupees(lastTop.amount_paise)} from ${lastTop.name}` : '',
+      sellerKey: lastSeller ? lastSeller.id : 0, sellerText: lastSeller ? `New seller to verify: ${lastSeller.name}` : '',
+    });
+  });
   require('./reports').register(app, { requireAdmin, page });
   require('./homeadmin').register(app, { requireAdmin, page });
+  require('./sponsors').register(app, { requireAdmin, page, renderPage });
   app.post('/admin/reports/:id/resolve', requireAdmin, (req, res) => {
     db.prepare('UPDATE reports SET resolved = 1 WHERE id = ?').run(parseInt(req.params.id, 10) || 0);
     res.redirect('/admin/reports#ad-reports');
@@ -925,6 +1115,18 @@ function register(app) {
     req.flash('success', 'Settings saved.');
     res.redirect('/admin/settings#site');
   });
+  app.post('/admin/legal', requireAdmin, (req, res) => {
+    const b = req.body;
+    for (const [k, n] of [['legal_name', 120], ['legal_address', 300], ['jurisdiction_city', 60], ['grievance_name', 80], ['grievance_phone', 20], ['data_location', 60]]) setSetting(k, V.str(b[k], n));
+    const gstin = V.str(b.gstin, 15).toUpperCase();
+    if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) { req.flash('error', 'GSTIN should look like 22AAAAA0000A1Z5 (15 characters).'); res.redirect('/admin/settings#legal'); return; }
+    setSetting('gstin', gstin);
+    const em = V.str(b.grievance_email, 120);
+    if (em && !V.isValidEmail(em)) { req.flash('error', 'Enter a valid grievance email.'); res.redirect('/admin/settings#legal'); return; }
+    setSetting('grievance_email', em);
+    req.flash('success', 'Business details saved — they now show on receipts and policy pages.');
+    res.redirect('/admin/settings#legal');
+  });
   app.post('/admin/plans', requireAdmin, (req, res) => {
     const b = req.body; const ids = [].concat(b.id || []);
     tx(() => {
@@ -932,9 +1134,10 @@ function register(app) {
         const name = V.str([].concat(b.name)[i], 60); const days = parseInt([].concat(b.days)[i], 10);
         const price = Math.round(Number([].concat(b.price)[i]) * 100); const top = Math.round(Number([].concat(b.top)[i] || 0) * 100);
         const priority = Math.max(1, Math.min(10, parseInt([].concat(b.priority)[i], 10) || 1)); const active = [].concat(b.active)[i] === '1' ? 1 : 0;
+        const discount = Math.max(0, Math.min(90, parseInt([].concat(b.discount || [])[i], 10) || 0));
         if (!name || !(days > 0) || !Number.isFinite(price) || price < 0 || !Number.isFinite(top) || top < 0) return;
-        if (id === 'new') db.prepare('INSERT INTO plans (name, days, price_paise, top_price_paise, priority, is_active, sort) VALUES (?,?,?,?,?,?,?)').run(name, days, price, top, priority, active, days);
-        else db.prepare('UPDATE plans SET name=?, days=?, price_paise=?, top_price_paise=?, priority=?, is_active=?, sort=? WHERE id=?').run(name, days, price, top, priority, active, days, parseInt(id, 10));
+        if (id === 'new') db.prepare('INSERT INTO plans (name, days, price_paise, top_price_paise, priority, is_active, sort, discount_pct) VALUES (?,?,?,?,?,?,?,?)').run(name, days, price, top, priority, active, days, discount);
+        else db.prepare('UPDATE plans SET name=?, days=?, price_paise=?, top_price_paise=?, priority=?, is_active=?, sort=?, discount_pct=? WHERE id=?').run(name, days, price, top, priority, active, days, discount, parseInt(id, 10));
       });
     });
     rescore(0);
@@ -1009,10 +1212,37 @@ function register(app) {
     const num = (v) => String(Math.max(0, Math.min(10080, parseInt(v, 10) || 0)));
     setSetting('auto_approve_minutes', num(req.body.auto_approve_minutes));
     setSetting('require_mobile_otp', req.body.require_mobile_otp === '1' ? '1' : '0');
+    setSetting('complaint_block_threshold', String(Math.max(0, Math.min(100000, parseInt(req.body.complaint_block_threshold, 10) || 0))));
+    setSetting('sponsor_every', String(Math.max(3, Math.min(50, parseInt(req.body.sponsor_every, 10) || 8))));
     const em = V.str(req.body.notify_email, 120);
     if (!em || V.isValidEmail(em)) setSetting('notify_email', em);
     req.flash('success', 'Saved.');
     res.redirect('/admin/settings#approvals');
+  });
+  const saveAlerts = (b) => {
+    const ev = [].concat(b['alert_events[]'] || b.alert_events || []).filter((k) => ['payment', 'seller', 'complaint', 'sponsor'].includes(k));
+    setSetting('alert_events', ev.join(',') || 'none');
+    setSetting('alert_wa_mode', ['callmebot', 'cloud'].includes(b.alert_wa_mode) ? b.alert_wa_mode : '');
+    setSetting('alert_wa_phone', V.str(b.alert_wa_phone, 20).replace(/[^0-9+]/g, ''));
+    setSetting('alert_wa_apikey', V.str(b.alert_wa_apikey, 80));
+    setSetting('alert_wa_phone_id', V.str(b.alert_wa_phone_id, 40));
+    if (String(b.alert_wa_token || '').trim()) setSetting('alert_wa_token', String(b.alert_wa_token).trim().slice(0, 600));
+    if (String(b.alert_telegram_token || '').trim()) setSetting('alert_telegram_token', String(b.alert_telegram_token).trim().slice(0, 120));
+    setSetting('alert_telegram_chat', V.str(b.alert_telegram_chat, 40));
+    setSetting('alert_gchat_webhook', V.str(b.alert_gchat_webhook, 500));
+  };
+  app.post('/admin/alerts', requireAdmin, (req, res) => {
+    saveAlerts(req.body);
+    req.flash('success', `Alerts saved. ${alertChannels().length ? `Active: ${alertChannels().join(', ')}.` : 'No channel is set up yet.'}`);
+    res.redirect('/admin/settings#alerts');
+  });
+  app.post('/admin/alerts/test', requireAdmin, async (req, res) => {
+    saveAlerts(req.body);
+    if (!alertChannels().length) { req.flash('error', 'Fill in at least one channel (WhatsApp, Telegram or Google Chat) first.'); res.redirect('/admin/settings#alerts'); return; }
+    const out = await sendAlert(`✅ Test alert from ${getSettings().site_name}. Alerts are working!`);
+    const bad = out.filter((o) => !o.ok);
+    req.flash(bad.length ? 'error' : 'success', bad.length ? `Not sent: ${bad.map((o) => `${o.channel} (${String(o.error).slice(0, 120)})`).join('; ')}. ${out.filter((o) => o.ok).map((o) => o.channel).join(', ')} OK.` : `Test alert sent to ${out.map((o) => o.channel).join(', ')}. Check your phone.`);
+    res.redirect('/admin/settings#alerts');
   });
   app.post('/admin/messaging/email', requireAdmin, (req, res) => {
     const provider = ['gmail', 'brevo', 'other'].includes(req.body.provider) ? req.body.provider : 'gmail';
@@ -1078,7 +1308,7 @@ function register(app) {
       ${rows.length ? html`<div class="table-wrap card"><table class="table">
         <thead><tr><th>Time</th><th>Type</th><th>To</th><th>Subject / message</th><th>Status</th></tr></thead>
         <tbody>${rows.map((m) => html`<tr>
-          <td>${fmtDate(m.created_at)}</td><td>${m.channel === 'sms' ? '📱 SMS' : '📧 Email'}</td><td>${m.to_addr}</td>
+          <td>${fmtDate(m.created_at)}</td><td>${({ sms: '📱 SMS', email: '📧 Email', telegram: '✈️ Telegram', whatsapp: '🟢 WhatsApp', gchat: '💬 Google Chat' })[m.channel] || m.channel}</td><td>${m.to_addr}</td>
           <td><details><summary>${m.subject || m.body.slice(0, 60)}</summary><pre class="msg-body">${m.body}</pre></details></td>
           <td>${m.status === 'sent' ? html`<span class="pill pill-ok">Sent</span>` : m.status === 'failed' ? html`<span class="pill pill-bad" title="${m.error}">Failed</span><div class="small muted">${String(m.error || '').slice(0, 80)}</div>` : html`<span class="pill pill-warn">Not set up</span>`}</td></tr>`)}
         </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No messages yet.</p></div>`}`));

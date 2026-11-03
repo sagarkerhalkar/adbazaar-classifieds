@@ -30,9 +30,9 @@ function publicHeader(req, s) {
       <nav class="hactions">
         <a href="/saved" class="hlink" data-saved-link>${icon('heart')}<span>Saved</span><span class="badge-count" data-saved-count hidden></span></a>
         ${req.seller
-    ? html`<a href="/client" class="hlink">${icon('user')}<span>My ads</span></a>`
+    ? html`<a href="/client/messages" class="hlink" aria-label="Messages">${icon('bell')}<span class="badge-count" data-live="unread" ${req.sellerUnread ? '' : 'hidden'}>${req.sellerUnread || 0}</span></a><a href="/client" class="hlink">${icon('user')}<span>My ads</span></a>`
     : html`<a href="/client/login" class="hlink">${icon('user')}<span>Login</span></a>`}
-        <a href="${req.seller ? '/client/ads/new' : '/client/register'}" class="btn btn-sell">${icon('plus', { size: 18 })}<span>Post ad</span></a>
+        <a href="${req.seller ? '/client/ads/new' : '/post'}" class="btn btn-sell">${icon('plus', { size: 18 })}<span>Post ad</span></a>
       </nav>
     </div>
   </header>
@@ -65,6 +65,8 @@ function clientHeader(req, s) {
       <nav class="nav">
         <a href="/client" class="nav-link ${on('/client')}">${icon('list')}My ads</a>
         <a href="/client/payments" class="nav-link ${on('/client/payments')}">${icon('card')}Payments</a>
+        <a href="/client/wallet" class="nav-link ${on('/client/wallet')}">${icon('tag')}Balance</a>
+        <a href="/client/messages" class="nav-link ${on('/client/messages')}" aria-label="Messages${req.sellerUnread ? ` (${req.sellerUnread} new)` : ''}">${icon('bell')}Messages<span class="badge-count" data-live="unread" ${req.sellerUnread ? '' : 'hidden'}>${req.sellerUnread || 0}</span></a>
         <a href="/client/account" class="nav-link ${on('/client/account')}">${icon('user')}Account</a>
         <a href="/" class="nav-link">${icon('home')}View site</a>
         <a href="/client/ads/new" class="btn btn-sell">${icon('plus', { size: 18 })}Post ad</a>
@@ -76,22 +78,23 @@ function clientHeader(req, s) {
 
 // ---- Admin: side menu ----
 function adminSidebar(req, s, counts = {}) {
-  const badge = (n) => (n ? html`<span class="badge-count">${n}</span>` : '');
-  const item = (href, ic, label, n) => {
+  const badge = (n, key) => (key ? html`<span class="badge-count" data-live="${key}" ${n ? '' : 'hidden'}>${n || 0}</span>` : n ? html`<span class="badge-count">${n}</span>` : '');
+  const item = (href, ic, label, n, key) => {
     const active = href === '/admin' ? req.path === '/admin' : req.path.startsWith(href);
-    return html`<a href="${href}" class="side-link ${active ? 'active' : ''}">${icon(ic)}<span>${label}</span>${badge(n)}</a>`;
+    return html`<a href="${href}" class="side-link ${active ? 'active' : ''}">${icon(ic)}<span>${label}</span>${badge(n, key)}</a>`;
   };
   return html`
   <aside class="sidebar" data-sidebar>
     <a class="logo" href="/admin"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span></a>
     <nav class="side-nav">
       ${item('/admin', 'grid', 'Dashboard')}
-      ${item('/admin/clients', 'users', 'Clients', counts.kyc)}
-      ${item('/admin/payments', 'card', 'Payments', counts.pay)}
+      ${item('/admin/clients', 'users', 'Clients', counts.kyc, 'kyc')}
+      ${item('/admin/payments', 'card', 'Payments', counts.pay, 'pay')}
       ${item('/admin/ads', 'layers', 'Ads')}
       ${item('/admin/categories', 'tag', 'Categories')}
       ${item('/admin/home', 'home', 'Home page')}
-      ${item('/admin/reports', 'chart', 'Reports', counts.reports)}
+      ${item('/admin/sponsors', 'bolt', 'Sponsors')}
+      ${item('/admin/reports', 'chart', 'Reports', counts.reports, 'reports')}
       ${item('/admin/messages', 'mail', 'Messages')}
       ${item('/admin/settings', 'settings', 'Settings')}
     </nav>
@@ -128,7 +131,7 @@ function renderPage(req, { title, body, portal = 'public', scripts = [], descrip
   // Admin pages (logged in): app shell with a side menu.
   if (portal === 'admin' && req.admin) {
     return html`${head(req, s, title, description)}
-<body class="portal-admin shell">
+<body class="portal-admin shell" data-live-url="/admin/live">
 ${adminSidebar(req, s, req.adminCounts)}
 <div class="shell-main">
   <header class="shell-top">
@@ -162,7 +165,7 @@ ${body}
 ${portal === 'public' ? bigFooter(req, s, home) : html`<footer class="footer">
   <div class="wrap footer-inner">
     <div class="footer-brand"><span class="logo-mark sm">${icon('tag', { size: 14 })}</span> ${s.site_name}<span class="muted">Happy buying, happy selling.</span></div>
-    <div class="footer-links"><a href="/terms">Terms</a><a href="/safety">Safety tips</a><a href="/">View site</a></div>
+    <div class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refund-policy">Refunds</a><a href="/contact">Contact</a><a href="/">View site</a></div>
   </div>
 </footer>`}
 ${scriptsHtml(scripts)}
@@ -182,9 +185,9 @@ function bigFooter(req, s, home) {
     </div>
     <div><h4>Popular categories</h4>${cats.map((c) => html`<a href="/?cat=${c.slug}">${c.name}</a>`)}</div>
     <div><h4>Popular cities</h4>${cityList(home).slice(0, 8).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${c}</a>`)}</div>
-    <div><h4>Help</h4><a href="/safety">Safety tips</a><a href="/terms">Terms of use</a><a href="/client/register">Sell on ${s.site_name}</a><a href="/client/login">Seller login</a><a href="/saved">Saved ads</a></div>
+    <div><h4>Help & policies</h4><a href="/about">About us</a><a href="/contact">Contact & grievances</a><a href="/pricing">Pricing</a><a href="/safety">Safety tips</a><a href="/terms">Terms of use</a><a href="/privacy">Privacy policy</a><a href="/refund-policy">Refund & cancellation</a><a href="/client/register">Sell on ${s.site_name}</a><a href="/client/login">Seller login</a><a href="/saved">Saved ads</a></div>
   </div>
-  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. All rights reserved.</div></div>
+  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. All rights reserved. By using this website you accept our <a href="/terms">Terms of use</a>. Ads are published by advertisers on their own initiative and under their sole responsibility; ${s.site_name} only provides publication and browsing services and does not mediate between users. <a href="/advertise">Advertise with us</a></div></div>
 </footer>`;
 }
 

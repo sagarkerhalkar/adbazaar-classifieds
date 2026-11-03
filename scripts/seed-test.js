@@ -59,8 +59,14 @@ const img = (i, area = 'ads', shape = ['circle', 'square', 'diamond'][i % 3]) =>
 
 // Product pictures for the test ads (scripts/seed-images, one per ad + a second angle)
 const PHOTOS = ['iphone', 'tv', 'repair', 'headphones', 'tuition', 'english', 'drawing', 'scooter', 'car', 'carwash', 'makeup', 'salon', 'dresser', 'laptop'];
+// Real photos (downloaded from Pexels when online) → else the illustrations in scripts/seed-images → else coloured shapes.
+const STOCK = require('../src/stockphotos');
+let REAL = new Map();
 const photo = (i, suffix = '') => {
-  const f = path.join(__dirname, 'seed-images', `${PHOTOS[i % PHOTOS.length]}${suffix}.jpg`);
+  const name = PHOTOS[i % PHOTOS.length];
+  const real = REAL.get((STOCK.AD_PHOTOS[name] || [])[suffix ? 1 : 0]);
+  if (real) return saveUpload({ filename: 'photo.jpg', data: real }, 'ads');
+  const f = path.join(__dirname, 'seed-images', `${name}${suffix}.jpg`);
   return fs.existsSync(f) ? saveUpload({ filename: 'photo.jpg', data: fs.readFileSync(f) }, 'ads') : img(i);
 };
 
@@ -87,6 +93,7 @@ function removeTestData() {
 if (process.argv.includes('--remove')) { removeTestData(); process.exit(0); }
 
 // ---------- add ----------
+(async () => {
 if (db.prepare("SELECT 1 FROM clients WHERE email LIKE '%.test@example.com' LIMIT 1").get()) {
   console.log('Test data is already there. To start fresh: npm run seed:remove  then  npm run seed:test');
   process.exit(0);
@@ -94,7 +101,13 @@ if (db.prepare("SELECT 1 FROM clients WHERE email LIKE '%.test@example.com' LIMI
 
 const plans = db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY days').all();
 if (plans.length < 3) { console.error('Need at least 3 active plans (Admin → Settings).'); process.exit(1); }
-const [p7, p15, p29] = plans;
+const near = (d) => plans.reduce((a, b) => (Math.abs(b.days - d) < Math.abs(a.days - d) ? b : a));
+const [p7, p15, p29] = [near(7), near(15), near(29)];
+if (!process.argv.includes('--no-photos')) {
+  process.stdout.write('Downloading sample photos from Pexels… ');
+  REAL = await STOCK.downloadAll(Object.values(STOCK.AD_PHOTOS).flat(), 1000);
+  console.log(REAL.size ? `${REAL.size} photos.` : 'no internet — using illustrations.');
+}
 // Make sure a "Beauty & salon" sub-category exists for the beauty test ads.
 const hf = db.prepare("SELECT * FROM categories WHERE slug = 'health-fitness'").get();
 if (hf) db.prepare("INSERT OR IGNORE INTO categories (name, slug, icon, sort, parent_id) VALUES ('Beauty & salon', 'health-fitness-beauty-salon', ?, 9, ?)").run(hf.icon, hf.id);
@@ -216,3 +229,4 @@ Test data added.
 
   Remove all test data later with:  npm run seed:remove
 `);
+})();

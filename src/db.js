@@ -148,6 +148,16 @@ CREATE TABLE IF NOT EXISTS outbox (
   status TEXT NOT NULL,           -- sent | failed | not_configured
   error TEXT, created_at INTEGER NOT NULL
 );
+
+-- Messages shown inside the seller portal (bell icon): payment rejected/confirmed, approval, ad expired …
+CREATE TABLE IF NOT EXISTS inbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL REFERENCES clients(id),
+  kind TEXT NOT NULL, tone TEXT NOT NULL DEFAULT 'info',   -- info | success | warn | error
+  title TEXT NOT NULL, body TEXT, link TEXT, link_text TEXT,
+  read_at INTEGER, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inbox_client ON inbox(client_id, read_at);
 `);
 
 // ---- Migrations for databases created by older versions ----
@@ -180,7 +190,50 @@ addColumn('clients', 'id_type', 'TEXT', "UPDATE clients SET id_type = 'aadhaar' 
 addColumn('clients', 'id_number', 'TEXT', "UPDATE clients SET id_number = aadhaar_last4 WHERE id_type = 'aadhaar'");
 addColumn('clients', 'id_file', 'TEXT', "UPDATE clients SET id_file = aadhaar_file WHERE id_type = 'aadhaar'");
 addColumn('clients', 'id_back_file', 'TEXT', "UPDATE clients SET id_back_file = aadhaar_back_file WHERE id_type = 'aadhaar'");
-addColumn('clients', 'call_ring_at', 'INTEGER');   // admin is calling this seller now (video call from the admin portal)                     // date of birth YYYY-MM-DD (only 18+ can post ads)
+addColumn('clients', 'call_ring_at', 'INTEGER');
+addColumn('clients', 'terms_accepted_at', 'INTEGER');   // when the seller accepted the Terms, Privacy and Refund policy
+addColumn('clients', 'terms_version', 'TEXT');
+addColumn('payments', 'terms_accepted_at', 'INTEGER');  // seller accepted the payment terms for this payment
+
+// Wallet: money left on deleted ads, top-ups and admin credits; can pay for any ad.
+addColumn('clients', 'wallet_paise', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('clients', 'blocked_reason', 'TEXT');
+addColumn('payments', 'wallet_paise', 'INTEGER NOT NULL DEFAULT 0');   // part of this payment paid from the wallet
+addColumn('plans', 'discount_pct', 'INTEGER NOT NULL DEFAULT 0');      // e.g. 20 → 20% off plan + TOP slots
+addColumn('plans', 'label', 'TEXT');                                   // e.g. "Monthly", "Yearly"
+// Admin TOP: pin an ad in TOP until a date, in chosen 3-hour slots (on top of what the seller bought)
+addColumn('ads', 'admin_top_until', 'INTEGER');
+addColumn('ads', 'admin_top_slots', 'INTEGER NOT NULL DEFAULT 255');
+db.exec(`
+CREATE TABLE IF NOT EXISTS wallet_tx (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL REFERENCES clients(id),
+  amount_paise INTEGER NOT NULL,                 -- + credit, − spent
+  kind TEXT NOT NULL,                            -- ad_deleted | topup | spent | refund | admin
+  note TEXT, ad_id INTEGER, payment_id INTEGER, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_client ON wallet_tx(client_id, id);
+CREATE TABLE IF NOT EXISTS wallet_topups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL REFERENCES clients(id),
+  amount_paise INTEGER NOT NULL, utr TEXT, screenshot_file TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending | paid | rejected
+  admin_note TEXT, confirmed_by INTEGER, confirmed_at INTEGER, created_at INTEGER NOT NULL
+);
+-- Third-party / sponsored ads shown between listings, under the ad page and on the home page
+CREATE TABLE IF NOT EXISTS sponsors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  advertiser TEXT NOT NULL, title TEXT NOT NULL, body TEXT, image TEXT, link TEXT NOT NULL,
+  placement TEXT NOT NULL DEFAULT 'feed',        -- feed | ad_page | home
+  starts_at INTEGER, ends_at INTEGER, is_active INTEGER NOT NULL DEFAULT 1,
+  impressions INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS enquiries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL, company TEXT, email TEXT NOT NULL, phone TEXT, message TEXT NOT NULL,
+  ip TEXT, handled INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+);
+`);
 
 // ---- Seed defaults ----
 const now = Date.now();
@@ -190,6 +243,16 @@ if (!db.prepare('SELECT 1 FROM plans LIMIT 1').get()) {
   ins.run('Basic — 7 days', 7, 19900, 29900, 1, 1);
   ins.run('Standard — 15 days', 15, 34900, 49900, 2, 2);
   ins.run('Premium — 29 days', 29, 59900, 79900, 3, 3);
+}
+
+// New plans (added once): 1 day, Monthly and Yearly subscriptions with a 20% discount. All editable in Admin → Settings → Plans.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'plans_v2_seeded'").get()) {
+  const has = (d) => db.prepare('SELECT 1 FROM plans WHERE days = ?').get(d);
+  const ins2 = db.prepare('INSERT INTO plans (name, days, price_paise, top_price_paise, priority, sort, discount_pct, label) VALUES (?, ?, ?, 0, ?, ?, ?, ?)');
+  if (!has(1)) ins2.run('Try it — 1 day', 1, 4900, 1, 0, 0, null);
+  if (!has(30)) ins2.run('Monthly subscription — 30 days', 30, 69900, 4, 30, 20, 'Monthly');
+  if (!has(365)) ins2.run('Yearly subscription — 365 days', 365, 699900, 5, 365, 20, 'Yearly');
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('plans_v2_seeded', '1')").run();
 }
 
 // Default categories are created only once. If you delete them in Admin → Categories they never come back.
@@ -247,9 +310,15 @@ const DEFAULT_SETTINGS = {
   upi_payee_name: process.env.UPI_PAYEE_NAME || '',
   support_phone: '', support_email: '',
   upi_qr_file: '',
-  auto_approve_minutes: '1',          // approve verified clients automatically if admin doesn't act (0 = off)
+  auto_approve_minutes: '1',
+  complaint_block_threshold: '500',  // block a seller when one ad gets complaints from this many different people (0 = off)
+  sponsor_every: '8',                 // show a sponsored card after every N ads in listings          // approve verified clients automatically if admin doesn't act (0 = off)
   require_mobile_otp: '1',            // mobile must be verified by SMS code when SMS is set up
   notify_email: process.env.ADMIN_EMAIL || '',
+  // Business & legal details (Admin → Settings → Business & legal) — shown on receipts, Terms, Contact page
+  legal_name: '', legal_address: '', gstin: '',
+  grievance_name: '', grievance_email: '', grievance_phone: '',
+  jurisdiction_city: '',
 };
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, v);
@@ -269,9 +338,13 @@ function setSetting(key, value) {
 }
 
 // Run fn inside a transaction.
+// Transaction helper. Nested calls join the outer transaction (so helpers can use tx() freely).
+let txDepth = 0;
 function tx(fn) {
+  if (txDepth > 0) { txDepth += 1; try { return fn(); } finally { txDepth -= 1; } }
   db.exec('BEGIN IMMEDIATE');
-  try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; }
+  txDepth = 1;
+  try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } finally { txDepth = 0; }
 }
 
 const parseImages = (ad) => { try { return JSON.parse(ad.images || '[]'); } catch { return []; } };

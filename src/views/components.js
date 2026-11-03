@@ -85,18 +85,18 @@ function idFields(v = {}) {
     ${field('Back side (optional)', html`<input type="file" name="id_back_file" accept="image/*,application/pdf">`, 'Only if your document has details on the back')}`;
 }
 
-// Address — optional.
+// Address — optional, but always shown open so people see they can fill it.
 function addressFields(v = {}) {
   return html`
-    <details class="optional-block" ${v.address || v.city ? 'open' : ''}>
-      <summary>Address <span class="muted small">(optional)</span></summary>
-      ${field('Address', html`<textarea name="address" rows="2" maxlength="300">${v.address}</textarea>`)}
+    <div class="address-block">
+      <span class="label">Address <span class="muted small">(optional)</span></span>
+      ${field('House / street / area', html`<textarea name="address" rows="2" maxlength="300" autocomplete="street-address">${v.address}</textarea>`)}
       <div class="row3">
-        ${field('City', html`<input name="city" list="cities" maxlength="60" value="${v.city}">`)}${cityDatalist()}
+        ${field('City', html`<input name="city" list="cities" maxlength="60" value="${v.city}" autocomplete="address-level2">`)}${cityDatalist()}
         ${field('State', stateSelect(v.state, { required: false }))}
-        ${field('PIN code', html`<input name="pincode" inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" value="${v.pincode}">`)}
+        ${field('PIN code', html`<input name="pincode" inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" value="${v.pincode}" autocomplete="postal-code">`)}
       </div>
-    </details>`;
+    </div>`;
 }
 
 module.exports = { csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, idFields, addressFields, CITIES };

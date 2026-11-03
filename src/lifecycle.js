@@ -87,6 +87,7 @@ function deleteClient(clientId) {
   tx(() => {
     db.prepare('DELETE FROM kyc_snapshots WHERE client_id = ?').run(c.id);
     db.prepare('DELETE FROM otps WHERE client_id = ?').run(c.id);
+    db.prepare('DELETE FROM inbox WHERE client_id = ?').run(c.id);
     db.prepare('UPDATE payments SET screenshot_file = NULL WHERE client_id = ?').run(c.id);
     db.prepare(`UPDATE clients SET status = 'deleted', deleted_at = ?, name = ?, business_name = NULL, email = ?, phone = '0000000000',
       password_hash = '!', address = '', city = '', state = '', pincode = '', aadhaar_last4 = '', pan_number = '',
@@ -97,4 +98,16 @@ function deleteClient(clientId) {
   return true;
 }
 
-module.exports = { pauseAd, resumeAd, deactivateClient, reactivateClient, deleteAd, deleteClient };
+/** Block a seller (same as Admin → Block): cannot log in, ads hidden; their paid time is kept for an unblock. */
+function blockClient(clientId, note, adminId = null) {
+  const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+  if (!c || ['suspended', 'deleted'].includes(c.status)) return false;
+  tx(() => {
+    db.prepare("UPDATE clients SET status = 'suspended', admin_note = ?, blocked_reason = ?, reviewed_by = COALESCE(?, reviewed_by), reviewed_at = ? WHERE id = ?")
+      .run(note, note, adminId, now(), c.id);
+    db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment','paused')").run(now(), c.id);
+  });
+  return true;
+}
+
+module.exports = { pauseAd, resumeAd, deactivateClient, reactivateClient, deleteAd, deleteClient, blockClient };

@@ -504,4 +504,91 @@ Visitors can tap the ♡ on any ad to **save** it. Saved ads are kept in their o
 
 > The camera needs `localhost` or your `https://` domain (not the `http://192.168…` Wi-Fi address).
 
-**Test data pictures.** `npm run seed:test` now gives the test ads proper product pictures (a phone, TV, car, scooter, books…) instead of coloured shapes. To refresh old test data: `npm run seed:remove`, then `npm run seed:test`.
+**Test data pictures.** `npm run seed:test` downloads **real photos** for the test ads (a phone, TV, car, scooter, laptop…) from Pexels (free to use). Without internet it uses drawings instead. To refresh old test data: `npm run seed:remove`, then `npm run seed:test`. For the home page, Admin → **Home page → Banners → Add real sample photos to banners** puts photos of people using phones and laptops on your banners. You can also upload your own.
+
+---
+
+## Part 19 — Money, balance, subscriptions, alerts, sponsors (3 Nov, night)
+
+**Messages for sellers.** Sellers see a 🔔 **Messages** bell. They get a message when a payment is confirmed (with a **receipt** to download), rejected (with your reason) or failed, when an ad ends or is removed, and when balance is added. Rejected and failed payments also show on top of their *My ads* page with a **Pay again** button.
+
+**Who is responsible.** Before paying, the seller must tick that they accept the payment terms. A wrong UPI ID, amount or UTR, and failed or delayed bank payments, are the seller's responsibility. The Terms say that ads are published by the advertiser under their sole responsibility and that the site does not check ads in advance or mediate between users. Fill in Admin → Settings → **Business & legal** so your name, address and Grievance Officer appear on receipts and policy pages.
+
+**Plans.** There are now **1 day**, 7, 15, 29 days, a **Monthly subscription** (30 days) and a **Yearly subscription** (365 days). Change any price and the **Discount %** in Admin → Settings → **Plans** (20% is set for monthly and yearly; it applies to the plan and its TOP slots). The payment screen shows the old price crossed out.
+
+**How ads are ordered.**
+1. TOP ads come first (TOP slots the seller paid for, or TOP you set yourself).
+2. Then your boost.
+3. Then **money paid**: more money = higher. A yearly plan is above a monthly plan, above 7 days, above 1 day.
+4. Ads that paid **the same amount are shuffled on every new visit**, so each one gets a fair turn at the top.
+
+**Boost & TOP (you).** Admin → **Ads** → **Boost & TOP** opens a small window. You can:
+- put the ad in TOP for a number of days, or until a date and time, in the time slots you choose;
+- set a boost from −10 to +10;
+- add free days.
+
+**Balance.**
+- If a seller deletes a live ad, the **value of the unused days goes to their balance**.
+- On the next ad they see *"You have ₹X balance waiting"*. On the payment screen they tick **Use my balance**. If it covers everything, the ad goes **live straight away**; otherwise they pay the rest by UPI.
+- Sellers can also **add money** in *Balance*. You confirm it in Admin → **Payments** (top-ups are shown first).
+- On a seller's page in Admin → Clients you can add or remove balance by hand.
+- Balance is for ads only; it is not paid out as cash.
+
+**Too many complaints = automatic block.** If one ad gets complaints from **500 different people** (change the number in Settings → **Approvals**; 0 = off), the ad is removed and the seller is **blocked**. They can't log in, and they can't register again with the same mobile number or PAN/passport number. You get an alert.
+
+**Live updates.** Admin pages refresh their counters every 10 seconds. A new payment or new seller shows a pop-up with a soft sound, and the Dashboard, Payments and Clients pages reload by themselves (unless you are typing). Sellers' pages update their bell the same way.
+
+**Alerts on your phone (Admin → Settings → Alerts).** Choose what you want (payments, new sellers, complaints, advertiser enquiries), then set up any of these:
+- **WhatsApp on your own number (free):** open callmebot.com → WhatsApp, follow their steps to get an API key, and paste it with your number.
+- **WhatsApp Business (Cloud API):** paste the access token and phone number ID from Meta for Developers.
+- **Telegram (free):** create a bot with @BotFather, then paste the token and your chat ID.
+- **Google Chat:** paste a space webhook URL (needs Google Workspace).
+
+Click **Save & send a test alert**. Every alert is also listed in Admin → Messages.
+
+**Reports.** Two new tabs:
+- **Money:** total received, the split between UPI, online and balance, top-ups, plans sold, top paying sellers, and every confirmed payment (CSV download).
+- **Live ads:** every running ad with its plan, amount paid, end date, views and how it is placed, plus a **Boost & TOP** button and a short guide to how ads move up.
+
+**Sponsored ads (other websites and apps).** Admin → **Sponsors**: add an advertiser's ad with a picture, link, dates and where to show it:
+- between listings (after every 8 ads; you can change this in Settings → Approvals);
+- under the ad page;
+- on the home page.
+
+Views and clicks are counted. Businesses can ask for a slot on the public **Advertise with us** page (`/advertise`); their enquiries appear in Sponsors → Enquiries and as an alert.
+
+**Post ad button.** It now asks: *I already sell here* (log in right there and go straight to the new ad) or *I'm new here* (register).
+
+---
+
+## Part 20 — Hosting in Switzerland and running it from India
+
+You can rent a server in a Swiss data centre and manage everything from India in your browser (your admin panel at your own domain).
+
+1. **Pick a Swiss provider.** For example **Infomaniak** (Geneva; its *VPS Lite* with 4 vCPU and 4 GB RAM was listed at about €9/month in 2026), **Exoscale** (Zurich and Geneva) or **Hostpoint**. 2 vCPU and 4 GB RAM is plenty to start. Choose **Ubuntu 24.04** and a **Swiss** location.
+2. **Log in from your Windows laptop.** Open PowerShell: `ssh root@YOUR-SERVER-IP` (the provider emails you the IP and password, or lets you add an SSH key).
+3. **Install AdBazaar on the server.** Follow **"Deploy (VPS)"** in `README.md` (Node.js 22, `git clone`, `.env`, `pm2` so it starts by itself).
+4. **Move your data.** Stop AdBazaar on your laptop and copy the `storage` folder and `.env` to the server (for example with WinSCP, or `scp -r D:\AdBazaar\storage root@IP:/opt/adbazaar/`).
+5. **Point your domain.** Keep using Cloudflare: create a tunnel for the server (Part 9.2, choose *Linux*) and move the route of your subdomain to it (Part 14.3). Cloudflare also makes pages load faster in India.
+6. **Backups.** Turn on the provider's daily snapshots, and download a copy of `storage` now and then.
+
+Things to know:
+- Pages travel India ↔ Switzerland, which adds about a tenth of a second. Cloudflare caches pictures and styles, so visitors hardly notice.
+- India's data protection law (DPDP Act 2023) allows keeping data abroad, except in countries the government may restrict. Its main duties start on **13 May 2027**. Type the country of your server in Admin → Settings → **Business & legal → Where the server is**; the Privacy policy then shows it.
+- Video calls work the same. If some mobile networks fail to connect, add a TURN server (Part 11, problems table).
+
+---
+
+## Part 21 — Opening it to the public (India) — checklist
+
+1. **Domain and HTTPS:** done with Cloudflare (Parts 9 and 20).
+2. **Business details:** run it in your own name as a proprietor, or as a company. Fill in Admin → Settings → **Business & legal** (name, address, GSTIN if you have one, Grievance Officer). Free **Udyam (MSME)** registration and a current bank account help with payment gateways.
+3. **GST:** for services, registration is generally needed once yearly turnover crosses ₹20 lakh (lower in some states). Ask a CA.
+4. **IT Rules 2021 (you are an "intermediary"):**
+   - publish your Terms, Privacy policy and user rules (already at `/terms`, `/privacy`, `/refund-policy`);
+   - show a **Grievance Officer** with contact details (at `/contact`);
+   - acknowledge complaints within **24 hours** and resolve them within **15 days**;
+   - remove illegal content when you receive a court order or a government notice.
+5. **Online payments (Razorpay or another gateway):** they check your policy and contact pages, then ask for KYC (PAN, bank account, business proof). Put the keys in `.env`.
+6. **Get found on Google (free):** add your domain to **Google Search Console** and submit `https://your-domain/sitemap.xml`. Make a free **Google Business Profile**.
+7. **Before launch:** remove the test data (`npm run seed:remove`), set a strong admin password, set up email and alerts, and ask a lawyer to read the Terms, Privacy and Refund pages. They are good templates, not legal advice.

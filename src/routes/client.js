@@ -13,7 +13,10 @@ const { checkId, describeId } = require('../idproof');
 const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib/security');
 const { saveUpload, saveVideo, saveDataUrl, removeFile, UploadError, sendFile, DIRS, safeName } = require('../lib/files');
 const V = require('../validators');
+const { receiptData, receiptPage } = require('../views/receipt');
+const { TERMS_VERSION } = require('./legal');
 const P = require('../payments');
+const W = require('../wallet');
 const rtc = require('../rtc');
 const Cat = require('../categories');
 const life = require('../lifecycle');
@@ -113,7 +116,7 @@ function registerView(req, v = {}, error) {
         <div data-step data-title="Finish">
           ${addressFields(v)}
           <label class="check"><input type="checkbox" name="adult" value="1" required> <span>I confirm that I am <strong>18 years or older</strong>.</span></label>
-          <label class="check"><input type="checkbox" name="consent" value="1" required> <span>These details are true, and ${req.settings.site_name} may use my documents only for identity verification. I agree to the <a href="/terms" target="_blank">terms</a>.</span></label>
+          <label class="check"><input type="checkbox" name="consent" value="1" required> <span>My details are true. I agree to the <a href="/terms" target="_blank">Terms of use</a>, <a href="/privacy" target="_blank">Privacy policy</a> and <a href="/refund-policy" target="_blank">Refund policy</a>, and I allow ${req.settings.site_name} to use my ID and photo only to verify me.</span></label>
           <div class="note small">${icon('clock', { size: 16 })} Login verification takes <strong>${mins}</strong>. After you post an ad, payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong>.</div>
         </div>
         <div class="form-actions" data-wizard-submit>
@@ -206,8 +209,61 @@ function callView(req, c, { role, eventsUrl, signalUrl, snapshotUrl }) {
   </section>`;
 }
 
-function dashboardView(req, ads, stats) {
+const TONE_ICON = { success: 'check', error: 'x', warn: 'clock', info: 'bell' };
+function messageCard(m) {
+  return html`<article class="msg msg-${m.tone} ${m.read_at ? '' : 'unread'}">
+    <span class="msg-ic">${icon(TONE_ICON[m.tone] || 'bell', { size: 18 })}</span>
+    <div class="msg-main"><div class="msg-top"><strong>${m.title}</strong><time class="muted small">${timeAgoText(m.created_at)}</time></div>
+      ${m.body ? html`<p>${m.body}</p>` : ''}
+      ${m.link ? html`<a class="btn btn-sm ${m.tone === 'error' ? 'btn-primary' : ''}" href="${m.link}">${m.link_text || 'Open'}</a>` : ''}</div>
+  </article>`;
+}
+const timeAgoText = (ms) => { const d = Date.now() - ms; if (d < 60_000) return 'just now'; if (d < 3600_000) return `${Math.floor(d / 60_000)} min ago`; if (d < 86400_000) return `${Math.floor(d / 3600_000)} hr ago`; return fmtDate(ms); };
+
+function messagesView(req, rows) {
   return html`
+  <div class="page-head"><div><h1>Messages</h1><p class="muted">Updates about your account, payments and ads.</p></div></div>
+  ${rows.length ? html`<div class="msgs">${rows.map(messageCard)}</div>` : html`<div class="card empty center"><div class="empty-icon">📭</div><h3>No messages yet</h3><p class="muted">We will post updates about your payments and ads here.</p></div>`}`;
+}
+
+const TX_LABEL = { ad_deleted: 'Unused days kept', topup: 'Money added', spent: 'Used for an ad', refund: 'Returned', admin: 'Added by our team' };
+function walletView(req, { bal, rows, topups, settings }) {
+  const upiLink = settings.upi_id ? `upi://pay?${new URLSearchParams({ pa: settings.upi_id, pn: settings.upi_payee_name || settings.site_name, cu: 'INR', tn: `Wallet top-up ${req.seller.id}` })}` : '';
+  return html`
+  <div class="page-head"><div><h1>My balance</h1><p class="muted">Money kept for your next ads — from deleted ads with paid days left, or money you add.</p></div></div>
+  <div class="cols2">
+    <section class="card walletcard">
+      <div class="wallet-big"><span class="muted small">Balance</span><strong>${rupees(bal)}</strong></div>
+      <p class="small muted">Use it on the payment screen of any ad: tick "Use my balance". If it covers the full amount, your ad goes live straight away.</p>
+      <a class="btn btn-primary" href="/client/ads/new">${icon('plus', { size: 16 })} Post an ad with my balance</a>
+      <h3>History</h3>
+      ${rows.length ? html`<ul class="list">${rows.map((t) => html`<li><span><strong>${TX_LABEL[t.kind] || t.kind}</strong><span class="small muted" style="display:block">${t.note || ''} · ${fmtDate(t.created_at)}</span></span><strong class="${t.amount_paise > 0 ? 'ok' : ''}">${t.amount_paise > 0 ? '+' : '−'}${rupees(Math.abs(t.amount_paise))}</strong></li>`)}</ul>` : html`<p class="muted small">No changes yet.</p>`}
+    </section>
+    <section class="card">
+      <h2>Add money</h2>
+      <p class="small muted">Pay any amount to our UPI ID, then enter the UTR. Money is added after we confirm it (${PAYMENT_TIME_TEXT}). Added money is kept for ads and is not refundable as cash.</p>
+      <form method="post" action="/client/wallet/topup" enctype="multipart/form-data" class="form">
+        ${csrf(req)}
+        <div class="upi-box">
+          ${settings.upi_qr_file ? html`<img class="upi-qr" src="${imgUrl(settings.upi_qr_file)}" alt="UPI QR code">` : ''}
+          <div>${settings.upi_id ? html`<p>UPI ID <strong class="mono">${settings.upi_id}</strong></p><a class="btn btn-sm only-mobile" href="${upiLink}">Open UPI app</a>` : html`<p class="muted">UPI details are not set up yet.</p>`}</div>
+        </div>
+        <div class="row2">
+          ${field('Amount (₹)', html`<input name="amount" type="number" min="50" max="100000" step="1" required placeholder="e.g. 1000">`)}
+          ${field('UPI transaction ID / UTR', html`<input name="utr" required minlength="6" maxlength="30" pattern="[A-Za-z0-9]{6,30}">`)}
+        </div>
+        ${field('Payment screenshot (optional)', html`<input type="file" name="screenshot" accept="image/*">`)}
+        <label class="check"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms#payments" target="_blank">payment terms</a>. A wrong UPI ID, amount or UTR is my own responsibility.</span></label>
+        <button class="btn btn-accent">Submit for confirmation</button>
+      </form>
+      ${topups.length ? html`<h3>Your top-ups</h3><ul class="list">${topups.map((t) => html`<li><span>${rupees(t.amount_paise)} · UTR ${t.utr}<span class="small muted" style="display:block">${fmtDate(t.created_at)}${t.admin_note ? ` · ${t.admin_note}` : ''}</span></span>${pill(t.status === 'pending' ? 'payment_review' : t.status)}</li>`)}</ul>` : ''}
+    </section>
+  </div>`;
+}
+
+function dashboardView(req, ads, stats, alerts = []) {
+  return html`
+  ${alerts.length ? html`<div class="msgs dash-alerts">${alerts.map(messageCard)}</div>` : ''}
   <div class="page-head">
     <div><h1>My ads</h1><p class="muted">Welcome, ${req.seller.name}. Ads go live as soon as payment is confirmed.</p></div>
     <a class="btn btn-accent" href="/client/ads/new">+ Post a new ad</a>
@@ -217,6 +273,7 @@ function dashboardView(req, ads, stats) {
     <div class="stat"><span>${stats.waiting}</span>Waiting for payment</div>
     <div class="stat"><span>${stats.views}</span>Total views</div>
     <div class="stat"><span>${rupees(stats.spent)}</span>Total spent</div>
+    <a class="stat stat-link" href="/client/wallet"><span>${rupees(W.balance(req.seller.id))}</span>My balance — add money</a>
   </div>
   ${ads.length ? html`
   <div class="table-wrap card"><table class="table">
@@ -248,6 +305,8 @@ function adFormView(req, { ad = {}, cats, error }) {
   <section class="card form-card">
     <h1>${isEdit ? 'Edit ad' : 'Post a new ad'}</h1>
     ${!isEdit ? html`<p class="muted">Step 1 of 2 — describe what you're selling. Next you'll choose how long it runs and pay.</p>` : ''}
+    ${!isEdit && W.balance(req.seller.id) > 0 ? html`<div class="flash flash-success">${icon('card', { size: 18 })}<span>You have <strong>${rupees(W.balance(req.seller.id))}</strong> balance waiting. Use it to run this ad on the next screen.</span></div>` : ''}
+    ${isEdit && ad.status === 'active' ? html`<p class="muted small">Your ad stays live while you edit. You can change the text, photos and videos any time.</p>` : ''}
     ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
     <form method="post" enctype="multipart/form-data" action="${isEdit ? `/client/ads/${ad.id}/edit` : '/client/ads/new'}" class="form">
       ${csrf(req)}
@@ -277,7 +336,7 @@ function adFormView(req, { ad = {}, cats, error }) {
       </div>
     </form>
     ${isEdit ? videosSection(req, ad) : ''}
-    ${isEdit && ad.status !== 'active' ? html`<form method="post" action="/client/ads/${ad.id}/delete" class="danger-zone" data-confirm="Delete this ad permanently?">${csrf(req)}<button class="btn btn-danger btn-sm">Delete ad</button></form>` : ''}
+    ${isEdit && ad.status !== 'blocked' ? (() => { const v = W.unusedValue(ad); return html`<form method="post" action="/client/ads/${ad.id}/delete" class="danger-zone" data-confirm="${v ? `Delete this ad? ${rupees(v)} for the unused days goes to your balance for your next ad.` : 'Delete this ad permanently?'}">${csrf(req)}<button class="btn btn-danger btn-sm">${icon('trash', { size: 15 })} Delete ad</button>${v ? html` <span class="small muted">The unused days (${rupees(v)}) are kept as balance.</span>` : ''}</form>`; })() : ''}
   </section>`;
 }
 
@@ -313,7 +372,7 @@ function videosSection(req, ad) {
   </section>`;
 }
 
-function payView(req, { ad, plans, pending, settings }) {
+function payView(req, { ad, plans, pending, settings, wallet = 0 }) {
   const extending = ad.status === 'active';
   const upiLink = settings.upi_id ? `upi://pay?${new URLSearchParams({ pa: settings.upi_id, pn: settings.upi_payee_name || settings.site_name, cu: 'INR', tn: `Ad #${ad.id}` })}` : '';
   return html`
@@ -328,17 +387,21 @@ function payView(req, { ad, plans, pending, settings }) {
       ${csrf(req)}
       <fieldset><legend>1 · How long should your ad run?</legend>
         <div class="plans">
-          ${plans.map((p, i) => html`
+          ${plans.map((p) => {
+            const price = P.quote(p, 0);
+            const def = plans.find((x) => x.days === 29) || plans[plans.length - 1];
+            return html`
             <label class="plan">
-              <input type="radio" name="plan_id" value="${p.id}" ${i === plans.length - 1 ? 'checked' : ''} data-price="${p.price_paise}" data-days="${p.days}" required>
+              <input type="radio" name="plan_id" value="${p.id}" ${p.id === def.id ? 'checked' : ''} data-price="${p.price_paise}" data-days="${p.days}" data-discount="${p.discount_pct || 0}" required>
               <span class="plan-box">
-                ${p.priority >= 3 ? html`<span class="plan-flag">Best ranking</span>` : ''}
-                <span class="plan-days">${p.days} days</span>
+                ${p.discount_pct ? html`<span class="plan-flag">Save ${p.discount_pct}%</span>` : p.days === 29 ? html`<span class="plan-flag">Popular</span>` : ''}
+                <span class="plan-days">${p.label || (p.days === 1 ? '1 day' : `${p.days} days`)}</span>
                 <span class="plan-name">${p.name}</span>
-                <span class="plan-price">${rupees(p.price_paise)}</span>
-                <span class="plan-per muted small">${rupees(Math.round(p.price_paise / p.days))}/day · ranking level ${p.priority}</span>
+                <span class="plan-price">${p.discount_pct ? html`<s class="muted small">${rupees(p.price_paise)}</s> ` : ''}${rupees(price)}</span>
+                <span class="plan-per muted small">${rupees(Math.round(price / p.days))}/day · higher price = higher place</span>
               </span>
-            </label>`)}
+            </label>`;
+          })}
         </div>
         <div class="top-addon">
           <strong>★ Show in TOP ads (optional)</strong>
@@ -350,17 +413,34 @@ function payView(req, { ad, plans, pending, settings }) {
           </div>
           <div class="small muted" data-top-summary></div>
         </div>
-        <div class="total">Total: <strong data-total>—</strong></div>
+        <div class="total">Total: <strong data-total>—</strong><div class="small muted" data-discount-note></div></div>
+        ${wallet > 0 ? html`<label class="walletbox"><input type="checkbox" name="use_wallet" value="1" checked data-wallet="${wallet}">
+          <span>${icon('card', { size: 18 })} Use my balance <strong>${rupees(wallet)}</strong><small class="muted" data-wallet-note></small></span></label>` : ''}
       </fieldset>
 
       <fieldset><legend>2 · Pay</legend>
+        <div class="terms-box">
+          <strong>${icon('shield', { size: 16 })} Before you pay</strong>
+          <ul>
+            <li>Payments for ad placement are <strong>non-refundable</strong> once your ad is live.</li>
+            <li>You are responsible for paying the <strong>exact total</strong> to the <strong>UPI ID shown here</strong> and entering the <strong>correct UTR</strong>. Payments sent to a wrong UPI ID, a wrong amount or with a wrong UTR are your own responsibility.</li>
+            <li>Failed, pending or delayed payments are handled by your bank, UPI app or payment gateway. If money leaves your account but the payment fails, your bank returns it — ${req.settings.site_name} does not hold that money.</li>
+            <li>Payment confirmation takes ${PAYMENT_TIME_TEXT}.</li>
+          </ul>
+          <label class="check"><input type="checkbox" name="accept_terms" value="1" required> <span>I have read and accept the <a href="/terms#payments" target="_blank">payment terms</a> and the <a href="/refund-policy" target="_blank">refund policy</a>.</span></label>
+        </div>
         ${P.razorpayEnabled() ? html`
           <button type="button" class="btn btn-accent btn-lg btn-block" data-rzp-pay>Pay online (UPI / Card / Netbanking) — goes live instantly</button>
           <div class="or"><span>or pay by UPI manually</span></div>` : ''}
+        <div class="walletpay" data-wallet-only hidden>
+          <p><strong>${icon('check', { size: 18 })} Your balance covers the full amount.</strong> Your ad goes live straight away — no UPI payment needed.</p>
+          <button class="btn btn-ok btn-lg" name="pay_with" value="wallet">Pay from my balance & go live</button>
+        </div>
+        <div data-upi-part>
         <div class="upi-box">
           ${settings.upi_qr_file ? html`<img class="upi-qr" src="${imgUrl(settings.upi_qr_file)}" alt="UPI QR code">` : ''}
           <div>
-            ${settings.upi_id ? html`<p>Pay the total to UPI ID <strong class="mono">${settings.upi_id}</strong>${settings.upi_payee_name ? html` (${settings.upi_payee_name})` : ''}</p>
+            ${settings.upi_id ? html`<p>Pay <strong data-upi-amount>the total</strong> to UPI ID <strong class="mono">${settings.upi_id}</strong>${settings.upi_payee_name ? html` (${settings.upi_payee_name})` : ''}</p>
               <a class="btn btn-sm only-mobile" href="${upiLink}" data-upi-link>Open UPI app</a>`
             : html`<p class="muted">UPI details are not configured yet. Please contact support.</p>`}
             <p class="small muted">After paying, enter the 12-digit UTR / transaction ID from your UPI app. Payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong> — your ad goes live as soon as it is confirmed.</p>
@@ -370,7 +450,8 @@ function payView(req, { ad, plans, pending, settings }) {
           ${field('UPI transaction ID / UTR *', html`<input name="utr" required minlength="6" maxlength="30" pattern="[A-Za-z0-9]{6,30}" placeholder="e.g. 412345678901">`)}
           ${field('Payment screenshot', html`<input type="file" name="screenshot" accept="image/*">`, 'Optional, helps faster confirmation')}
         </div>
-        <button class="btn btn-lg ${P.razorpayEnabled() ? '' : 'btn-accent'}">I have paid — submit for confirmation</button>
+        <button class="btn btn-lg ${P.razorpayEnabled() ? '' : 'btn-accent'}" name="pay_with" value="upi">I have paid — submit for confirmation</button>
+        </div>
       </fieldset>
     </form>
   </section>`;
@@ -380,13 +461,42 @@ function paymentsView(req, rows) {
   return html`
   <div class="page-head"><h1>Payments</h1></div>
   ${rows.length ? html`<div class="table-wrap card"><table class="table">
-    <thead><tr><th>#</th><th>Date</th><th>Ad</th><th>Plan</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead>
+    <thead><tr><th>#</th><th>Date</th><th>Ad</th><th>Plan</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows.map((p) => html`<tr>
       <td>${p.id}</td><td>${fmtDate(p.created_at)}</td><td>${p.ad_title}</td>
       <td>${p.days} days${p.top_slots ? html`<div class="small muted">TOP: ${slotLabels(p.top_slots).join(', ')}</div>` : ''}</td><td>${rupees(p.amount_paise)}</td>
       <td>${p.method === 'razorpay' ? 'Online' : `UPI ${p.utr || ''}`}</td>
-      <td>${pill(p.status)}${p.admin_note && p.status === 'rejected' ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td></tr>`)}
+      <td>${pill(p.status)}${p.admin_note && (p.status === 'rejected' || p.status === 'failed') ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
+      <td>${p.status === 'paid' ? html`<a class="btn btn-sm" href="/client/payments/${p.id}/receipt">${icon('receipt', { size: 15 })} Receipt</a>` : p.status === 'rejected' || p.status === 'failed' ? html`<a class="btn btn-sm btn-primary" href="/client/ads/${p.ad_id}/pay">Pay again</a>` : ''}</td></tr>`)}
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No payments yet.</p></div>`}`;
+}
+
+function postChoiceView(req) {
+  return html`
+  <div class="choice">
+    <section class="card choice-card">
+      <span class="choice-ic">${icon('user', { size: 26 })}</span>
+      <h2>I already sell here</h2>
+      <p class="muted">Log in and post your ad straight away.</p>
+      <form method="post" action="/client/login" class="form">
+        ${csrf(req)}<input type="hidden" name="next" value="/client/ads/new">
+        ${field('Email', html`<input name="email" type="email" required autocomplete="username">`)}
+        ${field('Password', html`<input name="password" type="password" required autocomplete="current-password">`)}
+        <button class="btn btn-primary btn-lg btn-block">${icon('logout', { size: 18 })} Log in & post</button>
+      </form>
+    </section>
+    <section class="card choice-card choice-new">
+      <span class="choice-ic">${icon('plus', { size: 26 })}</span>
+      <h2>I'm new here</h2>
+      <p class="muted">Create your free seller account in about 3 minutes. Login check takes ${approveTimeText(req.settings.auto_approve_minutes)}.</p>
+      <ul class="kyc-points dark">
+        <li>${icon('check', { size: 18 })}<span>Name, mobile and email</span></li>
+        <li>${icon('check', { size: 18 })}<span>One ID and a live photo</span></li>
+        <li>${icon('check', { size: 18 })}<span>Plans from 1 day to 1 year</span></li>
+      </ul>
+      <a class="btn btn-sell btn-lg btn-block" href="/client/register">Create my account</a>
+    </section>
+  </div>`;
 }
 
 function loginView(req, error, email = '') {
@@ -470,6 +580,9 @@ function register(app) {
     if (!b.live_photo_data) return fail('Please capture your live photo using the camera.');
     if (!b.consent) return fail('Please accept the declaration to continue.');
     if (db.prepare('SELECT 1 FROM clients WHERE email = ?').get(v.email)) return fail('An account with this email already exists. Please log in.');
+    // A blocked seller cannot come back with a new account: same mobile, or same PAN / passport number.
+    const blockedMatch = db.prepare("SELECT 1 FROM clients WHERE status = 'suspended' AND (phone = ? OR (id_type IN ('pan','passport') AND id_type = ? AND id_number = ?)) LIMIT 1").get(V.normalizePhone(v.phone), v.id_type, id.stored);
+    if (blockedMatch) return fail('This mobile number or ID belongs to an account that was blocked. Please contact support.');
 
     const saved = [];
     try {
@@ -486,6 +599,7 @@ function register(app) {
           .run(v.name, v.business_name, v.email, v.phone, hashPassword(b.password), v.address, v.city, v.state, v.pincode,
             id.last4, id.pan, v.id_type, id.stored, idFile, idBack, live, token, now, v.dob);
         db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'selfie', ?)").run(r.lastInsertRowid, live, now);
+        db.prepare('UPDATE clients SET terms_accepted_at = ?, terms_version = ? WHERE id = ?').run(now, TERMS_VERSION, r.lastInsertRowid);
         return Number(r.lastInsertRowid);
       });
       // One-time verification: send the email code (and SMS code if SMS is set up).
@@ -578,6 +692,13 @@ function register(app) {
     ? { ringing: true, at: c.call_ring_at, live: rtc.adminInRoom(c.id), url: `/kyc/call/${c.status_token}`, from: req0name() }
     : { ringing: false });
   const req0name = () => getSettings().site_name;
+  // Live updates for the seller portal: new messages (payment confirmed / rejected …) show up without refreshing.
+  app.get('/client/live', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!req.seller) { res.json({ ok: false }); return; }
+    const last = db.prepare('SELECT id, title, tone FROM inbox WHERE client_id = ? ORDER BY id DESC LIMIT 1').get(req.seller.id);
+    res.json({ ok: true, unread: notify.unreadCount(req.seller.id), lastId: last ? last.id : 0, lastTitle: last ? last.title : '', lastTone: last ? last.tone : '' });
+  });
   app.get('/client/ring', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (!req.seller) { res.json({ ringing: false }); return; }
@@ -592,6 +713,11 @@ function register(app) {
   app.get('/client/login', (req, res) => {
     if (req.seller) { res.redirect('/client'); return; }
     res.html(renderPage(req, { title: 'Seller login', body: loginView(req) }));
+  });
+  // "Post ad" button: new sellers register, existing sellers log in right here.
+  app.get('/post', (req, res) => {
+    if (req.seller) { res.redirect('/client/ads/new'); return; }
+    res.html(renderPage(req, { title: 'Post your ad', body: postChoiceView(req) }));
   });
   app.post('/client/login', (req, res) => {
     const email = V.str(req.body.email, 120).toLowerCase();
@@ -612,7 +738,8 @@ function register(app) {
       res.redirect(`/kyc/status/${c.status_token}`);
       return;
     }
-    const returnTo = req.session.returnTo;
+    const nextUrl = String(req.body.next || '');
+    const returnTo = nextUrl.startsWith('/client/') ? nextUrl : req.session.returnTo;
     req.regenerateSession();
     req.session.clientId = c.id;
     db.prepare('UPDATE clients SET last_login_at = ? WHERE id = ?').run(Date.now(), c.id);
@@ -694,7 +821,9 @@ function register(app) {
       views: ads.reduce((s, a) => s + a.views, 0),
       spent: db.prepare("SELECT COALESCE(SUM(amount_paise),0) AS s FROM payments WHERE client_id = ? AND status = 'paid'").get(req.seller.id).s,
     };
-    res.html(renderPage(req, { title: 'My ads', portal: 'client', body: dashboardView(req, ads, stats) }));
+    // Unread warnings (payment rejected / failed, ad removed …) are shown on top of the dashboard.
+    const alerts = db.prepare("SELECT * FROM inbox WHERE client_id = ? AND read_at IS NULL AND tone IN ('error','warn') ORDER BY id DESC LIMIT 3").all(req.seller.id);
+    res.html(renderPage(req, { title: 'My ads', portal: 'client', body: dashboardView(req, ads, stats, alerts) }));
   });
 
   // Create / edit ads (no admin approval needed — only payment)
@@ -745,9 +874,11 @@ function register(app) {
 
   app.post('/client/ads/:id/delete', requireClient, (req, res) => {
     const ad = ownAd(req, res); if (!ad) return;
-    if (ad.status === 'active') { req.flash('error', 'Live ads cannot be deleted until they expire.'); res.redirect('/client'); return; }
-    life.deleteAd(ad.id);
-    req.flash('success', 'Ad deleted.');
+    if (ad.status === 'blocked') { req.flash('error', 'This ad was blocked by the admin. Please contact support.'); res.redirect('/client'); return; }
+    // Paid days that are left are not lost: their value goes to the seller's balance for the next ad.
+    const kept = tx(() => { const v = W.creditDeletedAd(ad); life.deleteAd(ad.id); return v; });
+    if (kept) notify.inbox(req.seller.id, { kind: 'wallet', tone: 'success', title: `${rupees(kept)} added to your balance`, body: `The unused paid days of "${ad.title}" were kept as balance. Use it to run your next ad.`, link: '/client/ads/new', linkText: 'Post a new ad' });
+    req.flash('success', kept ? `Ad deleted. ${rupees(kept)} for the unused days was added to your balance — use it on your next ad.` : 'Ad deleted.');
     res.redirect('/client');
   });
 
@@ -788,7 +919,7 @@ function register(app) {
     if (ad.status === 'blocked') { req.flash('error', 'This ad was blocked by the admin.'); res.redirect('/client'); return; }
     if (ad.status === 'paused') { req.flash('error', 'This ad is deactivated by the admin. Please contact support.'); res.redirect('/client'); return; }
     const pending = db.prepare("SELECT * FROM payments WHERE ad_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1").get(ad.id);
-    res.html(renderPage(req, { title: 'Pay', portal: 'client', body: payView(req, { ad, plans: activePlans(), pending, settings: getSettings() }), scripts: P.razorpayEnabled() ? ['https://checkout.razorpay.com/v1/checkout.js', '/public/js/pay.js'] : ['/public/js/pay.js'] }));
+    res.html(renderPage(req, { title: 'Pay', portal: 'client', body: payView(req, { ad, plans: activePlans(), pending, settings: getSettings(), wallet: W.balance(req.seller.id) }), scripts: P.razorpayEnabled() ? ['https://checkout.razorpay.com/v1/checkout.js', '/public/js/pay.js'] : ['/public/js/pay.js'] }));
   });
 
   function readPlan(req) {
@@ -805,17 +936,42 @@ function register(app) {
     const { plan, topMask } = readPlan(req);
     const utr = V.str(req.body.utr, 30).replace(/\s+/g, '');
     if (!plan) { req.flash('error', 'Please choose a plan.'); res.redirect(back); return; }
+    if (req.body.accept_terms !== '1') { req.flash('error', 'Please tick the box to accept the payment terms.'); res.redirect(back); return; }
+    const total = P.quote(plan, topMask);
+    const walletPart = req.body.use_wallet === '1' ? Math.min(W.balance(req.seller.id), total) : 0;
+    // Balance covers everything: pay from the wallet and go live straight away.
+    if (walletPart >= total) {
+      let payId = 0;
+      let ok = false;
+      try { ok = tx(() => {
+        const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, wallet_paise, method, status, created_at, terms_accepted_at)
+          VALUES (?,?,?,?,?,?,?,?, 'wallet', 'pending', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, total, total, Date.now(), Date.now());
+        payId = Number(r.lastInsertRowid);
+        if (!W.debit(req.seller.id, total, `Paid for "${ad.title}" (${plan.days} days)`, { adId: ad.id, paymentId: payId })) throw new Error('low balance');
+        return true;
+      }); } catch { ok = false; }
+      if (!ok) { req.flash('error', 'Your balance is too low.'); res.redirect(back); return; }
+      P.confirmPayment(payId, { note: 'Paid from wallet balance' });
+      notify.paymentConfirmed(payId);
+      notify.adminAlert('payment', `💳 Wallet payment ${rupees(total)} — ${req.seller.name} · "${ad.title}" is live`);
+      req.flash('success', `Paid ${rupees(total)} from your balance — your ad is live now.`);
+      res.redirect('/client');
+      return;
+    }
     if (!/^[A-Za-z0-9]{6,30}$/.test(utr)) { req.flash('error', 'Please enter the UPI transaction ID / UTR.'); res.redirect(back); return; }
-    if (db.prepare("SELECT 1 FROM payments WHERE utr = ? AND status IN ('pending','paid')").get(utr)) { req.flash('error', 'This transaction ID was already submitted.'); res.redirect(back); return; }
+    if (db.prepare("SELECT 1 FROM payments WHERE utr = ? AND status IN ('pending','paid')").get(utr) || db.prepare("SELECT 1 FROM wallet_topups WHERE utr = ? AND status IN ('pending','paid')").get(utr)) { req.flash('error', 'This transaction ID was already submitted.'); res.redirect(back); return; }
     let shot = null;
     try { shot = saveUpload(req.files.screenshot?.[0], 'payments', { maxMb: 5 }); } catch (e) { if (e instanceof UploadError) { req.flash('error', e.message); res.redirect(back); return; } throw e; }
     let payRowId = 0;
-    tx(() => {
-      const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, method, status, utr, screenshot_file, created_at)
-        VALUES (?,?,?,?,?,?,?, 'upi_manual', 'pending', ?, ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, P.quote(plan, topMask), utr, shot, Date.now());
-      payRowId = Number(r.lastInsertRowid);
-      if (ad.status !== 'active') db.prepare("UPDATE ads SET status = 'payment_review', updated_at = ? WHERE id = ?").run(Date.now(), ad.id);
-    });
+    try {
+      tx(() => {
+        const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, wallet_paise, method, status, utr, screenshot_file, created_at, terms_accepted_at)
+          VALUES (?,?,?,?,?,?,?,?, 'upi_manual', 'pending', ?, ?, ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, total, walletPart, utr, shot, Date.now(), Date.now());
+        payRowId = Number(r.lastInsertRowid);
+        if (walletPart > 0 && !W.debit(req.seller.id, walletPart, `Part payment for "${ad.title}"`, { adId: ad.id, paymentId: payRowId })) throw new Error('Balance changed — please try again.');
+        if (ad.status !== 'active') db.prepare("UPDATE ads SET status = 'payment_review', updated_at = ? WHERE id = ?").run(Date.now(), ad.id);
+      });
+    } catch (e) { req.flash('error', e.message || 'Please try again.'); res.redirect(back); return; }
     notify.upiSubmitted(db.prepare('SELECT * FROM payments WHERE id = ?').get(payRowId), req.seller, ad);
     req.flash('success', `Payment submitted. Confirmation takes ${PAYMENT_TIME_TEXT} — your ad goes live as soon as it is confirmed.`);
     notify.upiReceived(req.seller, ad);
@@ -829,9 +985,10 @@ function register(app) {
     if (!ad || ad.status === 'blocked') { res.status(404).json({ error: 'Ad not found' }); return; }
     const { plan, topMask } = readPlan(req);
     if (!plan) { res.status(400).json({ error: 'Choose a plan' }); return; }
+    if (req.body.accept_terms !== '1') { res.status(400).json({ error: 'Please tick the box to accept the payment terms.' }); return; }
     const amount = P.quote(plan, topMask);
-    const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, method, status, created_at)
-      VALUES (?,?,?,?,?,?,?, 'razorpay', 'created', ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, amount, Date.now());
+    const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, method, status, created_at, terms_accepted_at)
+      VALUES (?,?,?,?,?,?,?, 'razorpay', 'created', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, amount, Date.now(), Date.now());
     const payId = Number(r.lastInsertRowid);
     try {
       const order = await P.createRazorpayOrder(amount, `pay_${payId}`, { payment_id: String(payId), ad_id: String(ad.id) });
@@ -845,8 +1002,20 @@ function register(app) {
     } catch (e) {
       console.error('[razorpay] order failed', e.message);
       db.prepare("UPDATE payments SET status = 'failed', admin_note = ? WHERE id = ?").run(String(e.message).slice(0, 200), payId);
+      notify.paymentFailed(req.seller.id, ad, 'We could not start the online payment.');
       res.status(502).json({ error: 'Could not start the payment. Please try again or pay by UPI.' });
     }
+  });
+
+  // Online payment failed in the checkout window: record it and tell the seller in their portal.
+  app.post('/client/payments/razorpay/failed', requireClient, (req, res) => {
+    const pay = db.prepare("SELECT * FROM payments WHERE razorpay_order_id = ? AND client_id = ? AND status = 'created'").get(String((req.body || {}).order_id || ''), req.seller.id);
+    if (pay) {
+      const why = V.str((req.body || {}).reason, 200) || 'Payment failed';
+      db.prepare("UPDATE payments SET status = 'failed', admin_note = ? WHERE id = ?").run(why, pay.id);
+      notify.paymentFailed(req.seller.id, db.prepare('SELECT * FROM ads WHERE id = ?').get(pay.ad_id), `The online payment failed: ${why}.`);
+    }
+    res.json({ ok: true });
   });
 
   app.post('/client/payments/razorpay/verify', requireClient, (req, res) => {
@@ -860,6 +1029,43 @@ function register(app) {
     if (!done.already) notify.paymentConfirmed(pay.id);
     req.flash('success', 'Payment successful — your ad is live!');
     res.json({ ok: true, redirect: '/client' });
+  });
+
+  app.get('/client/wallet', requireClient, (req, res) => {
+    res.html(renderPage(req, { title: 'My balance', portal: 'client', body: walletView(req, {
+      bal: W.balance(req.seller.id), rows: W.history(req.seller.id),
+      topups: db.prepare('SELECT * FROM wallet_topups WHERE client_id = ? ORDER BY id DESC LIMIT 20').all(req.seller.id), settings: getSettings(),
+    }) }));
+  });
+  app.post('/client/wallet/topup', requireClient, (req, res) => {
+    const amount = Math.round(Number(req.body.amount) * 100);
+    const utr = V.str(req.body.utr, 30).replace(/\s+/g, '');
+    const back = '/client/wallet';
+    if (!(amount >= 5000 && amount <= 10000000)) { req.flash('error', 'Enter an amount between ₹50 and ₹1,00,000.'); res.redirect(back); return; }
+    if (!/^[A-Za-z0-9]{6,30}$/.test(utr)) { req.flash('error', 'Enter the UPI transaction ID / UTR.'); res.redirect(back); return; }
+    if (req.body.accept_terms !== '1') { req.flash('error', 'Please accept the payment terms.'); res.redirect(back); return; }
+    if (db.prepare("SELECT 1 FROM payments WHERE utr = ? AND status IN ('pending','paid')").get(utr) || db.prepare("SELECT 1 FROM wallet_topups WHERE utr = ? AND status IN ('pending','paid')").get(utr)) { req.flash('error', 'This transaction ID was already submitted.'); res.redirect(back); return; }
+    let shot = null;
+    try { shot = saveUpload(req.files.screenshot?.[0], 'payments', { maxMb: 5 }); } catch (e) { if (e instanceof UploadError) { req.flash('error', e.message); res.redirect(back); return; } throw e; }
+    db.prepare('INSERT INTO wallet_topups (client_id, amount_paise, utr, screenshot_file, created_at) VALUES (?,?,?,?,?)').run(req.seller.id, amount, utr, shot, Date.now());
+    notify.adminAlert('payment', `💰 Balance top-up to confirm: ${rupees(amount)} from ${req.seller.name} (${req.seller.phone}). UTR ${utr}`);
+    notify.inbox(req.seller.id, { kind: 'topup', tone: 'info', title: `Top-up of ${rupees(amount)} received for review`, body: `We are checking your UPI payment. Confirmation takes ${PAYMENT_TIME_TEXT}.`, link: '/client/wallet', linkText: 'My balance' });
+    req.flash('success', `Thanks! We will add ${rupees(amount)} to your balance after confirming the payment (${PAYMENT_TIME_TEXT}).`);
+    res.redirect(back);
+  });
+
+  app.get('/client/messages', requireClient, (req, res) => {
+    const rows = db.prepare('SELECT * FROM inbox WHERE client_id = ? ORDER BY id DESC LIMIT 200').all(req.seller.id);
+    const body = messagesView(req, rows);
+    db.prepare('UPDATE inbox SET read_at = ? WHERE client_id = ? AND read_at IS NULL').run(Date.now(), req.seller.id);
+    req.sellerUnread = 0;
+    res.html(renderPage(req, { title: 'Messages', portal: 'client', body }));
+  });
+
+  app.get('/client/payments/:id/receipt', requireClient, (req, res) => {
+    const p = receiptData(parseInt(req.params.id, 10) || 0);
+    if (!p || p.client_id !== req.seller.id || p.status !== 'paid') { res.status(404).html(renderPage(req, { title: 'Receipt not found', portal: 'client', body: html`<section class="card narrow center"><h1>Receipt not found</h1><p class="muted">A receipt is available once a payment is confirmed.</p><a class="btn btn-primary" href="/client/payments">My payments</a></section>` })); return; }
+    res.html(receiptPage(req, p));
   });
 
   app.get('/client/payments', requireClient, (req, res) => {

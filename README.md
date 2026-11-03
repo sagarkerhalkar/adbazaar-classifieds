@@ -42,6 +42,9 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 - **Home page editor** (Admin → Home page): sliding banners with your own pictures, a notice bar, show/hide sections, headings, popular cities and footer text. The home page is marketplace-style (category bar with an all-categories menu, banners, category tiles, a TOP strip, popular cities, fresh ads with Load more, and saved ads ♡).
 - **Video call any seller** from the admin portal. The seller's open page rings (pop-up plus sound) and they get an email link (`src/rtc.js`, `public/js/ring.js`).
 
+- **Money:** seller messages (bell) for confirmed, rejected and failed payments, receipts, a seller **balance** (`src/wallet.js`: unused days of deleted ads, UPI top-ups confirmed by the admin, admin credits; pay fully or partly from balance), 1-day, monthly and yearly plans with an admin-set discount %, admin **Boost & TOP** (days or until a date, chosen slots), automatic blocking after complaints from N different people, and **instant alerts** (WhatsApp via CallMeBot or the Cloud API, Telegram, Google Chat) plus live admin and seller counters (`public/js/live.js`).
+- **Sponsors** (`src/routes/sponsors.js`): third-party ads between listings, under ad pages and on the home page, with view and click counts and an `/advertise` enquiry form.
+
 ## Ranking algorithm (`src/ranking.js`)
 
 ```
@@ -53,7 +56,7 @@ score = TOP bonus (1000)                  ← paid "Show on top" add-on
       + admin boost × 10                  ← your manual nudge (-10…+10)
       − 30 in the last 24h of the period
 ```
-Expired ads are removed from the listing. Scores are recalculated every 5 minutes, whenever a payment is confirmed, and when you click **Re-run ranking** in Admin → Ads. All weights are at the top of `src/ranking.js`. Each plan's price, TOP price and ranking level can be edited in **Admin → Settings**.
+Expired ads are removed from the listing. Ads are ordered by TOP now → admin boost → **amount paid** for the current run, and ads that paid the same are shuffled per visit. Scores are recalculated every 5 minutes, whenever a payment is confirmed, and when you click **Re-run ranking** in Admin → Ads. All weights are at the top of `src/ranking.js`. Each plan's price, TOP price and ranking level can be edited in **Admin → Settings**.
 
 ---
 

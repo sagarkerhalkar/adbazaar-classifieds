@@ -166,5 +166,29 @@ Commit: `33859ac`
 
 ---
 
+## 12. Messages, balance, subscriptions, alerts, sponsors, legal, Swiss hosting — 3 Nov 17:46 → 19:40 (one request, sent five times with additions)
+
+> client is not getting message in portal if payment rejected, payment receipt, and if payment fails it's whole and sole responsibility of client … standard T&C … address box keep open at registration but not compulsory … how I will register this site for public … if a client gets complaints for the same product from 500 different customers, block the client … report section: how much payment received, current ad running status, how I will boost ads … higher payment on top, lower payment low, same payment random up/down on every refresh … after payment client can edit picture/video; if they delete an ad with payment, hold the days and show the pending amount on the new ad; client can add extra amount … monthly and yearly subscription with ~20% discount set by admin … 1 day option … host in Switzerland and run from India … auto refresh on admin and all portals … WhatsApp, Telegram, mail, Google Chat notification for payments (personal and business WhatsApp) … admin can set an ad on top for some time or decided days … T&C like Skokka (user accepts by using; ads published under advertiser's sole responsibility; no prior verification; not responsible for veracity/legality; we only offer publication and navigation and do not mediate) … third-party websites/apps can run ads between ads or in the lower section … "post your ad" asks new or existing user … realistic photos (girl, boy, couple, working people, real laptop, real mobile), not cartoons
+
+**What was built:**
+- **Seller messages and receipts** (bell + Messages page): payment confirmed (with receipt), rejected (with reason), failed, ad ended or removed, balance added. Payment terms must be accepted before paying. *(Part of this was started by another session and finished here.)*
+- **Terms of use** rewritten in our own words: acceptance by use, ads under the advertiser's sole responsibility, no prior check of ads, no mediation, payment responsibility, balance, automatic blocking, sponsored content. Also Privacy, Refund, Contact/Grievance and About pages, plus a Business & legal settings tab.
+- **Registration:** the address box is always open (still optional).
+- **Automatic block** after complaints from N different people (default 500, changeable); blocked sellers can't re-register with the same mobile number or PAN/passport.
+- **Ranking:** TOP → admin boost → amount paid; ads that paid the same are shuffled on every visit.
+- **Plans:** 1 day, monthly and yearly with an admin-set discount (20%).
+- **Balance:** unused days of deleted ads, UPI top-ups (admin confirms), pay fully or partly from balance, admin credits.
+- **Admin Boost & TOP:** TOP for N days or until a date, in chosen slots, plus boost and free days.
+- **Reports:** Money tab (received, by method, plans, top sellers, all payments CSV) and Live ads tab (status, ending soon, how ads move up).
+- **Live updates** on admin and seller pages, with toasts and a sound. **Alerts** by WhatsApp (own number via CallMeBot, or Business Cloud API), Telegram and Google Chat.
+- **Sponsors:** third-party ads between listings, under the ad page and on the home page, plus an Advertise-with-us enquiry page.
+- **Post ad:** asks "I already sell here" (quick login) or "I'm new here".
+- **Real photos:** test data and banners download real Pexels photos on your computer (drawings when offline).
+- **Guide:** Part 19 (all of this), Part 20 (Swiss hosting, run from India), Part 21 (going public in India).
+
+Commit: `COMMIT_PLACEHOLDER`
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

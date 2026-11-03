@@ -363,8 +363,8 @@
 // Seller pages: listen for an incoming video call from the admin (loads public/js/ring.js)
 (function () {
   const me = document.currentScript && document.currentScript.src;
-  if (document.body.classList.contains('portal-admin')) return;
-  const s = document.createElement('script');
-  s.src = '/public/js/ring.js' + (me && me.includes('?') ? me.slice(me.indexOf('?')) : '');
-  s.defer = true; document.body.appendChild(s);
+  const v = me && me.includes('?') ? me.slice(me.indexOf('?')) : '';
+  const load = (f) => { const s = document.createElement('script'); s.src = '/public/js/' + f + v; s.defer = true; document.body.appendChild(s); };
+  load('live.js');
+  if (!document.body.classList.contains('portal-admin')) load('ring.js');
 })();

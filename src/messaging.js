@@ -250,4 +250,65 @@ async function sendSmsOtp(phone10, otp) {
 // Keep the outbox small: delete entries older than 60 days once a day.
 setInterval(() => { try { db.prepare('DELETE FROM outbox WHERE created_at < ?').run(Date.now() - 60 * 86400_000); } catch { /* ignore */ } }, 86400_000).unref();
 
-module.exports = { sendEmail, sendSmsOtp, emailConfigured, smsConfigured, smsProvider, buildMessage, smtpSend };
+// ------------------------------------------------------------------ ADMIN ALERTS
+// Instant messages to the owner when money or work comes in: WhatsApp, Telegram, Google Chat (and email via notify.js).
+// Every channel is optional; each one is set up in Admin → Settings → Alerts. Base URLs can be overridden for testing.
+const API = {
+  telegram: () => env('TELEGRAM_API_BASE', 'https://api.telegram.org'),
+  callmebot: () => env('CALLMEBOT_API_BASE', 'https://api.callmebot.com'),
+  whatsapp: () => env('WHATSAPP_API_BASE', 'https://graph.facebook.com/v21.0'),
+};
+
+function alertChannels() {
+  const s = getSettings();
+  const list = [];
+  if (s.alert_telegram_token && s.alert_telegram_chat) list.push('telegram');
+  if (s.alert_gchat_webhook) list.push('gchat');
+  if (s.alert_wa_mode === 'callmebot' && s.alert_wa_phone && s.alert_wa_apikey) list.push('whatsapp');
+  if (s.alert_wa_mode === 'cloud' && s.alert_wa_token && s.alert_wa_phone_id && s.alert_wa_phone) list.push('whatsapp');
+  return list;
+}
+
+async function sendAlertTo(channel, text) {
+  const s = getSettings();
+  if (channel === 'telegram') {
+    const token = String(s.alert_telegram_token).trim();
+    if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) throw new Error('The Telegram bot token looks wrong (it looks like 123456789:ABCdef…)');
+    return httpCall(`${API.telegram()}/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: s.alert_telegram_chat, text, disable_web_page_preview: true }),
+    });
+  }
+  if (channel === 'gchat') {
+    if (!/^https:\/\/chat\.googleapis\.com\//.test(s.alert_gchat_webhook) && !env('GCHAT_ALLOW_ANY_URL')) throw new Error('Google Chat webhook must start with https://chat.googleapis.com/');
+    return httpCall(s.alert_gchat_webhook, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ text }) });
+  }
+  if (channel === 'whatsapp') {
+    const phone = String(s.alert_wa_phone).replace(/[^0-9]/g, '');
+    const intl = phone.length === 10 ? `91${phone}` : phone;
+    if (s.alert_wa_mode === 'callmebot') {
+      // Free for your own personal WhatsApp number (CallMeBot)
+      const q = new URLSearchParams({ phone: `+${intl}`, text, apikey: s.alert_wa_apikey });
+      return httpCall(`${API.callmebot()}/whatsapp.php?${q}`, { method: 'GET' });
+    }
+    // WhatsApp Business (Cloud API) — text messages work inside 24 hours after you message your business number
+    return httpCall(`${API.whatsapp()}/${encodeURIComponent(s.alert_wa_phone_id)}/messages`, {
+      method: 'POST', headers: { Authorization: `Bearer ${s.alert_wa_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to: intl, type: 'text', text: { body: text } }),
+    });
+  }
+  throw new Error(`Unknown channel ${channel}`);
+}
+
+/** Send one alert to every configured channel. Never throws; each result is kept in Admin → Messages. */
+async function sendAlert(text, only = null) {
+  const out = [];
+  for (const ch of only ? [only] : alertChannels()) {
+    try { await sendAlertTo(ch, text); record(ch, 'admin', 'Alert', text, 'sent'); out.push({ channel: ch, ok: true }); } catch (e) {
+      record(ch, 'admin', 'Alert', text, 'failed', String(e.message).slice(0, 300)); out.push({ channel: ch, ok: false, error: e.message });
+    }
+  }
+  return out;
+}
+
+module.exports = { sendEmail, sendSmsOtp, emailConfigured, smsConfigured, smsProvider, buildMessage, smtpSend, sendAlert, alertChannels };

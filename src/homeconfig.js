@@ -9,7 +9,7 @@ const THEMES = ['peacock', 'marigold', 'green', 'berry', 'ink'];
 const DEFAULTS = {
   announcement: '',
   slides: [
-    { title: 'Sell anything in minutes', subtitle: 'Post your ad and get calls from real buyers near you.', button: 'Post your ad', link: '/client/register', theme: 'peacock', art: '📱', image: '', active: true },
+    { title: 'Sell anything in minutes', subtitle: 'Post your ad and get calls from real buyers near you.', button: 'Post your ad', link: '/post', theme: 'peacock', art: '📱', image: '', active: true },
     { title: 'Find trusted local services', subtitle: 'Tutors, repairs, beauty, events and more. Call directly, no middleman.', button: 'Explore services', link: '/?kind=service', theme: 'marigold', art: '🛠️', image: '', active: true },
     { title: 'Be seen first with TOP ads', subtitle: 'Choose your time slots and your ad shows at the very top.', button: 'See how', link: '/client/register', theme: 'green', art: '★', image: '', active: true },
   ],

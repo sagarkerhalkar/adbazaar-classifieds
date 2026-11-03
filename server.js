@@ -49,7 +49,10 @@ app.use((req) => {
   if (req.session.clientId) {
     const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.session.clientId);
     // Clients can only stay logged in while their KYC is approved.
-    if (c && c.status === 'approved') req.seller = c;
+    if (c && c.status === 'approved') {
+      req.seller = c;
+      req.sellerUnread = db.prepare('SELECT COUNT(*) n FROM inbox WHERE client_id = ? AND read_at IS NULL').get(c.id).n;
+    }
     else delete req.session.clientId;
   }
 });

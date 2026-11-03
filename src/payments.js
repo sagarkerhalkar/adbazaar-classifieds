@@ -12,9 +12,14 @@ const RZP_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 const RZP_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 const razorpayEnabled = () => Boolean(RZP_KEY_ID && RZP_KEY_SECRET);
 
-// Total = plan price + (price per day of each chosen TOP slot × plan days).
-function quote(plan, topMask) {
+// Total = plan price + (price per day of each chosen TOP slot × plan days), minus the plan's discount (e.g. 20% on subscriptions).
+function listPrice(plan, topMask) {
   return plan.price_paise + topCost(topMask || 0, plan.days);
+}
+function quote(plan, topMask) {
+  const list = listPrice(plan, topMask);
+  const d = Math.max(0, Math.min(90, plan.discount_pct || 0));
+  return d ? Math.round((list * (100 - d)) / 10000) * 100 : list;   // discounted prices are rounded to whole rupees
 }
 
 async function createRazorpayOrder(amountPaise, receipt, notes) {
@@ -89,6 +94,8 @@ function rejectPayment(paymentId, adminId, note) {
     if (!pay || pay.status !== 'pending') return false;
     db.prepare("UPDATE payments SET status = 'rejected', confirmed_by = ?, confirmed_at = ?, admin_note = ? WHERE id = ?")
       .run(adminId, Date.now(), note || null, pay.id);
+    // Money the seller put in from the wallet goes back to the wallet.
+    if (pay.wallet_paise > 0) require('./wallet').credit(pay.client_id, pay.wallet_paise, 'refund', `Payment #${pay.id} was rejected — balance returned`, { adId: pay.ad_id, paymentId: pay.id });
     // Put the ad back to awaiting payment if no other payment is pending for it.
     const other = db.prepare("SELECT 1 FROM payments WHERE ad_id = ? AND status = 'pending' LIMIT 1").get(pay.ad_id);
     if (!other) db.prepare("UPDATE ads SET status = 'awaiting_payment', updated_at = ? WHERE id = ? AND status = 'payment_review'").run(Date.now(), pay.ad_id);
@@ -97,6 +104,6 @@ function rejectPayment(paymentId, adminId, note) {
 }
 
 module.exports = {
-  RZP_KEY_ID, razorpayEnabled, quote, createRazorpayOrder,
+  RZP_KEY_ID, razorpayEnabled, quote, listPrice, createRazorpayOrder,
   verifyCheckoutSignature, verifyWebhookSignature, confirmPayment, rejectPayment,
 };
