@@ -141,7 +141,7 @@ Commit: `94e3fa7`
 - **Reports:** KPIs, a revenue line chart, a new-sellers chart, status bars, and tabs for rejected sellers, rejected payments, ad complaints and all sellers, each with CSV download.
 - **Everywhere:** new icons, toast messages, nice confirm pop-ups, smooth page transitions and a gentle 3D tilt on ad cards (off for people who turn off animations).
 
-Commit: `COMMIT_PLACEHOLDER`
+Commit: `4e99b33`
 
 ---
 
