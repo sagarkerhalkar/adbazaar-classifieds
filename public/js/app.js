@@ -79,6 +79,19 @@
     sel.addEventListener('change', show); show();
   });
 
+  // ID document choice (Aadhaar / PAN / Passport): adapt the number field, labels and hint
+  $$('[data-id-type]').forEach((radio) => radio.addEventListener('change', () => {
+    if (!radio.checked) return;
+    const form = radio.closest('form');
+    const num = form.querySelector('[data-id-number]');
+    num.placeholder = radio.dataset.placeholder;
+    num.inputMode = radio.dataset.inputmode;
+    num.maxLength = Number(radio.dataset.maxlength);
+    num.value = '';
+    $$('[data-id-label]', form).forEach((el) => { el.textContent = radio.dataset.short; });
+    const hint = form.querySelector('[data-id-hint]'); if (hint) hint.textContent = radio.dataset.hint;
+  }));
+
   // Uppercase helper for PAN
   $$('input.upper').forEach((i) => i.addEventListener('input', () => { i.value = i.value.toUpperCase(); }));
 })();

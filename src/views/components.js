@@ -65,6 +65,37 @@ const CITIES = ['Mumbai', 'Pune', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 
 const cityDatalist = () => html`<datalist id="cities">${CITIES.map((c) => html`<option value="${c}">`)}</datalist>`;
 
 const STATES = ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry'];
-const stateSelect = (value) => html`<select name="state" required><option value="">Select state</option>${STATES.map((s) => html`<option ${s === value ? 'selected' : ''}>${s}</option>`)}</select>`;
+const stateSelect = (value, { required = true } = {}) => html`<select name="state" ${required ? 'required' : ''}><option value="">Select state</option>${STATES.map((s) => html`<option ${s === value ? 'selected' : ''}>${s}</option>`)}</select>`;
 
-module.exports = { csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, CITIES };
+// ID document (one of Aadhaar / PAN / Passport) — used on the client and admin registration forms.
+function idFields(v = {}) {
+  const { ID_TYPES } = require('../idproof');
+  const type = ID_TYPES[v.id_type] ? v.id_type : 'aadhaar';
+  const t = ID_TYPES[type];
+  return html`
+    <div class="id-types" role="radiogroup" aria-label="ID document">
+      ${Object.entries(ID_TYPES).map(([k, x]) => html`<label class="id-type"><input type="radio" name="id_type" value="${k}" ${k === type ? 'checked' : ''} required
+        data-id-type data-placeholder="${x.placeholder}" data-inputmode="${x.inputmode}" data-maxlength="${x.maxlength}" data-hint="${x.hint}" data-short="${x.short}"><span>${x.label}</span></label>`)}
+    </div>
+    <div class="row2">
+      ${field(html`<span data-id-label>${t.short}</span> number *`, html`<input name="id_number" required class="upper" maxlength="${t.maxlength}" inputmode="${t.inputmode}" placeholder="${t.placeholder}" value="${v.id_number}" data-id-number autocomplete="off">`, html`<span data-id-hint>${t.hint}</span>`)}
+      ${field(html`Photo of your <span data-id-label>${t.short}</span> *`, html`<input type="file" name="id_file" required accept="image/*,application/pdf">`, 'Clear photo or PDF, max 5 MB. Name and date of birth must be readable.')}
+    </div>
+    ${field('Back side (optional)', html`<input type="file" name="id_back_file" accept="image/*,application/pdf">`, 'Only if your document has details on the back')}`;
+}
+
+// Address — optional.
+function addressFields(v = {}) {
+  return html`
+    <details class="optional-block" ${v.address || v.city ? 'open' : ''}>
+      <summary>Address <span class="muted small">(optional)</span></summary>
+      ${field('Address', html`<textarea name="address" rows="2" maxlength="300">${v.address}</textarea>`)}
+      <div class="row3">
+        ${field('City', html`<input name="city" list="cities" maxlength="60" value="${v.city}">`)}${cityDatalist()}
+        ${field('State', stateSelect(v.state, { required: false }))}
+        ${field('PIN code', html`<input name="pincode" inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" value="${v.pincode}">`)}
+      </div>
+    </details>`;
+}
+
+module.exports = { csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, idFields, addressFields, CITIES };

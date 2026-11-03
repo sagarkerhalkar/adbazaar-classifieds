@@ -169,7 +169,7 @@ Use **two browsers**, for example Chrome for the admin and Edge (or an Incognito
 - [ ] Admin → **Clients** → **+ Add client**. Add a person yourself and take their photo with your webcam.
 
 **As a new seller (do this on `http://localhost:4780`, because the camera needs it):**
-- [ ] Click **Post your ad** → register (the **date of birth** must make them 18 or older) → upload any photo as the Aadhaar/PAN → **Start camera**. It clicks automatically after 3 seconds. (The "recent photo" upload is optional, because the live photo is enough.)
+- [ ] Click **Post your ad** → register with just name, mobile, email, password and **date of birth** (18 or older) → choose **one ID**: Aadhaar, PAN or Passport → type its number (test numbers: Aadhaar `2341 2341 2346`, PAN `ABCDE1234F`, Passport `K1234567`) and upload any photo as the ID → **Start camera**. It clicks automatically after 3 seconds. Address is optional, so you can leave it closed.
 - [ ] Type the **6-digit email code**. If email isn't set up yet (Part 15), find the code in Admin → **Messages**.
 - [ ] Do nothing for 5 minutes: the client is **approved automatically** and both of you get an email. You can change the minutes in Admin → Settings.
 - [ ] Try to log in. It's blocked until you approve. ✅
@@ -411,6 +411,8 @@ While SMS is **off**, sellers confirm only their email; the mobile number is sti
 **★ TOP ads by time slot.** The day (India time) has 8 slots: 12–3 AM, 3–6 AM, 6–9 AM, 9 AM–12 PM, 12–3 PM, 3–6 PM, 6–9 PM and 9 PM–12 AM. When paying, a seller ticks the slots they want. During those hours, every day of their plan, their ad sits in the **TOP ads** section. You set the price per slot per day in Admin → **Settings → TOP ad time slots**, and you can stop selling a slot there too.
 
 **Auto-approve.** After a seller confirms their email code, if you don't approve or reject them within **5 minutes**, they are approved automatically and you get an email. Change the minutes (or set 0 to turn it off) in Admin → Settings → *Approvals & notifications*.
+
+**Simple registration with ONE ID.** A seller needs only: name, mobile, email (confirmed by email code), date of birth, **one** ID document of their choice (**Aadhaar, PAN or Passport**: its number and a photo of it), and a **live photo** from the camera. Address is optional. The ID number is checked for the right format (Aadhaar `XXXX XXXX XXXX`, PAN `ABCDE1234F`, Passport `A1234567`). For Aadhaar, only the last 4 digits are stored. On the client's page you see the ID type, the number, the ID photo and the live photo side by side. Clients who registered earlier with Aadhaar + PAN keep everything; their Aadhaar is shown as their ID.
 
 **Only 18+ can post ads.** Sellers enter their date of birth when registering and tick "I am 18 years or older"; anyone younger is refused. Sellers who registered before this check are asked for their date of birth once, before they can post or pay. On each client's page you see the date of birth and age, so you can match it with the Aadhaar.
 

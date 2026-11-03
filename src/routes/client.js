@@ -7,7 +7,8 @@ const notify = require('../notify');
 const { SLOTS, maskFrom, sanitizeMask, slotLabels, slotPrices } = require('../slots');
 const { html, rupees, fmtDate, fmtDay, timeLeft } = require('../lib/html');
 const { renderPage } = require('../views/layout');
-const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect } = require('../views/components');
+const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
+const { checkId, describeId } = require('../idproof');
 const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib/security');
 const { saveUpload, saveVideo, saveDataUrl, removeFile, UploadError, sendFile, DIRS, safeName } = require('../lib/files');
 const V = require('../validators');
@@ -52,55 +53,31 @@ function registerView(req, v = {}, error) {
   return html`
   <section class="card form-card">
     <h1>Register as a seller</h1>
-    <p class="muted">To keep buyers safe, every seller is identity-verified. After you submit, our team reviews your documents (sometimes with a short video call). Once approved you can log in and post ads.</p>
+    <p class="muted">To keep buyers safe, every seller is verified. You need only: your name, mobile, email, date of birth (18+), <strong>one ID</strong> (Aadhaar, PAN or Passport) and a live photo from your camera. Address is optional.</p>
     ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
     <form method="post" action="/client/register" enctype="multipart/form-data" class="form" data-kyc-form>
       ${csrf(req)}
-      <fieldset><legend>1 · Personal details</legend>
+      <fieldset><legend>1 · About you</legend>
         <div class="row2">
-          ${field('Full name (as on Aadhaar) *', html`<input name="name" required maxlength="80" value="${v.name}">`)}
-          ${field('Business / shop name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Optional — shown on your ads')}
+          ${field('Full name (as on your ID) *', html`<input name="name" required maxlength="80" value="${v.name}" autocomplete="name">`)}
+          ${field('Date of birth *', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'As on your ID. You must be 18 or older.')}
         </div>
         <div class="row2">
-          ${field('Date of birth *', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'As on your Aadhaar. You must be 18 or older.')}
-          <div></div>
-        </div>
-        <div class="row2">
-          ${field('Mobile number *', html`<input name="phone" required inputmode="numeric" maxlength="13" pattern="[0-9+ ]{10,13}" value="${v.phone}" placeholder="98XXXXXXXX">`)}
-          ${field('Email *', html`<input name="email" type="email" required maxlength="120" value="${v.email}">`)}
+          ${field('Mobile number *', html`<input name="phone" required inputmode="numeric" maxlength="13" pattern="[0-9+ ]{10,13}" value="${v.phone}" placeholder="98XXXXXXXX" autocomplete="tel">`)}
+          ${field('Email *', html`<input name="email" type="email" required maxlength="120" value="${v.email}" autocomplete="email">`, 'We send a 6-digit code here to confirm it.')}
         </div>
         <div class="row2">
           ${field('Password *', html`<input name="password" type="password" required minlength="6" autocomplete="new-password">`, 'At least 6 characters')}
           ${field('Confirm password *', html`<input name="password2" type="password" required minlength="6" autocomplete="new-password">`)}
         </div>
+        ${field('Business / shop name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Optional — shown on your ads')}
       </fieldset>
 
-      <fieldset><legend>2 · Address</legend>
-        ${field('Full address *', html`<textarea name="address" required rows="2" maxlength="300">${v.address}</textarea>`)}
-        <div class="row3">
-          ${field('City *', html`<input name="city" required list="cities" maxlength="60" value="${v.city}">`)}${cityDatalist()}
-          ${field('State *', stateSelect(v.state))}
-          ${field('PIN code *', html`<input name="pincode" required inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" value="${v.pincode}">`)}
-        </div>
+      <fieldset><legend>2 · ID for age verification — choose ONE</legend>
+        ${idFields(v)}
       </fieldset>
 
-      <fieldset><legend>3 · Identity documents</legend>
-        <div class="row2">
-          ${field('Aadhaar number *', html`<input name="aadhaar_number" required inputmode="numeric" maxlength="14" placeholder="XXXX XXXX XXXX" value="${v.aadhaar_number}">`, 'Checked for validity; we store only the last 4 digits.')}
-          ${field('PAN number *', html`<input name="pan_number" required maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]" placeholder="ABCDE1234F" value="${v.pan_number}" class="upper">`)}
-        </div>
-        <div class="row2">
-          ${field('Aadhaar card — front *', html`<input type="file" name="aadhaar_file" required accept="image/*,application/pdf">`, 'Masked Aadhaar is recommended. JPG/PNG/PDF, max 5 MB')}
-          ${field('Aadhaar card — back', html`<input type="file" name="aadhaar_back_file" accept="image/*,application/pdf">`)}
-        </div>
-        <div class="row2">
-          ${field('PAN card *', html`<input type="file" name="pan_file" required accept="image/*,application/pdf">`)}
-          ${field('Address proof (if different from Aadhaar)', html`<input type="file" name="address_proof_file" accept="image/*,application/pdf">`, 'Electricity bill, rent agreement, etc.')}
-        </div>
-        ${field('Your recent photo (optional)', html`<input type="file" name="photo_file" accept="image/*">`, 'Not needed — the live photo below is enough')}
-      </fieldset>
-
-      <fieldset><legend>4 · Live photo</legend>
+      <fieldset><legend>3 · Live photo</legend>
         <p class="muted small">We take a live photo from your camera to match it with your documents. Look straight at the camera in good light — it clicks automatically after a short countdown.</p>
         <div class="camera" data-camera data-auto="3">
           <div class="camera-stage">
@@ -118,8 +95,10 @@ function registerView(req, v = {}, error) {
         </div>
       </fieldset>
 
-      <label class="check"><input type="checkbox" name="adult" value="1" required> I confirm that I am <strong>18 years or older</strong>.</label>
-      <label class="check"><input type="checkbox" name="consent" value="1" required> I confirm these details are true and I consent to ${req.settings.site_name} using my documents only for identity verification. I agree to the <a href="/terms" target="_blank">terms</a>.</label>
+      ${addressFields(v)}
+
+      <label class="check"><input type="checkbox" name="adult" value="1" required> <span>I confirm that I am <strong>18 years or older</strong>.</span></label>
+      <label class="check"><input type="checkbox" name="consent" value="1" required> <span>I confirm these details are true and I consent to ${req.settings.site_name} using my documents only for identity verification. I agree to the <a href="/terms" target="_blank">terms</a>.</span></label>
       <button class="btn btn-accent btn-lg">Submit for verification</button>
       <p class="muted small">Already registered? <a href="/client/login">Log in</a></p>
     </form>
@@ -204,7 +183,7 @@ function callView(req, c, { role, eventsUrl, signalUrl, snapshotUrl }) {
         <button class="btn" data-call-autosnap>⏱️ Auto-capture (3s)</button>` : ''}
       <button class="btn btn-danger" data-call-hangup>End call</button>
     </div>
-    ${role === 'admin' ? html`<div class="snapshots" data-call-snapshots></div>` : html`<p class="muted small">Keep your Aadhaar and PAN cards ready. The officer may ask you to show them on camera and will take a live photo during the call.</p>`}
+    ${role === 'admin' ? html`<div class="snapshots" data-call-snapshots></div>` : html`<p class="muted small">Keep the ID you registered with (Aadhaar, PAN or Passport) ready. The officer may ask you to show it on camera and will take a live photo during the call.</p>`}
   </section>`;
 }
 
@@ -452,9 +431,9 @@ function register(app) {
     const b = req.body;
     const v = {
       name: V.str(b.name, 80), business_name: V.str(b.business_name, 80), email: V.str(b.email, 120).toLowerCase(),
-      phone: V.normalizePhone(b.phone), address: V.str(b.address, 300), city: V.str(b.city, 60), state: V.str(b.state, 60),
-      pincode: V.str(b.pincode, 6), aadhaar_number: String(b.aadhaar_number || '').replace(/\s+/g, ''), pan_number: V.str(b.pan_number, 10).toUpperCase(),
-      dob: V.str(b.dob, 10),
+      phone: V.normalizePhone(b.phone), dob: V.str(b.dob, 10),
+      id_type: V.str(b.id_type, 10), id_number: V.str(b.id_number, 20).toUpperCase(),
+      address: V.str(b.address, 300), city: V.str(b.city, 60), state: V.str(b.state, 60), pincode: V.str(b.pincode, 6),
     };
     const fail = (msg) => res.status(400).html(renderPage(req, { title: 'Register as seller', body: registerView(req, v, msg), scripts: ['/public/js/camera.js'] }));
 
@@ -466,31 +445,27 @@ function register(app) {
     if (!V.isValidEmail(v.email)) return fail('Enter a valid email address.');
     const pwErr = V.validatePassword(b.password); if (pwErr) return fail(pwErr);
     if (b.password !== b.password2) return fail('Passwords do not match.');
-    if (v.address.length < 10 || !v.city || !v.state) return fail('Please enter your complete address.');
-    if (!V.isValidPincode(v.pincode)) return fail('Enter a valid 6-digit PIN code.');
-    if (!V.isValidAadhaar(v.aadhaar_number)) return fail('The Aadhaar number is not valid. Please check it.');
-    if (!V.isValidPAN(v.pan_number)) return fail('The PAN number is not valid (format: ABCDE1234F).');
+    const id = checkId(v.id_type, v.id_number); if (id.error) return fail(id.error);
+    if (!req.files.id_file?.[0]) return fail('Please upload a photo of your ID document.');
+    if (v.pincode && !V.isValidPincode(v.pincode)) return fail('The PIN code should be 6 digits (or leave it empty).');
+    if (!b.live_photo_data) return fail('Please capture your live photo using the camera.');
     if (!b.consent) return fail('Please accept the declaration to continue.');
     if (db.prepare('SELECT 1 FROM clients WHERE email = ?').get(v.email)) return fail('An account with this email already exists. Please log in.');
-    for (const k of ['aadhaar_file', 'pan_file']) if (!req.files[k]?.[0]) return fail('Please upload your Aadhaar and PAN card.');
-    if (!b.live_photo_data) return fail('Please capture your live photo using the camera.');
 
     const saved = [];
     try {
       const up = (k, opts) => { const n = saveUpload(req.files[k]?.[0], 'kyc', opts); if (n) saved.push(n); return n; };
-      const files = {
-        aadhaar: up('aadhaar_file', { allowPdf: true }), aadhaar_back: up('aadhaar_back_file', { allowPdf: true }),
-        pan: up('pan_file', { allowPdf: true }), address: up('address_proof_file', { allowPdf: true }), photo: up('photo_file'),
-      };
+      const idFile = up('id_file', { allowPdf: true });
+      const idBack = up('id_back_file', { allowPdf: true });
       const live = saveDataUrl(b.live_photo_data, 'kyc'); saved.push(live);
       const now = Date.now();
       const token = randomToken(24);
       const newId = tx(() => {
         const r = db.prepare(`INSERT INTO clients (name, business_name, email, phone, password_hash, address, city, state, pincode,
-          aadhaar_last4, pan_number, aadhaar_file, aadhaar_back_file, pan_file, address_proof_file, photo_file, live_photo_file,
-          status, status_token, created_at, dob) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'unverified', ?, ?, ?)`)
+          aadhaar_last4, pan_number, id_type, id_number, id_file, id_back_file, live_photo_file,
+          status, status_token, created_at, dob) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'unverified', ?, ?, ?)`)
           .run(v.name, v.business_name, v.email, v.phone, hashPassword(b.password), v.address, v.city, v.state, v.pincode,
-            v.aadhaar_number.slice(-4), v.pan_number, files.aadhaar, files.aadhaar_back, files.pan, files.address, files.photo, live, token, now, v.dob);
+            id.last4, id.pan, v.id_type, id.stored, idFile, idBack, live, token, now, v.dob);
         db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'selfie', ?)").run(r.lastInsertRowid, live, now);
         return Number(r.lastInsertRowid);
       });
@@ -644,11 +619,11 @@ function register(app) {
     res.html(renderPage(req, { title: 'Confirm your age', portal: 'client', body: html`
       <section class="card narrow">
         <h1>Confirm your age</h1>
-        <p class="muted">Only people aged <strong>18 or older</strong> can post ads. Please enter your date of birth as on your Aadhaar — we ask this only once.</p>
+        <p class="muted">Only people aged <strong>18 or older</strong> can post ads. Please enter your date of birth as on your ID (Aadhaar, PAN or Passport) — we ask this only once.</p>
         <form method="post" action="/client/age" class="form">
           ${csrf(req)}
           ${field('Date of birth', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01">`)}
-          <label class="check"><input type="checkbox" name="adult" value="1" required> I confirm that I am 18 years or older.</label>
+          <label class="check"><input type="checkbox" name="adult" value="1" required> <span>I confirm that I am 18 years or older.</span></label>
           <button class="btn btn-accent">Continue</button>
         </form>
       </section>` }));
@@ -867,7 +842,8 @@ function register(app) {
         <dl class="facts">
           <div><dt>Name</dt><dd>${c.name}</dd></div><div><dt>Business</dt><dd>${c.business_name || '—'}</dd></div>
           <div><dt>Email</dt><dd>${c.email}</dd></div><div><dt>Phone</dt><dd>${c.phone}</dd></div>
-          <div><dt>City</dt><dd>${c.city}, ${c.state}</dd></div><div><dt>KYC</dt><dd>${pill(c.status)}</dd></div>
+          <div><dt>ID</dt><dd>${describeId(c)}</dd></div><div><dt>KYC</dt><dd>${pill(c.status)}</dd></div>
+          ${c.city ? html`<div><dt>City</dt><dd>${c.city}${c.state ? `, ${c.state}` : ''}</dd></div>` : ''}
         </dl>
         <p class="muted small">To change verified details, contact support.</p>
         <h2>Change password</h2>

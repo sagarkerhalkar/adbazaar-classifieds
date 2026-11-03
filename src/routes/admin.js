@@ -5,7 +5,8 @@ const path = require('node:path');
 const { db, tx, getSettings, setSetting, parseImages } = require('../db');
 const { html, rupees, fmtDate, fmtDay, timeLeft } = require('../lib/html');
 const { renderPage } = require('../views/layout');
-const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect } = require('../views/components');
+const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
+const { checkId, describeId, ID_TYPES } = require('../idproof');
 const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib/security');
 const { saveUpload, saveDataUrl, removeFile, UploadError, sendFile, DIRS, safeName } = require('../lib/files');
 const V = require('../validators');
@@ -110,17 +111,17 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
         <div><dt>Email</dt><dd>${c.email} ${c.email_verified_at ? html`<span class="pill pill-ok">✔ verified</span>` : html`<span class="pill pill-warn">not verified</span>`}</dd></div>
         <div><dt>Mobile OTP</dt><dd>${c.phone_verified_at ? html`<span class="pill pill-ok">✔ verified</span>` : html`<span class="pill pill-muted">${smsConfigured() ? 'not verified' : 'SMS not set up'}</span>`}</dd></div>
         ${c.auto_approved ? html`<div><dt>Approval</dt><dd><span class="pill pill-info">Auto-approved</span></dd></div>` : ''}
-        <div><dt>Aadhaar</dt><dd class="mono">XXXX XXXX ${c.aadhaar_last4}</dd></div>
-        <div><dt>PAN</dt><dd class="mono">${c.pan_number}</dd></div>
+        <div class="wide"><dt>ID for age verification</dt><dd class="mono">${describeId(c)}</dd></div>
         <div><dt>Date of birth</dt><dd>${c.dob ? html`${fmtDay(Date.parse(`${c.dob}T00:00:00+05:30`))} <span class="pill ${V.ageFromDob(c.dob) >= 18 ? 'pill-ok' : 'pill-bad'}">${V.ageFromDob(c.dob)} yrs</span>` : html`<span class="muted">Not given yet</span>`}</dd></div>
-        <div><dt>PIN</dt><dd>${c.pincode}</dd></div>
-        <div class="wide"><dt>Address</dt><dd>${c.address}, ${c.city}, ${c.state} – ${c.pincode}</dd></div>
+        <div class="wide"><dt>Address (optional)</dt><dd>${[c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || html`<span class="muted">Not given</span>`}</dd></div>
       </dl>
       <h3>Documents</h3>
       <div class="docs">
-        ${docLink(c.aadhaar_file, 'Aadhaar front')}${docLink(c.aadhaar_back_file, 'Aadhaar back')}
-        ${docLink(c.pan_file, 'PAN card')}${docLink(c.address_proof_file, 'Address proof')}
-        ${docLink(c.photo_file, 'Uploaded photo')}
+        ${docLink(c.id_file || c.aadhaar_file, `${(ID_TYPES[c.id_type] || ID_TYPES.aadhaar).label}`)}
+        ${c.id_back_file || c.aadhaar_back_file ? docLink(c.id_back_file || c.aadhaar_back_file, 'Back side') : ''}
+        ${c.pan_file && c.pan_file !== c.id_file ? docLink(c.pan_file, 'PAN card') : ''}
+        ${c.address_proof_file ? docLink(c.address_proof_file, 'Address proof') : ''}
+        ${c.photo_file ? docLink(c.photo_file, 'Uploaded photo') : ''}
       </div>
       <h3>Live photos</h3>
       <div class="docs">${snapshots.length ? snapshots.map((s) => html`<a class="doc" href="/admin/kyc/${s.file}" target="_blank"><img src="/admin/kyc/${s.file}" alt=""><span>${s.source.replace('_', ' ')} · ${fmtDate(s.created_at)}</span></a>`) : html`<p class="muted">No live photos yet — take one on a video call.</p>`}</div>
@@ -197,34 +198,30 @@ function newClientView(req, v = {}, error) {
   <nav class="crumbs"><a href="/admin/clients">Clients</a> › <span>Add client</span></nav>
   <section class="card form-card">
     <h1>Add a client</h1>
-    <p class="muted">Use this when you onboard a client yourself (in person or on a call). Upload their documents and take a live photo with your webcam.</p>
+    <p class="muted">Use this when you onboard a client yourself (in person or on a call). You need their name, mobile, email, date of birth, ONE ID (Aadhaar, PAN or Passport) and a live photo from your webcam. Address is optional.</p>
     ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
     <form method="post" action="/admin/clients/new" enctype="multipart/form-data" class="form">
       ${csrf(req)}
       <fieldset><legend>Client details</legend>
-        <div class="row2">${field('Full name *', html`<input name="name" required maxlength="80" value="${v.name}">`)}${field('Business name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`)}</div>
-        <div class="row2">${field('Date of birth * (18+ only)', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'Check it against the Aadhaar card')}<div></div></div>
+        <div class="row2">${field('Full name (as on the ID) *', html`<input name="name" required maxlength="80" value="${v.name}">`)}${field('Date of birth * (18+ only)', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'Check it against the ID')}</div>
         <div class="row2">${field('Mobile *', html`<input name="phone" required maxlength="13" value="${v.phone}">`)}${field('Email (login ID) *', html`<input name="email" type="email" required maxlength="120" value="${v.email}">`)}</div>
-        ${field('Address *', html`<textarea name="address" rows="2" required maxlength="300">${v.address}</textarea>`)}
-        <div class="row3">${field('City *', html`<input name="city" required list="cities" value="${v.city}">`)}${cityDatalist()}${field('State *', stateSelect(v.state))}${field('PIN *', html`<input name="pincode" required maxlength="6" value="${v.pincode}">`)}</div>
-        <div class="row2">${field('Aadhaar number *', html`<input name="aadhaar_number" required maxlength="14" value="${v.aadhaar_number}">`)}${field('PAN *', html`<input name="pan_number" required maxlength="10" class="upper" value="${v.pan_number}">`)}</div>
+        ${field('Business name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Optional')}
       </fieldset>
-      <fieldset><legend>Documents</legend>
-        <div class="row2">${field('Aadhaar front *', html`<input type="file" name="aadhaar_file" required accept="image/*,application/pdf">`)}${field('Aadhaar back', html`<input type="file" name="aadhaar_back_file" accept="image/*,application/pdf">`)}</div>
-        <div class="row2">${field('PAN card *', html`<input type="file" name="pan_file" required accept="image/*,application/pdf">`)}${field('Address proof', html`<input type="file" name="address_proof_file" accept="image/*,application/pdf">`)}</div>
-        ${field('Client photo', html`<input type="file" name="photo_file" accept="image/*">`)}
+      <fieldset><legend>ID for age verification — ONE of Aadhaar, PAN or Passport</legend>
+        ${idFields(v)}
       </fieldset>
+      ${addressFields(v)}
       <fieldset><legend>Live photo (webcam)</legend>
         <div class="camera" data-camera data-auto="3">
           <div class="camera-stage"><video playsinline muted data-camera-video></video><img alt="" data-camera-preview hidden><div class="camera-count" data-camera-count hidden></div></div>
           <div class="camera-actions"><button type="button" class="btn" data-camera-start>📷 Start camera</button><button type="button" class="btn btn-accent" data-camera-snap hidden>Capture now</button><button type="button" class="btn btn-ghost" data-camera-retake hidden>Retake</button></div>
-          <p class="hint" data-camera-status>Optional if you will verify over a video call later.</p>
+          <p class="hint" data-camera-status>Needed if you approve now. Otherwise you can take it later on a video call.</p>
           <input type="hidden" name="live_photo_data" data-camera-output>
         </div>
       </fieldset>
       <fieldset><legend>Login</legend>
         ${field('Password', html`<input name="password" type="text" minlength="6" autocomplete="off" placeholder="Leave empty to auto-generate">`)}
-        <label class="check"><input type="checkbox" name="approve_now" value="1" checked> I have verified this client — approve now so they can log in and post ads</label>
+        <label class="check"><input type="checkbox" name="approve_now" value="1" checked> <span>I have verified this client — approve now so they can log in and post ads</span></label>
       </fieldset>
       <button class="btn btn-accent btn-lg">Create client</button>
     </form>
@@ -436,7 +433,7 @@ function settingsView(req, { s, plans, cats, admins }) {
       <form method="post" action="/admin/automation" class="form">
         ${csrf(req)}
         ${field('Auto-approve clients after (minutes)', html`<input type="number" name="auto_approve_minutes" min="0" max="10080" value="${s.auto_approve_minutes}">`, 'If you don\'t approve or reject a verified client in this time, they are approved automatically and you get an email. 0 = off (always wait for you).')}
-        <label class="check"><input type="checkbox" name="require_mobile_otp" value="1" ${s.require_mobile_otp !== '0' ? 'checked' : ''}> Mobile number must be verified by SMS code (needs SMS set up above)</label>
+        <label class="check"><input type="checkbox" name="require_mobile_otp" value="1" ${s.require_mobile_otp !== '0' ? 'checked' : ''}> <span>Mobile number must be verified by SMS code (needs SMS set up above)</span></label>
         <p class="small muted">Payments are never confirmed automatically — only you (or another admin) can confirm a payment.</p>
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
         <button class="btn btn-accent">Save</button>
@@ -537,7 +534,7 @@ function register(app) {
     const q = V.str(req.query.q, 80);
     const where = []; const args = [];
     if (status !== 'all') { where.push('c.status = ?'); args.push(status); } else where.push("c.status != 'deleted'");
-    if (q) { where.push('(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.pan_number LIKE ? OR c.business_name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l, l, l); }
+    if (q) { where.push('(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.pan_number LIKE ? OR c.id_number LIKE ? OR c.business_name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l, l, l, l); }
     const rows = db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM ads a WHERE a.client_id = c.id) AS ad_count FROM clients c
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY c.created_at ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 300`).all(...args);
     res.html(page(req, 'Clients', clientsView(req, rows, { status, q })));
@@ -549,36 +546,36 @@ function register(app) {
     const b = req.body;
     const v = {
       name: V.str(b.name, 80), business_name: V.str(b.business_name, 80), email: V.str(b.email, 120).toLowerCase(), phone: V.normalizePhone(b.phone),
+      dob: V.str(b.dob, 10), id_type: V.str(b.id_type, 10), id_number: V.str(b.id_number, 20).toUpperCase(),
       address: V.str(b.address, 300), city: V.str(b.city, 60), state: V.str(b.state, 60), pincode: V.str(b.pincode, 6),
-      aadhaar_number: String(b.aadhaar_number || '').replace(/\s+/g, ''), pan_number: V.str(b.pan_number, 10).toUpperCase(), dob: V.str(b.dob, 10),
     };
     const fail = (msg) => res.status(400).html(page(req, 'Add client', newClientView(req, v, msg), ['/public/js/camera.js']));
+    const approve = b.approve_now === '1';
     if (v.name.length < 3) return fail('Enter the full name.');
     const dobErr = V.checkDob(v.dob); if (dobErr) return fail(dobErr.replace('you must be', 'the client must be'));
     if (!V.isValidPhone(v.phone)) return fail('Enter a valid 10-digit mobile number.');
     if (!V.isValidEmail(v.email)) return fail('Enter a valid email.');
     if (db.prepare('SELECT 1 FROM clients WHERE email = ?').get(v.email)) return fail('A client with this email already exists.');
-    if (v.address.length < 10 || !v.city || !v.state || !V.isValidPincode(v.pincode)) return fail('Enter the complete address with a valid PIN code.');
-    if (!V.isValidAadhaar(v.aadhaar_number)) return fail('Aadhaar number is not valid.');
-    if (!V.isValidPAN(v.pan_number)) return fail('PAN is not valid.');
-    if (!req.files.aadhaar_file?.[0] || !req.files.pan_file?.[0]) return fail('Upload Aadhaar and PAN documents.');
+    const idc = checkId(v.id_type, v.id_number); if (idc.error) return fail(idc.error);
+    if (!req.files.id_file?.[0]) return fail('Upload a photo of the ID document.');
+    if (v.pincode && !V.isValidPincode(v.pincode)) return fail('The PIN code should be 6 digits (or leave it empty).');
+    if (approve && !b.live_photo_data) return fail('Take the live photo with the webcam before approving (or untick "approve now" and verify on a video call).');
     const password = b.password ? String(b.password) : randomToken(9);
     if (password.length < 6) return fail('Password must be at least 6 characters.');
 
     const saved = [];
     try {
       const up = (k, opts) => { const n = saveUpload(req.files[k]?.[0], 'kyc', opts); if (n) saved.push(n); return n; };
-      const f = { a: up('aadhaar_file', { allowPdf: true }), ab: up('aadhaar_back_file', { allowPdf: true }), p: up('pan_file', { allowPdf: true }), ad: up('address_proof_file', { allowPdf: true }), ph: up('photo_file') };
+      const f = { id: up('id_file', { allowPdf: true }), idBack: up('id_back_file', { allowPdf: true }) };
       const live = b.live_photo_data ? saveDataUrl(b.live_photo_data, 'kyc') : null;
       if (live) saved.push(live);
       const now = Date.now();
-      const approve = b.approve_now === '1';
       const id = tx(() => {
         const r = db.prepare(`INSERT INTO clients (email_verified_at, phone_verified_at, submitted_at, name, business_name, email, phone, password_hash, address, city, state, pincode, aadhaar_last4, pan_number,
-          aadhaar_file, aadhaar_back_file, pan_file, address_proof_file, photo_file, live_photo_file, status, status_token, created_by_admin, reviewed_by, reviewed_at, created_at, dob)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)`)
-          .run(now, now, now, v.name, v.business_name, v.email, v.phone, hashPassword(password), v.address, v.city, v.state, v.pincode, v.aadhaar_number.slice(-4), v.pan_number,
-            f.a, f.ab, f.p, f.ad, f.ph, live, approve ? 'approved' : 'pending', randomToken(24), approve ? req.admin.id : null, approve ? now : null, now, v.dob);
+          id_type, id_number, id_file, id_back_file, live_photo_file, status, status_token, created_by_admin, reviewed_by, reviewed_at, created_at, dob)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)`)
+          .run(now, now, now, v.name, v.business_name, v.email, v.phone, hashPassword(password), v.address, v.city, v.state, v.pincode, idc.last4, idc.pan,
+            v.id_type, idc.stored, f.id, f.idBack, live, approve ? 'approved' : 'pending', randomToken(24), approve ? req.admin.id : null, approve ? now : null, now, v.dob);
         if (live) db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'admin_webcam', ?)").run(r.lastInsertRowid, live, now);
         return Number(r.lastInsertRowid);
       });
@@ -688,8 +685,8 @@ function register(app) {
         ${callView(req, c, { role: 'admin', eventsUrl: `/rtc/a/${c.id}/events`, signalUrl: `/rtc/a/${c.id}/signal`, snapshotUrl: `/admin/clients/${c.id}/snapshot` })}
         <aside class="card call-side">
           <h3>Compare with documents</h3>
-          <div class="docs small-docs">${docLink(c.photo_file, 'Uploaded photo')}${docLink(c.aadhaar_file, 'Aadhaar')}${docLink(c.pan_file, 'PAN')}</div>
-          <dl class="facts"><div><dt>Name</dt><dd>${c.name}</dd></div><div><dt>Aadhaar</dt><dd>XXXX ${c.aadhaar_last4}</dd></div><div><dt>PAN</dt><dd>${c.pan_number}</dd></div><div><dt>Date of birth</dt><dd>${c.dob || '—'}${c.dob ? ` (${V.ageFromDob(c.dob)} yrs)` : ''}</dd></div></dl>
+          <div class="docs small-docs">${docLink(c.id_file || c.aadhaar_file, (ID_TYPES[c.id_type] || ID_TYPES.aadhaar).label)}${c.live_photo_file ? docLink(c.live_photo_file, 'Live photo') : ''}</div>
+          <dl class="facts"><div><dt>Name</dt><dd>${c.name}</dd></div><div><dt>ID</dt><dd>${describeId(c)}</dd></div><div><dt>Date of birth</dt><dd>${c.dob || '—'}${c.dob ? ` (${V.ageFromDob(c.dob)} yrs)` : ''}</dd></div></dl>
           <form method="post" action="/admin/clients/${c.id}/status" class="form">${csrf(req)}
             <input type="hidden" name="note" value="${c.admin_note}">
             <button class="btn btn-ok btn-block" name="action" value="approve">✔ Approve client</button>

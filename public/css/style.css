@@ -375,3 +375,16 @@ input.xs { width: 64px; }
 /* Email & SMS setup box: keep both columns compact */
 .setup-card .cols2 { align-items: start; }
 .setup-card .cols2 > form { align-content: start; }
+
+/* ID document choice */
+.id-types { display: flex; gap: 8px; flex-wrap: wrap; }
+.id-type { position: relative; cursor: pointer; }
+.id-type input { position: absolute; opacity: 0; }
+.id-type span { display: inline-block; padding: 9px 16px; border: 2px solid var(--line); border-radius: 10px; font-weight: 600; background: #fff; }
+.id-type input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-d); }
+.id-type input:focus-visible + span { outline: 2px solid var(--accent); }
+.optional-block { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; }
+.optional-block summary { cursor: pointer; font-weight: 700; }
+.optional-block[open] { display: grid; gap: 12px; }
+
+.field { align-content: start; }

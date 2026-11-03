@@ -142,3 +142,16 @@ test('age check: only 18+ (birthday counted in India time)', () => {
   assert.match(V.checkDob('2015-01-01'), /18 years or older/);
   assert.equal(V.checkDob('1990-05-15'), null);
 });
+
+test('one ID document: Aadhaar / PAN / Passport rules', () => {
+  const { checkId, describeId } = require('../src/idproof');
+  assert.deepEqual(checkId('aadhaar', '2341 2341 2346'), { stored: '2346', last4: '2346', pan: '' }, 'Aadhaar keeps only last 4');
+  assert.match(checkId('aadhaar', '234123412347').error, /not valid/);
+  assert.equal(checkId('pan', 'abcde1234f').stored, 'ABCDE1234F');
+  assert.match(checkId('pan', 'ABCD1234F').error, /PAN/);
+  assert.equal(checkId('passport', 'k 1234567').stored, 'K1234567');
+  assert.match(checkId('passport', '12345678').error, /passport/);
+  assert.match(checkId('licence', 'X').error, /Choose/);
+  assert.equal(describeId({ id_type: 'passport', id_number: 'K1234567' }), 'Passport K1234567');
+  assert.equal(describeId({ id_type: 'aadhaar', id_number: '2346' }), 'Aadhaar XXXX XXXX 2346');
+});

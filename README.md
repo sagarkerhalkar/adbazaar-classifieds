@@ -15,7 +15,7 @@ A classifieds web app (in the style of Skokka / OLX) where **verified sellers pa
 | **Admin portal** `/admin` | You | Verify clients, run KYC video calls, confirm payments, block/boost ads, set prices, see revenue |
 
 ### Seller flow
-1. **Register** at `/client/register`: name, phone, email, address, Aadhaar number (checked with the Verhoeff checksum, and only the last 4 digits are stored), PAN, and uploads of the Aadhaar (front/back), PAN, address proof and a photo. The camera then **takes a live photo automatically** after a 3-second countdown.
+1. **Register** at `/client/register`. Only these are needed: name, mobile, email (confirmed with a one-time email code), date of birth (18+ only), **one ID document of their choice** (Aadhaar, PAN or Passport: its number plus a photo of it), and a **live photo** that the camera takes automatically after a 3-second countdown. Address is optional. For Aadhaar, the number is checked with the Verhoeff checksum and only the last 4 digits are stored.
 2. The seller gets a private **status link**. Logging in is blocked until you approve them.
 3. You review the application. Optionally you click **Request video call**, send the client the call link (there's a WhatsApp button for this), and do a **live in-browser video call**. During the call you can **capture live photos** of the client with one click or an automatic 3-second timer. The photos are saved to their profile.
 4. **Approve.** The seller can now log in and post ads.

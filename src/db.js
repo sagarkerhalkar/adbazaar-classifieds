@@ -174,7 +174,12 @@ addColumn('clients', 'deleted_at', 'INTEGER');
 addColumn('ads', 'paused_by', 'TEXT');                   // account | admin
 addColumn('ads', 'paused_remaining_ms', 'INTEGER');
 addColumn('ads', 'deleted_at', 'INTEGER');
-addColumn('clients', 'dob', 'TEXT');                     // date of birth YYYY-MM-DD (only 18+ can post ads)
+addColumn('clients', 'dob', 'TEXT');
+// One ID document (aadhaar | pan | passport) for age verification. Older accounts keep their Aadhaar as the ID.
+addColumn('clients', 'id_type', 'TEXT', "UPDATE clients SET id_type = 'aadhaar' WHERE aadhaar_file IS NOT NULL OR aadhaar_last4 != ''");
+addColumn('clients', 'id_number', 'TEXT', "UPDATE clients SET id_number = aadhaar_last4 WHERE id_type = 'aadhaar'");
+addColumn('clients', 'id_file', 'TEXT', "UPDATE clients SET id_file = aadhaar_file WHERE id_type = 'aadhaar'");
+addColumn('clients', 'id_back_file', 'TEXT', "UPDATE clients SET id_back_file = aadhaar_back_file WHERE id_type = 'aadhaar'");                     // date of birth YYYY-MM-DD (only 18+ can post ads)
 
 // ---- Seed defaults ----
 const now = Date.now();

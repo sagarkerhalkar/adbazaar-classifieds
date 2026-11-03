@@ -79,7 +79,7 @@ function deleteClient(clientId) {
   const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
   if (!c || c.status === 'deleted') return false;
   for (const a of db.prepare('SELECT id FROM ads WHERE client_id = ?').all(c.id)) deleteAd(a.id);
-  const kycFiles = [c.aadhaar_file, c.aadhaar_back_file, c.pan_file, c.address_proof_file, c.photo_file, c.live_photo_file,
+  const kycFiles = [c.aadhaar_file, c.aadhaar_back_file, c.pan_file, c.address_proof_file, c.photo_file, c.live_photo_file, c.id_file, c.id_back_file,
     ...db.prepare('SELECT file FROM kyc_snapshots WHERE client_id = ?').all(c.id).map((r) => r.file)];
   kycFiles.forEach((f) => removeFile('kyc', f));
   db.prepare('SELECT screenshot_file FROM payments WHERE client_id = ? AND screenshot_file IS NOT NULL').all(c.id)
@@ -91,6 +91,7 @@ function deleteClient(clientId) {
     db.prepare(`UPDATE clients SET status = 'deleted', deleted_at = ?, name = ?, business_name = NULL, email = ?, phone = '0000000000',
       password_hash = '!', address = '', city = '', state = '', pincode = '', aadhaar_last4 = '', pan_number = '',
       aadhaar_file = NULL, aadhaar_back_file = NULL, pan_file = NULL, address_proof_file = NULL, photo_file = NULL, live_photo_file = NULL,
+      id_type = NULL, id_number = NULL, id_file = NULL, id_back_file = NULL, dob = NULL,
       admin_note = NULL WHERE id = ?`).run(now(), `Deleted client #${c.id}`, `deleted-${c.id}@deleted.invalid`, c.id);
   });
   return true;
