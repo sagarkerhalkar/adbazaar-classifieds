@@ -159,7 +159,7 @@ Use **two browsers**, for example Chrome for the admin and Edge (or an Incognito
 **As a customer (no login):**
 - [ ] Open the home page. Search for "AC", filter by city, and open an ad.
 - [ ] Click "Show phone number" and the WhatsApp button.
-- [ ] Report an ad, then check that it appears in Admin → **Reports**.
+- [ ] Report an ad, then check that it appears in Admin → **Reports → Ad complaints**.
 
 **As the owner (admin):**
 - [ ] Admin → **Payments** → confirm Rahul's payment. His ad goes live on the home page.
@@ -171,7 +171,7 @@ Use **two browsers**, for example Chrome for the admin and Edge (or an Incognito
 **As a new seller (do this on `http://localhost:4780`, because the camera needs it):**
 - [ ] Click **Post your ad** → register with just name, mobile, email, password and **date of birth** (18 or older) → choose **one ID**: Aadhaar, PAN or Passport → type its number (test numbers: Aadhaar `2341 2341 2346`, PAN `ABCDE1234F`, Passport `K1234567`) and upload any photo as the ID → **Start camera**. It clicks automatically after 3 seconds. Address is optional, so you can leave it closed.
 - [ ] Type the **6-digit email code**. If email isn't set up yet (Part 15), find the code in Admin → **Messages**.
-- [ ] Do nothing for 5 minutes: the client is **approved automatically** and both of you get an email. You can change the minutes in Admin → Settings.
+- [ ] Do nothing for 1 minute: the client is **approved automatically** and both of you get an email. You can change the minutes in Admin → Settings → **Approvals**.
 - [ ] Try to log in. It's blocked until you approve. ✅
 - [ ] As admin: open that client → **Request video call** → **Start video call**. As the seller: open the status link → **Join video call**. As admin: click **Capture live photo**, then **Approve**.
 - [ ] As the seller: log in → **Post ad** → choose 7/15/29 days, tick ★ TOP → enter any UTR number such as `123456789012` → submit.
@@ -408,9 +408,9 @@ While SMS is **off**, sellers confirm only their email; the mobile number is sti
 
 ## Part 16 — Using the newer features
 
-**★ TOP ads by time slot.** The day (India time) has 8 slots: 12–3 AM, 3–6 AM, 6–9 AM, 9 AM–12 PM, 12–3 PM, 3–6 PM, 6–9 PM and 9 PM–12 AM. When paying, a seller ticks the slots they want. During those hours, every day of their plan, their ad sits in the **TOP ads** section. You set the price per slot per day in Admin → **Settings → TOP ad time slots**, and you can stop selling a slot there too.
+**★ TOP ads by time slot.** The day (India time) has 8 slots: 12–3 AM, 3–6 AM, 6–9 AM, 9 AM–12 PM, 12–3 PM, 3–6 PM, 6–9 PM and 9 PM–12 AM. When paying, a seller ticks the slots they want. During those hours, every day of their plan, their ad sits in the **TOP ads** section. You set the price per slot per day in Admin → **Settings → TOP slots**, and you can stop selling a slot there too.
 
-**Auto-approve.** After a seller confirms their email code, if you don't approve or reject them within **5 minutes**, they are approved automatically and you get an email. Change the minutes (or set 0 to turn it off) in Admin → Settings → *Approvals & notifications*.
+**Auto-approve.** After a seller confirms their email code, if you don't approve or reject them within **1 minute**, they are approved automatically and you get an email. Sellers see "Login verification takes about 1 minute", and after paying, "Payment confirmation takes 5 minutes to 24 hours". Change the minutes (or set 0 to turn it off) in Admin → Settings → **Approvals**.
 
 **Simple registration with ONE ID.** A seller needs only: name, mobile, email (confirmed by email code), date of birth, **one** ID document of their choice (**Aadhaar, PAN or Passport**: its number and a photo of it), and a **live photo** from the camera. Address is optional. The ID number is checked for the right format (Aadhaar `XXXX XXXX XXXX`, PAN `ABCDE1234F`, Passport `A1234567`). For Aadhaar, only the last 4 digits are stored. On the client's page you see the ID type, the number, the ID photo and the live photo side by side. Clients who registered earlier with Aadhaar + PAN keep everything; their Aadhaar is shown as their ID.
 
@@ -420,7 +420,14 @@ While SMS is **off**, sellers confirm only their email; the mobile number is sti
 
 **Photos & videos.** Each ad can have **5 photos** and **2 videos**, each up to **1 minute** (MP4/MOV from a phone, up to 90 MB). Sellers can change them any time: My ads → Edit.
 
-**Main category → sub-category.** In Admin → **Categories** you can add a main category or a sub-category, rename it, change its emoji, reorder it, move a sub-category under another main category, **deactivate** it (hidden from menus and new ads; existing ads keep running), or **delete** it (if it has ads, choose where they move). Sellers must pick a sub-category when one exists.
+**Main category → sub-category.** Admin → **Categories** shows one card per main category.
+- **Add a main category:** type the name (and an emoji) at the top and click *Add main category*.
+- **Add a sub-category:** type its name in the box at the bottom of the card and click **+**.
+- **Rename, reorder, move:** click the ✏️ pencil. A small window opens.
+- **Hide / show:** click the 👁 eye (hidden = not in menus or new ads; running ads stay live).
+- **Delete:** click the 🗑 bin. If it has ads, choose where they move in the window. A main category can be deleted only after its sub-categories.
+
+Sellers must pick a sub-category when one exists.
 
 **Deactivate / block / delete.**
 | Who | What | Result |
@@ -432,3 +439,29 @@ While SMS is **off**, sellers confirm only their email; the mobile number is sti
 | You | Ads → **Deactivate / Reactivate** | Hides one ad; its remaining paid days are saved. |
 | You | Ads → **Block / Unblock** | Hides one ad (for example, after a report); the clock keeps running. |
 | You | Ads → **Delete** | Removes the ad and its photos and videos. |
+
+
+---
+
+## Part 17 — The new look (3 Nov)
+
+**Home page.** At the top, a turning **3D ring** shows the ads that are TOP right now (drag it, swipe it on a phone, or use the ‹ › buttons). Below it are round category icons, then the ads with a **filter panel** (sub-category, type, city) and a **sort** menu (best match, newest, price low→high, price high→low). TOP ads always stay first.
+
+**Ad page.** Photos on the left. On the right, a box that stays in view with the price, the seller, **Show phone number** and **WhatsApp**. Description, videos, details and safety tips are in **tabs**, so the page stays short.
+
+**Registration (seller and Admin → Add client).** It is now **4 short steps** with a progress bar: *About you → Your ID → Live photo → Finish*. Pick Aadhaar, PAN or Passport by tapping its card; the number box and the labels change to match. **Next** checks each step before moving on.
+
+**Admin.** The menu is on the left (on a phone, tap ☰). **Settings** has 6 tabs: *Plans, TOP slots, Approvals, Email & SMS, Site & payments, Admins*. Each tab saves on its own and comes back to the same tab.
+
+**Reports (Admin → Reports).** Choose *Last 7 / 30 / 90 days* at the top.
+- **Overview:** revenue per day (point at the line to see each day), new sellers per day, and sellers and payments by status.
+- **Rejected sellers:** who was rejected, when, by whom and why.
+- **Rejected payments:** seller, ad, amount, UTR and your reason.
+- **Ad complaints:** reports from visitors. Block the ad or dismiss the report.
+- **All sellers:** every seller with their ads and the total they paid.
+
+Every list has a **Download CSV** button that opens in Excel.
+
+**Pop-ups instead of grey boxes.** "Are you sure?" questions now open a small window. Messages slide in at the top right and close by themselves.
+
+**If something still looks old,** press **Ctrl + F5** once. After this update the browser always picks up new files by itself.

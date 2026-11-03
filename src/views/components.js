@@ -1,5 +1,6 @@
 'use strict';
 const { html, rupees, timeAgo, slugify } = require('../lib/html');
+const { icon } = require('./icons');
 
 const csrf = (req) => html`<input type="hidden" name="_csrf" value="${req.csrfToken}">`;
 
@@ -34,7 +35,7 @@ function adCard(ad) {
     <a href="${adUrl(ad)}" class="ad-thumb">
       ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="${ad.title}" loading="lazy">` : html`<div class="thumb-ph">${ad.cat_icon || '📦'}</div>`}
       ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
-      ${images.length > 1 || hasVideo(ad) ? html`<span class="img-count">${images.length > 1 ? `📷 ${images.length}` : ''}${hasVideo(ad) ? ' 🎬' : ''}</span>` : ''}
+      ${images.length > 1 || hasVideo(ad) ? html`<span class="img-count">${images.length > 1 ? html`${icon('camera', { size: 12 })} ${images.length}` : ''}${hasVideo(ad) ? html` ${icon('video', { size: 12 })}` : ''}</span>` : ''}
     </a>
     <div class="ad-body">
       <div class="ad-meta-top"><span class="chip-sm">${ad.cat_name || ''}</span><span class="kind kind-${ad.kind}">${ad.kind === 'service' ? 'Service' : 'Product'}</span></div>
@@ -42,9 +43,9 @@ function adCard(ad) {
       <p class="ad-desc">${String(ad.description || '').slice(0, 140)}</p>
       <div class="ad-foot">
         <strong class="ad-price">${priceText(ad)}</strong>
-        <span class="muted small">📍 ${ad.locality ? `${ad.locality}, ` : ''}${ad.city} · ${timeAgo(ad.starts_at || ad.created_at)}</span>
+        <span class="muted small">${icon('pin', { size: 13 })} ${ad.locality ? `${ad.locality}, ` : ''}${ad.city} · ${timeAgo(ad.starts_at || ad.created_at)}</span>
       </div>
-      <div class="verified small">✔ Verified seller</div>
+      <div class="verified small">${icon('star', { size: 13 })} Trusted seller</div>
     </div>
   </article>`;
 }

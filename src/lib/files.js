@@ -58,8 +58,25 @@ async function sendFile(res, file, { cache = 'public, max-age=3600', download = 
   });
 }
 
+// Version tag for /public files: changes whenever any file changes, so browsers never keep
+// an old copy of the design (style.css) or scripts after an update.
+let ASSET_VERSION = '1';
+function computeAssetVersion(dir) {
+  const h = crypto.createHash('sha1');
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p); else { const st = fs.statSync(p); h.update(`${p}:${st.size}:${st.mtimeMs}`); }
+    }
+  };
+  try { walk(dir); ASSET_VERSION = h.digest('hex').slice(0, 10); } catch { ASSET_VERSION = Date.now().toString(36); }
+  return ASSET_VERSION;
+}
+const assetUrl = (u) => (u.startsWith('/public/') ? `${u}?v=${ASSET_VERSION}` : u);
+
 // Serve /public/* safely (no path traversal).
 function staticDir(prefix, dir) {
+  computeAssetVersion(dir);
   const base = path.resolve(dir);
   return async (req, res) => {
     if (!req.path.startsWith(prefix) || (req.method !== 'GET' && req.method !== 'HEAD')) return;
@@ -67,7 +84,8 @@ function staticDir(prefix, dir) {
     try { rel = decodeURIComponent(req.path.slice(prefix.length)); } catch { res.statusCode = 400; res.end(); return; }
     const file = path.resolve(base, '.' + path.sep + rel);
     if (!file.startsWith(base + path.sep)) { res.statusCode = 400; res.end(); return; }
-    await sendFile(res, file);
+    // Versioned URLs (?v=…) can be cached for a year; plain URLs must be re-checked every time.
+    await sendFile(res, file, { cache: req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache', req });
   };
 }
 
@@ -160,4 +178,4 @@ function removeFile(area, name) {
   try { fs.rmSync(path.join(DIRS[area], name), { force: true }); } catch { /* ignore */ }
 }
 
-module.exports = { ROOT, DIRS, sendFile, staticDir, saveUpload, saveVideo, videoDuration, saveDataUrl, safeName, removeFile, UploadError };
+module.exports = { ROOT, DIRS, sendFile, staticDir, assetUrl, saveUpload, saveVideo, videoDuration, saveDataUrl, safeName, removeFile, UploadError };

@@ -43,6 +43,10 @@ function timeLeft(ms) {
   return `${Math.max(1, Math.floor(s / 60))} min left`;
 }
 
+// "about 1 minute" / "about 5 minutes" for the auto-approve time shown to clients.
+const approveTimeText = (mins) => (Number(mins) > 0 ? `about ${Number(mins)} minute${Number(mins) === 1 ? '' : 's'}` : 'a few hours');
+const PAYMENT_TIME_TEXT = '5 minutes to 24 hours';
+
 const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'ad';
 
-module.exports = { html, raw, esc, Raw, rupees, fmtDate, fmtDay, timeAgo, timeLeft, slugify };
+module.exports = { html, raw, esc, Raw, rupees, fmtDate, fmtDay, timeAgo, timeLeft, slugify, approveTimeText, PAYMENT_TIME_TEXT };

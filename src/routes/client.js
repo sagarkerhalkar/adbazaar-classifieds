@@ -5,8 +5,9 @@ const path = require('node:path');
 const { db, tx, getSettings, parseImages, parseVideos } = require('../db');
 const notify = require('../notify');
 const { SLOTS, maskFrom, sanitizeMask, slotLabels, slotPrices } = require('../slots');
-const { html, rupees, fmtDate, fmtDay, timeLeft } = require('../lib/html');
+const { html, rupees, fmtDate, fmtDay, timeLeft, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { renderPage } = require('../views/layout');
+const { icon } = require('../views/icons');
 const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
 const { checkId, describeId } = require('../idproof');
 const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib/security');
@@ -50,59 +51,77 @@ const clientByToken = (token) => (/^[A-Za-z0-9_-]{20,64}$/.test(token || '') ? d
 
 // ---------- views ----------
 function registerView(req, v = {}, error) {
+  const mins = approveTimeText(req.settings.auto_approve_minutes);
   return html`
-  <section class="card form-card">
-    <h1>Register as a seller</h1>
-    <p class="muted">To keep buyers safe, every seller is verified. You need only: your name, mobile, email, date of birth (18+), <strong>one ID</strong> (Aadhaar, PAN or Passport) and a live photo from your camera. Address is optional.</p>
-    ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
-    <form method="post" action="/client/register" enctype="multipart/form-data" class="form" data-kyc-form>
-      ${csrf(req)}
-      <fieldset><legend>1 · About you</legend>
-        <div class="row2">
-          ${field('Full name (as on your ID) *', html`<input name="name" required maxlength="80" value="${v.name}" autocomplete="name">`)}
-          ${field('Date of birth *', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'As on your ID. You must be 18 or older.')}
-        </div>
-        <div class="row2">
-          ${field('Mobile number *', html`<input name="phone" required inputmode="numeric" maxlength="13" pattern="[0-9+ ]{10,13}" value="${v.phone}" placeholder="98XXXXXXXX" autocomplete="tel">`)}
-          ${field('Email *', html`<input name="email" type="email" required maxlength="120" value="${v.email}" autocomplete="email">`, 'We send a 6-digit code here to confirm it.')}
-        </div>
-        <div class="row2">
-          ${field('Password *', html`<input name="password" type="password" required minlength="6" autocomplete="new-password">`, 'At least 6 characters')}
-          ${field('Confirm password *', html`<input name="password2" type="password" required minlength="6" autocomplete="new-password">`)}
-        </div>
-        ${field('Business / shop name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Optional — shown on your ads')}
-      </fieldset>
-
-      <fieldset><legend>2 · ID for age verification — choose ONE</legend>
-        ${idFields(v)}
-      </fieldset>
-
-      <fieldset><legend>3 · Live photo</legend>
-        <p class="muted small">We take a live photo from your camera to match it with your documents. Look straight at the camera in good light — it clicks automatically after a short countdown.</p>
-        <div class="camera" data-camera data-auto="3">
-          <div class="camera-stage">
-            <video playsinline muted data-camera-video></video>
-            <img alt="Captured live photo" data-camera-preview hidden>
-            <div class="camera-count" data-camera-count hidden></div>
+  <div class="kyc-shell">
+    <aside class="kyc-aside">
+      <h2>Become a verified seller</h2>
+      <p>Buyers trust sellers who are verified. It takes about 3 minutes.</p>
+      <ul class="kyc-points">
+        <li>${icon('id', { size: 20 })}<span><strong>One ID only</strong>Aadhaar, PAN or Passport</span></li>
+        <li>${icon('camera', { size: 20 })}<span><strong>Live photo</strong>Taken by your camera</span></li>
+        <li>${icon('clock', { size: 20 })}<span><strong>Login check: ${mins}</strong>We email you when it's done</span></li>
+        <li>${icon('shield', { size: 20 })}<span><strong>Private</strong>Your documents are never shown on ads</span></li>
+      </ul>
+      <p class="small">Already registered? <a href="/client/login">Log in</a></p>
+    </aside>
+    <section class="card kyc-card">
+      <h1>Register as a seller</h1>
+      ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
+      <form method="post" action="/client/register" enctype="multipart/form-data" class="form" data-kyc-form data-wizard>
+        ${csrf(req)}
+        <div data-step data-title="About you">
+          <div class="row2">
+            ${field('Full name (as on your ID)', html`<input name="name" required maxlength="80" value="${v.name}" autocomplete="name">`)}
+            ${field('Date of birth', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'You must be 18 or older.')}
           </div>
-          <div class="camera-actions">
-            <button type="button" class="btn" data-camera-start>📷 Start camera</button>
-            <button type="button" class="btn btn-accent" data-camera-snap hidden>Capture now</button>
-            <button type="button" class="btn btn-ghost" data-camera-retake hidden>Retake</button>
+          <div class="row2">
+            ${field('Mobile number', html`<input name="phone" required inputmode="numeric" maxlength="13" pattern="[0-9+ ]{10,13}" value="${v.phone}" placeholder="98XXXXXXXX" autocomplete="tel">`)}
+            ${field('Email', html`<input name="email" type="email" required maxlength="120" value="${v.email}" autocomplete="email">`, 'We send a 6-digit code here.')}
           </div>
-          <p class="hint" data-camera-status>Camera access is needed for verification.</p>
-          <input type="hidden" name="live_photo_data" data-camera-output>
+          <div class="row2">
+            ${field('Password', html`<input name="password" type="password" required minlength="6" autocomplete="new-password">`, 'At least 6 characters')}
+            ${field('Confirm password', html`<input name="password2" type="password" required minlength="6" autocomplete="new-password" data-match="password">`)}
+          </div>
+          ${field('Business / shop name (optional)', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Shown on your ads')}
         </div>
-      </fieldset>
 
-      ${addressFields(v)}
+        <div data-step data-title="Your ID">
+          <p class="muted small" style="margin:0">Choose ONE document. We use it only to check your age and name.</p>
+          ${idFields(v)}
+        </div>
 
-      <label class="check"><input type="checkbox" name="adult" value="1" required> <span>I confirm that I am <strong>18 years or older</strong>.</span></label>
-      <label class="check"><input type="checkbox" name="consent" value="1" required> <span>I confirm these details are true and I consent to ${req.settings.site_name} using my documents only for identity verification. I agree to the <a href="/terms" target="_blank">terms</a>.</span></label>
-      <button class="btn btn-accent btn-lg">Submit for verification</button>
-      <p class="muted small">Already registered? <a href="/client/login">Log in</a></p>
-    </form>
-  </section>`;
+        <div data-step data-title="Live photo">
+          <p class="muted small" style="margin:0">Look straight at the camera in good light. It clicks by itself after a 3-second countdown.</p>
+          <div class="camera" data-camera data-auto="3">
+            <div class="camera-stage">
+              <video playsinline muted data-camera-video></video>
+              <img alt="Captured live photo" data-camera-preview hidden>
+              <div class="camera-count" data-camera-count hidden></div>
+            </div>
+            <div class="camera-actions">
+              <button type="button" class="btn btn-primary" data-camera-start>${icon('camera', { size: 18 })} Start camera</button>
+              <button type="button" class="btn btn-accent" data-camera-snap hidden>Capture now</button>
+              <button type="button" class="btn btn-ghost" data-camera-retake hidden>Retake</button>
+            </div>
+            <p class="hint" data-camera-status>Your browser will ask to use the camera — tap Allow.</p>
+            <input type="hidden" name="live_photo_data" data-camera-output>
+          </div>
+          <span data-step-check="[data-camera-output]" data-step-msg="Please take your live photo first."></span>
+        </div>
+
+        <div data-step data-title="Finish">
+          ${addressFields(v)}
+          <label class="check"><input type="checkbox" name="adult" value="1" required> <span>I confirm that I am <strong>18 years or older</strong>.</span></label>
+          <label class="check"><input type="checkbox" name="consent" value="1" required> <span>These details are true, and ${req.settings.site_name} may use my documents only for identity verification. I agree to the <a href="/terms" target="_blank">terms</a>.</span></label>
+          <div class="note small">${icon('clock', { size: 16 })} Login verification takes <strong>${mins}</strong>. After you post an ad, payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong>.</div>
+        </div>
+        <div class="form-actions" data-wizard-submit>
+          <button class="btn btn-sell btn-lg">${icon('check', { size: 18 })} Submit for verification</button>
+        </div>
+      </form>
+    </section>
+  </div>`;
 }
 
 function verifyView(req, c) {
@@ -133,7 +152,7 @@ function verifyView(req, c) {
 
 function statusView(req, c) {
   const msg = {
-    pending: `Your documents are being reviewed${Number(req.settings.auto_approve_minutes) ? ` — usually within ${req.settings.auto_approve_minutes} minutes` : ''}. We will email you when you can log in. This page updates automatically.`,
+    pending: `Login verification takes ${approveTimeText(req.settings.auto_approve_minutes)}. We will email you as soon as you can log in — this page also updates by itself.`,
     video_call: 'We would like to verify you over a short video call. Join using the button below at the scheduled time.',
     approved: 'You are verified! You can now log in and post ads.',
     rejected: 'Unfortunately your verification was not approved.',
@@ -303,7 +322,7 @@ function payView(req, { ad, plans, pending, settings }) {
     <p class="muted">Ad: <a href="${adUrl(ad)}"><strong>${ad.title}</strong></a> ${pill(ad.status)}
       ${extending ? html`<br>Currently live until <strong>${fmtDate(ad.expires_at)}</strong>. New days are added on top.` : ''}</p>
 
-    ${pending ? html`<div class="flash flash-info">We received your UPI payment reference <strong>${pending.utr}</strong> for ${rupees(pending.amount_paise)} on ${fmtDate(pending.created_at)}. Your ad will go live as soon as it is confirmed.</div>` : ''}
+    ${pending ? html`<div class="flash flash-info">We received your UPI payment reference <strong>${pending.utr}</strong> for ${rupees(pending.amount_paise)} on ${fmtDate(pending.created_at)}. Payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong>; your ad goes live as soon as it is confirmed.</div>` : ''}
 
     <form method="post" action="/client/ads/${ad.id}/pay/upi" enctype="multipart/form-data" class="form" data-pay-form data-ad-id="${ad.id}" data-rzp="${P.razorpayEnabled() ? '1' : ''}">
       ${csrf(req)}
@@ -344,7 +363,7 @@ function payView(req, { ad, plans, pending, settings }) {
             ${settings.upi_id ? html`<p>Pay the total to UPI ID <strong class="mono">${settings.upi_id}</strong>${settings.upi_payee_name ? html` (${settings.upi_payee_name})` : ''}</p>
               <a class="btn btn-sm only-mobile" href="${upiLink}" data-upi-link>Open UPI app</a>`
             : html`<p class="muted">UPI details are not configured yet. Please contact support.</p>`}
-            <p class="small muted">After paying, enter the 12-digit UTR / transaction ID from your UPI app. Your ad goes live once we confirm the payment.</p>
+            <p class="small muted">After paying, enter the 12-digit UTR / transaction ID from your UPI app. Payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong> — your ad goes live as soon as it is confirmed.</p>
           </div>
         </div>
         <div class="row2">
@@ -783,7 +802,8 @@ function register(app) {
       if (ad.status !== 'active') db.prepare("UPDATE ads SET status = 'payment_review', updated_at = ? WHERE id = ?").run(Date.now(), ad.id);
     });
     notify.upiSubmitted(db.prepare('SELECT * FROM payments WHERE id = ?').get(payRowId), req.seller, ad);
-    req.flash('success', 'Payment submitted. Your ad goes live as soon as we confirm it.');
+    req.flash('success', `Payment submitted. Confirmation takes ${PAYMENT_TIME_TEXT} — your ad goes live as soon as it is confirmed.`);
+    notify.upiReceived(req.seller, ad);
     res.redirect('/client');
   });
 

@@ -126,5 +126,24 @@ Commit: `94e3fa7`
 
 ---
 
+## 10. International-level design, 1-minute approval, reports — 3 Nov 16:07 (sent again 16:26 and 16:29)
+
+> adding user is looking very ugly it must be international level, and waiting time for approval shifted from 5 to only 1 minute and just mention that login verify will take 1 minute of time, for payment mention 5 minutes to 24 hrs … categories must be easier for admin to create and delete and i dont want long page … very very smooth, compete with Flipkart and Amazon … more good visuals, graphics, animation … report of user, payment rejected, user rejected … when someone sees an ad it also looks international level, no long page … global animation, 3d way … don't show that government ID proof, just our platform is important, and customers should look happy when they see this
+
+**What was built:**
+- **Approval timing:** auto-approve is **1 minute** (existing 5-minute settings are moved to 1 once). Sellers see "Login verification takes about 1 minute" and "Payment confirmation takes 5 minutes to 24 hours".
+- **The screenshot bug** (PAN selected but the label still said Aadhaar) came from the browser keeping old files. CSS and JS links now carry a version number, so every update loads fresh.
+- **Home:** a 3D ring of TOP ads (drag or swipe), round category icons, a filter panel and sorting. The page is short.
+- **Buyer pages:** friendly wording ("Trusted local sellers", "Happy buying, happy selling"). Government ID is not mentioned anywhere buyers look.
+- **Ad page:** Amazon-style. Photos, a contact box that stays in view, and tabs for Description / Videos / Details / Safety.
+- **Registration and Admin → Add client:** 4 steps with a progress bar, ID cards to tap, and checks before each step.
+- **Admin:** a sidebar menu. Settings is split into 6 tabs. Categories are cards with an inline "add sub-category" box and pop-ups to edit or delete.
+- **Reports:** KPIs, a revenue line chart, a new-sellers chart, status bars, and tabs for rejected sellers, rejected payments, ad complaints and all sellers, each with CSV download.
+- **Everywhere:** new icons, toast messages, nice confirm pop-ups, smooth page transitions and a gentle 3D tilt on ad cards (off for people who turn off animations).
+
+Commit: `COMMIT_PLACEHOLDER`
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

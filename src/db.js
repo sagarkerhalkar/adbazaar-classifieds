@@ -243,12 +243,17 @@ const DEFAULT_SETTINGS = {
   upi_payee_name: process.env.UPI_PAYEE_NAME || '',
   support_phone: '', support_email: '',
   upi_qr_file: '',
-  auto_approve_minutes: '5',          // approve verified clients automatically if admin doesn't act (0 = off)
+  auto_approve_minutes: '1',          // approve verified clients automatically if admin doesn't act (0 = off)
   require_mobile_otp: '1',            // mobile must be verified by SMS code when SMS is set up
   notify_email: process.env.ADMIN_EMAIL || '',
 };
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, v);
+// One-time change: the old default auto-approve time (5 minutes) becomes 1 minute.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'approve_1min_migrated'").get()) {
+  db.prepare("UPDATE settings SET value = '1' WHERE key = 'auto_approve_minutes' AND value = '5'").run();
+  db.prepare("INSERT INTO settings (key, value) VALUES ('approve_1min_migrated', '1')").run();
+}
 // Payments are confirmed only by an admin (an older version had an auto-confirm option).
 db.prepare("DELETE FROM settings WHERE key = 'auto_confirm_payment_minutes'").run();
 

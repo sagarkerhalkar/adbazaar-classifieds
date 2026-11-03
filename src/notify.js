@@ -4,7 +4,7 @@
 const crypto = require('node:crypto');
 const { db, getSettings, setSetting } = require('./db');
 const { sendEmail, sendSmsOtp, smsConfigured } = require('./messaging');
-const { rupees, fmtDate } = require('./lib/html');
+const { rupees, fmtDate, approveTimeText, PAYMENT_TIME_TEXT } = require('./lib/html');
 
 // ---------------- base URL for links in emails ----------------
 let lastOrigin = null;
@@ -96,7 +96,7 @@ function maybeSubmit(clientId) {
   fire(sendEmail(c.email, `We received your registration — ${s.site_name}`, [
     `Hello ${c.name},`,
     'Thank you! Your email' + (c.phone_verified_at ? ' and mobile number are' : ' is') + ' confirmed and your documents are now with our team for verification.',
-    mins ? `Most accounts are approved within ${mins} minutes. We will email you as soon as you can log in.` : 'We will email you as soon as you can log in.',
+    `Login verification takes ${approveTimeText(mins)}. We will email you as soon as you can log in.`,
   ], { text: 'Check my status', url: statusLink(c) }));
   if (adminEmail()) {
     fire(sendEmail(adminEmail(), `New seller to verify: ${c.name}`, [
@@ -174,6 +174,15 @@ function upiSubmitted(pay, client, ad) {
   ], { text: 'Open payments', url: `${baseUrl()}/admin/payments` }));
 }
 
+// To the client right after they submit a UPI reference.
+function upiReceived(client, ad) {
+  fire(sendEmail(client.email, `Payment received for review: ${ad.title}`, [
+    `Hello ${client.name},`,
+    `We received your UPI payment details for "${ad.title}".`,
+    `Payment confirmation takes ${PAYMENT_TIME_TEXT}. We will email you as soon as your ad is live.`,
+  ], { text: 'Go to my ads', url: `${baseUrl()}/client` }));
+}
+
 function paymentConfirmed(payId) {
   const p = db.prepare(`SELECT p.*, c.name, c.email, a.title, a.expires_at, a.id AS ad_id FROM payments p
     JOIN clients c ON c.id = p.client_id JOIN ads a ON a.id = p.ad_id WHERE p.id = ?`).get(payId);
@@ -195,5 +204,5 @@ function paymentRejected(payId) {
 
 module.exports = {
   rememberOrigin, baseUrl, phoneOtpRequired, issueOtp, checkOtp, sendEmailOtp, sendPhoneOtp, maybeSubmit,
-  emailConfirmed, approved, rejected, suspended, deactivated, reactivated, videoCall, upiSubmitted, paymentConfirmed, paymentRejected,
+  emailConfirmed, approved, rejected, suspended, deactivated, reactivated, videoCall, upiSubmitted, upiReceived, paymentConfirmed, paymentRejected,
 };

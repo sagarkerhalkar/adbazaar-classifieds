@@ -30,12 +30,14 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 
 ## Also included
 - **One-time email OTP** (plus optional SMS OTP), confirmation emails, and admin notifications. Paste your Gmail App Password in Admin → Settings; SMS can be added later (free from your own Android phone). See GUIDE Part 15.
-- **Auto-approve** sellers (after the email OTP) if the admin doesn't act within 5 minutes (configurable), with an email to both sides. **Payments are always confirmed by an admin**; they are never automatic.
+- **Auto-approve** sellers (after the email OTP) if the admin doesn't act within 1 minute (configurable), with an email to both sides. **Payments are always confirmed by an admin**; they are never automatic.
 - **18+ only:** date of birth is checked at registration and before posting; the admin sees the age next to the KYC documents.
 - **TOP ads by 3-hour time slots** (8 a day, price per slot per day, set by the admin).
 - **5 photos + 2 videos** (up to 1 minute each) per ad, changeable any time.
 - **Main categories → sub-categories**, managed by the admin (add, rename, move, deactivate, delete).
 - **Deactivate / reactivate** accounts (by the seller or the admin, with paid days frozen), plus **block** and **delete** for clients and ads.
+
+- **Design:** a 3D ring of TOP ads on the home page, a category rail, filters and sorting, a tabbed ad page, a 4-step KYC wizard, an admin sidebar with tabbed settings, card-based category management with pop-up editors, and Reports (charts, rejected sellers and payments, ad complaints, all sellers, CSV export). Uses system fonts, no external assets, and respects `prefers-reduced-motion`.
 
 ## Ranking algorithm (`src/ranking.js`)
 

@@ -3,7 +3,8 @@
 
 const path = require('node:path');
 const { db, tx, getSettings, setSetting, parseImages } = require('../db');
-const { html, rupees, fmtDate, fmtDay, timeLeft } = require('../lib/html');
+const { html, rupees, fmtDate, fmtDay, timeLeft, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
+const { icon } = require('../views/icons');
 const { renderPage } = require('../views/layout');
 const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
 const { checkId, describeId, ID_TYPES } = require('../idproof');
@@ -196,36 +197,47 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
 function newClientView(req, v = {}, error) {
   return html`
   <nav class="crumbs"><a href="/admin/clients">Clients</a> › <span>Add client</span></nav>
-  <section class="card form-card">
-    <h1>Add a client</h1>
-    <p class="muted">Use this when you onboard a client yourself (in person or on a call). You need their name, mobile, email, date of birth, ONE ID (Aadhaar, PAN or Passport) and a live photo from your webcam. Address is optional.</p>
-    ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
-    <form method="post" action="/admin/clients/new" enctype="multipart/form-data" class="form">
-      ${csrf(req)}
-      <fieldset><legend>Client details</legend>
-        <div class="row2">${field('Full name (as on the ID) *', html`<input name="name" required maxlength="80" value="${v.name}">`)}${field('Date of birth * (18+ only)', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'Check it against the ID')}</div>
-        <div class="row2">${field('Mobile *', html`<input name="phone" required maxlength="13" value="${v.phone}">`)}${field('Email (login ID) *', html`<input name="email" type="email" required maxlength="120" value="${v.email}">`)}</div>
-        ${field('Business name', html`<input name="business_name" maxlength="80" value="${v.business_name}">`, 'Optional')}
-      </fieldset>
-      <fieldset><legend>ID for age verification — ONE of Aadhaar, PAN or Passport</legend>
-        ${idFields(v)}
-      </fieldset>
-      ${addressFields(v)}
-      <fieldset><legend>Live photo (webcam)</legend>
-        <div class="camera" data-camera data-auto="3">
-          <div class="camera-stage"><video playsinline muted data-camera-video></video><img alt="" data-camera-preview hidden><div class="camera-count" data-camera-count hidden></div></div>
-          <div class="camera-actions"><button type="button" class="btn" data-camera-start>📷 Start camera</button><button type="button" class="btn btn-accent" data-camera-snap hidden>Capture now</button><button type="button" class="btn btn-ghost" data-camera-retake hidden>Retake</button></div>
-          <p class="hint" data-camera-status>Needed if you approve now. Otherwise you can take it later on a video call.</p>
-          <input type="hidden" name="live_photo_data" data-camera-output>
+  <div class="kyc-shell">
+    <aside class="kyc-aside">
+      <h2>Add a client yourself</h2>
+      <p>For clients you meet in person or on a call.</p>
+      <ul class="kyc-points">
+        <li>${icon('user', { size: 20 })}<span><strong>Details</strong>Name, mobile, email, date of birth</span></li>
+        <li>${icon('id', { size: 20 })}<span><strong>One ID</strong>Aadhaar, PAN or Passport</span></li>
+        <li>${icon('camera', { size: 20 })}<span><strong>Live photo</strong>From your webcam — needed to approve now</span></li>
+        <li>${icon('shield', { size: 20 })}<span><strong>Login</strong>Set or auto-generate a password</span></li>
+      </ul>
+    </aside>
+    <section class="card kyc-card">
+      <h1>Add a client</h1>
+      ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
+      <form method="post" action="/admin/clients/new" enctype="multipart/form-data" class="form" data-wizard>
+        ${csrf(req)}
+        <div data-step data-title="Client">
+          <div class="row2">${field('Full name (as on the ID)', html`<input name="name" required maxlength="80" value="${v.name}">`)}${field('Date of birth (18+ only)', html`<input type="date" name="dob" required max="${V.maxDob()}" min="1925-01-01" value="${v.dob}">`, 'Check it against the ID')}</div>
+          <div class="row2">${field('Mobile', html`<input name="phone" required maxlength="13" inputmode="numeric" value="${v.phone}">`)}${field('Email (login ID)', html`<input name="email" type="email" required maxlength="120" value="${v.email}">`)}</div>
+          ${field('Business name (optional)', html`<input name="business_name" maxlength="80" value="${v.business_name}">`)}
         </div>
-      </fieldset>
-      <fieldset><legend>Login</legend>
-        ${field('Password', html`<input name="password" type="text" minlength="6" autocomplete="off" placeholder="Leave empty to auto-generate">`)}
-        <label class="check"><input type="checkbox" name="approve_now" value="1" checked> <span>I have verified this client — approve now so they can log in and post ads</span></label>
-      </fieldset>
-      <button class="btn btn-accent btn-lg">Create client</button>
-    </form>
-  </section>`;
+        <div data-step data-title="ID">
+          ${idFields(v)}
+        </div>
+        <div data-step data-title="Live photo">
+          <div class="camera" data-camera data-auto="3">
+            <div class="camera-stage"><video playsinline muted data-camera-video></video><img alt="" data-camera-preview hidden><div class="camera-count" data-camera-count hidden></div></div>
+            <div class="camera-actions"><button type="button" class="btn btn-primary" data-camera-start>${icon('camera', { size: 18 })} Start camera</button><button type="button" class="btn btn-accent" data-camera-snap hidden>Capture now</button><button type="button" class="btn btn-ghost" data-camera-retake hidden>Retake</button></div>
+            <p class="hint" data-camera-status>Needed if you approve now. Otherwise you can take it later on a video call.</p>
+            <input type="hidden" name="live_photo_data" data-camera-output>
+          </div>
+        </div>
+        <div data-step data-title="Login">
+          ${addressFields(v)}
+          ${field('Password', html`<input name="password" type="text" minlength="6" autocomplete="off" placeholder="Leave empty to auto-generate">`, 'At least 6 characters. You will see it once after saving.')}
+          <label class="check"><input type="checkbox" name="approve_now" value="1" checked> <span>I have verified this client — approve now so they can log in and post ads</span></label>
+        </div>
+        <div class="form-actions" data-wizard-submit><button class="btn btn-primary btn-lg">${icon('check', { size: 18 })} Create client</button></div>
+      </form>
+    </section>
+  </div>`;
 }
 
 function paymentsView(req, rows, status) {
@@ -280,59 +292,76 @@ function adsView(req, rows, f) {
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No ads.</p></div>`}`;
 }
 
-function reportsView(req, rows) {
-  return html`
-  <div class="page-head"><h1>Reports</h1></div>
-  ${rows.length ? html`<div class="table-wrap card"><table class="table">
-    <thead><tr><th>Date</th><th>Ad</th><th>Reason</th><th>Details</th><th></th></tr></thead>
-    <tbody>${rows.map((r) => html`<tr class="${r.resolved ? 'dim' : ''}">
-      <td>${fmtDate(r.created_at)}</td><td><a href="${adUrl({ id: r.ad_id, title: r.ad_title })}" target="_blank">${r.ad_title}</a> ${pill(r.ad_status)}</td>
-      <td>${r.reason}</td><td>${r.details}</td>
-      <td class="actions">${!r.resolved ? html`
-        <form method="post" action="/admin/ads/${r.ad_id}/block" class="inline">${csrf(req)}<input type="hidden" name="reason" value="Reported: ${r.reason}"><input type="hidden" name="report_id" value="${r.id}"><button class="btn btn-danger btn-sm">Block ad</button></form>
-        <form method="post" action="/admin/reports/${r.id}/resolve" class="inline">${csrf(req)}<button class="btn btn-sm">Dismiss</button></form>` : 'Resolved'}</td></tr>`)}
-    </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No reports. 👍</p></div>`}`;
-}
-
 function categoriesView(req, mains, counts) {
   const allTargets = [];
-  for (const m of mains) { if (!m.subs.length) allTargets.push(m); for (const sc of m.subs) allTargets.push({ ...sc, label: `${m.name} › ${sc.name}` }); }
-  const moveSelect = (c) => html`<select name="move_to" class="xs-select"><option value="">Move its ads to…</option>${allTargets.filter((t) => t.id !== c.id).map((t) => html`<option value="${t.id}">${t.label || t.name}</option>`)}</select>`;
-  const row = (c, isSub) => {
-    const n = counts[c.id] || 0;
-    return html`
-    <div class="cat-row ${isSub ? 'is-sub' : 'is-main'} ${c.is_active ? '' : 'dim'}">
-      <form method="post" action="/admin/categories/${c.id}" class="cat-edit">
-        ${csrf(req)}
-        <input name="icon" value="${c.icon}" maxlength="4" class="xs" title="Icon (emoji)">
-        <input name="name" value="${c.name}" maxlength="40" required>
-        <input type="number" name="sort" value="${c.sort}" class="xs" title="Order">
-        ${isSub ? html`<select name="parent_id" title="Main category">${mains.map((m) => html`<option value="${m.id}" ${m.id === c.parent_id ? 'selected' : ''}>${m.name}</option>`)}</select>` : ''}
-        <select name="is_active"><option value="1" ${c.is_active ? 'selected' : ''}>Active</option><option value="0" ${!c.is_active ? 'selected' : ''}>Deactivated</option></select>
-        <span class="muted small">${n} ad${n === 1 ? '' : 's'}</span>
-        <button class="btn btn-sm">Save</button>
-      </form>
-      <form method="post" action="/admin/categories/${c.id}/delete" class="cat-del" data-confirm="Delete ${c.name}?">
-        ${csrf(req)}${n ? moveSelect(c) : ''}<button class="btn btn-danger btn-sm">Delete</button>
-      </form>
-    </div>`;
-  };
+  for (const m of mains) { if (!m.subs.length) allTargets.push({ id: m.id, label: m.name }); for (const sc of m.subs) allTargets.push({ id: sc.id, label: `${m.name} › ${sc.name}` }); }
+  const n = (c) => counts[c.id] || 0;
+  const total = (m) => n(m) + m.subs.reduce((t, sc) => t + n(sc), 0);
+  const editBtn = (c, isSub) => html`<button type="button" class="icon-btn" title="Edit ${c.name}" aria-label="Edit ${c.name}" data-dialog-open="${isSub ? 'cat-edit-sub' : 'cat-edit-main'}"
+    data-fill-action="/admin/categories/${c.id}" data-fill-name="${c.name}" data-fill-icon="${c.icon}" data-fill-sort="${c.sort}" data-fill-active="${c.is_active ? '1' : '0'}" data-fill-parent="${c.parent_id || ''}" data-fill-title="${c.name}">${icon('edit', { size: 15 })}</button>`;
+  const delBtn = (c, blocked) => blocked
+    ? html`<button type="button" class="icon-btn" disabled title="Delete its sub-categories first" style="opacity:.35">${icon('trash', { size: 15 })}</button>`
+    : html`<button type="button" class="icon-btn danger" title="Delete ${c.name}" aria-label="Delete ${c.name}" data-dialog-open="cat-delete"
+    data-fill-action="/admin/categories/${c.id}/delete" data-fill-title="${c.name}" data-fill-count="${n(c) ? `${n(c)} ad${n(c) === 1 ? '' : 's'} will be moved.` : 'It has no ads.'}" data-fill-self="${c.id}">${icon('trash', { size: 15 })}</button>`;
+  const toggle = (c) => html`<form method="post" action="/admin/categories/${c.id}" class="inline">${csrf(req)}<input type="hidden" name="is_active" value="${c.is_active ? '0' : '1'}">
+    <button class="icon-btn" title="${c.is_active ? 'Hide from site' : 'Show on site'}" aria-label="${c.is_active ? 'Hide' : 'Show'} ${c.name}">${icon(c.is_active ? 'eye' : 'x', { size: 15 })}</button></form>`;
   return html`
-  <div class="page-head"><div><h1>Categories</h1><p class="muted">Main categories (bold) and their sub-categories. Ads are posted in a sub-category; a main category without sub-categories takes ads directly.
-    <br>Deactivated = hidden from menus and new ads (existing ads keep running). Delete = gone; if it has ads you choose where they move.</p></div></div>
-  <section class="card">
-    <h2>Add</h2>
-    <form method="post" action="/admin/categories/add" class="cat-add">
+  <div class="page-head">
+    <div><h1>Categories</h1><p class="muted">Ads are posted in a sub-category. Hidden categories disappear from menus; their running ads stay live.</p></div>
+    <form method="post" action="/admin/categories/add" class="cat-add card" style="margin:0;padding:10px 12px">
       ${csrf(req)}
-      <select name="parent_id"><option value="">➕ New MAIN category</option>${mains.map((m) => html`<option value="${m.id}">➕ Sub-category of ${m.name}</option>`)}</select>
-      <input name="icon" maxlength="4" class="xs" placeholder="📱">
-      <input name="name" maxlength="40" required placeholder="Name, e.g. Mobile phones">
-      <button class="btn btn-accent">Add</button>
+      <input name="icon" maxlength="4" class="xs" placeholder="📦" aria-label="Icon (emoji)">
+      <input name="name" maxlength="40" required placeholder="New main category" aria-label="Main category name" style="width:200px">
+      <button class="btn btn-primary">${icon('plus', { size: 16 })} Add main category</button>
     </form>
-  </section>
-  <section class="card cat-tree">
-    ${mains.map((m) => html`<div class="cat-group">${row(m, false)}${m.subs.map((sc) => row(sc, true))}</div>`)}
-  </section>`;
+  </div>
+  <div class="catgrid">
+    ${mains.map((m) => html`<article class="catcard ${m.is_active ? '' : 'off'}">
+      <div class="catcard-head">
+        <div class="catcard-ic">${m.icon}</div>
+        <div class="catcard-name"><strong>${m.name}</strong><small>${m.subs.length} sub-categor${m.subs.length === 1 ? 'y' : 'ies'} · ${total(m)} ad${total(m) === 1 ? '' : 's'}${m.is_active ? '' : ' · hidden'}</small></div>
+        ${toggle(m)}${editBtn(m, false)}${delBtn(m, m.subs.length > 0)}
+      </div>
+      <div class="subchips">
+        ${m.subs.length ? m.subs.map((sc) => html`<span class="subchip ${sc.is_active ? '' : 'off'}">${sc.name}${n(sc) ? html` <span class="muted">${n(sc)}</span>` : ''}${editBtn(sc, true)}${delBtn(sc, false)}</span>`) : html`<span class="muted small">No sub-categories — ads go straight into ${m.name}.</span>`}
+      </div>
+      <form method="post" action="/admin/categories/add" class="addsub">
+        ${csrf(req)}<input type="hidden" name="parent_id" value="${m.id}">
+        <input name="name" maxlength="40" required placeholder="Add a sub-category…" aria-label="New sub-category of ${m.name}">
+        <button class="btn btn-sm" aria-label="Add">${icon('plus', { size: 16 })}</button>
+      </form>
+    </article>`)}
+  </div>
+
+  <dialog class="modal" id="cat-edit-main"><form method="post" data-fill="action">
+    ${csrf(req)}
+    <div class="modal-body"><h2>Edit <span data-fill="title"></span></h2>
+      <div class="row3" style="grid-template-columns:90px 1fr 90px">
+        ${field('Icon', html`<input name="icon" maxlength="4" data-fill="icon">`)}${field('Name', html`<input name="name" maxlength="40" required data-fill="name">`)}${field('Order', html`<input type="number" name="sort" data-fill="sort">`)}
+      </div>
+      ${field('Show on site', html`<select name="is_active" data-fill="active"><option value="1">Yes — visible</option><option value="0">No — hidden</option></select>`)}
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn btn-primary">Save</button></div>
+  </form></dialog>
+
+  <dialog class="modal" id="cat-edit-sub"><form method="post" data-fill="action">
+    ${csrf(req)}
+    <div class="modal-body"><h2>Edit <span data-fill="title"></span></h2>
+      <div class="row2" style="grid-template-columns:1fr 90px">${field('Name', html`<input name="name" maxlength="40" required data-fill="name">`)}${field('Order', html`<input type="number" name="sort" data-fill="sort">`)}</div>
+      ${field('Main category', html`<select name="parent_id" data-fill="parent">${mains.map((m) => html`<option value="${m.id}">${m.icon} ${m.name}</option>`)}</select>`, 'Move it under another main category if you like.')}
+      ${field('Show on site', html`<select name="is_active" data-fill="active"><option value="1">Yes — visible</option><option value="0">No — hidden</option></select>`)}
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn btn-primary">Save</button></div>
+  </form></dialog>
+
+  <dialog class="modal" id="cat-delete"><form method="post" data-fill="action">
+    ${csrf(req)}
+    <div class="modal-body"><h2>Delete <span data-fill="title"></span>?</h2>
+      <p class="muted" data-fill="count"></p>
+      ${field('Move its ads to', html`<select name="move_to"><option value="">— (only needed if it has ads)</option>${allTargets.map((t) => html`<option value="${t.id}" data-opt>${t.label}</option>`)}</select>`)}
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn btn-danger">${icon('trash', { size: 16 })} Delete</button></div>
+  </form></dialog>`;
 }
 
 function messagingSetupCard(req, s) {
@@ -340,8 +369,8 @@ function messagingSetupCard(req, s) {
   const host = s.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com';
   const mailProv = s.mail_provider || (/brevo|sendinblue/.test(host) ? 'brevo' : host === 'smtp.gmail.com' ? 'gmail' : 'other');
   return html`
-  <section class="card setup-card" id="email-setup">
-    <h2>📧 Email & 📱 SMS setup ${emailConfigured() ? html`<span class="pill pill-ok">Email ready</span>` : html`<span class="pill pill-warn">Email not set up</span>`} ${smsConfigured() ? html`<span class="pill pill-ok">SMS ready</span>` : html`<span class="pill pill-muted">SMS off</span>`}</h2>
+  <section class="card setup-card">
+    <h2>Email & SMS ${emailConfigured() ? html`<span class="pill pill-ok">Email ready</span>` : html`<span class="pill pill-warn">Email not set up</span>`} ${smsConfigured() ? html`<span class="pill pill-ok">SMS ready</span>` : html`<span class="pill pill-muted">SMS off</span>`}</h2>
     <div class="cols2">
       <form method="post" action="/admin/messaging/email" class="form" data-mail-form>
         ${csrf(req)}
@@ -387,9 +416,18 @@ function messagingSetupCard(req, s) {
 
 function settingsView(req, { s, plans, cats, admins }) {
   return html`
-  <div class="page-head"><h1>Settings</h1></div>
-  ${messagingSetupCard(req, s)}
-  <section class="card">
+  <div class="page-head"><div><h1>Settings</h1><p class="muted">Pick a section. Each one saves on its own.</p></div></div>
+  <div data-tab-scope>
+  <div class="tabs" data-tabs data-tabs-hash role="tablist">
+    <button type="button" class="tab active" data-tab="plans">${icon('card', { size: 16 })} Plans</button>
+    <button type="button" class="tab" data-tab="slots">${icon('star', { size: 16 })} TOP slots</button>
+    <button type="button" class="tab" data-tab="approvals">${icon('clock', { size: 16 })} Approvals</button>
+    <button type="button" class="tab" data-tab="email">${icon('mail', { size: 16 })} Email & SMS ${emailConfigured() ? '' : html`<span class="badge-count">!</span>`}</button>
+    <button type="button" class="tab" data-tab="site">${icon('settings', { size: 16 })} Site & payments</button>
+    <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} Admins</button>
+  </div>
+  <div class="tab-panel" data-panel="email">${messagingSetupCard(req, s)}</div>
+  <section class="card tab-panel" data-panel="plans">
     <h2>Pricing plans</h2>
     <p class="muted small">Price and ranking level for each run period. Higher ranking level = ad appears higher.</p>
     <form method="post" action="/admin/plans" class="form">
@@ -414,8 +452,7 @@ function settingsView(req, { s, plans, cats, admins }) {
     </form>
   </section>
 
-  <div class="cols2">
-    <section class="card">
+    <section class="card tab-panel narrow-ish" data-panel="slots">
       <h2>★ TOP ad time slots</h2>
       <p class="muted small">Clients choose the 3-hour slots (India time) when their ad is pinned in TOP. They pay this price per day × the days of their plan.</p>
       <form method="post" action="/admin/slots" class="form">
@@ -428,7 +465,7 @@ function settingsView(req, { s, plans, cats, admins }) {
         <button class="btn btn-accent">Save slot prices</button>
       </form>
     </section>
-    <section class="card">
+    <section class="card tab-panel narrow-ish" data-panel="approvals">
       <h2>Approvals & notifications</h2>
       <form method="post" action="/admin/automation" class="form">
         ${csrf(req)}
@@ -438,12 +475,10 @@ function settingsView(req, { s, plans, cats, admins }) {
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
         <button class="btn btn-accent">Save</button>
       </form>
-      <p class="small muted">Email & SMS: see the setup box at the top of this page.</p>
+      <p class="small muted">Sellers see: login check takes ${approveTimeText(s.auto_approve_minutes)}; payment confirmation takes ${PAYMENT_TIME_TEXT}.</p>
     </section>
-  </div>
 
-  <div class="cols2">
-    <section class="card">
+    <section class="card tab-panel narrow-ish" data-panel="site">
       <h2>Site & payment details</h2>
       <form method="post" action="/admin/settings" enctype="multipart/form-data" class="form">
         ${csrf(req)}
@@ -457,26 +492,27 @@ function settingsView(req, { s, plans, cats, admins }) {
         <button class="btn btn-accent">Save settings</button>
       </form>
     </section>
-    <section class="card">
-      <h2>Categories</h2>
-      <p class="muted small">Main categories and sub-categories (e.g. Electronics → Mobile phones) are managed on their own page.</p>
-      <p><a class="btn btn-sm" href="/admin/categories">Manage categories →</a></p>
+    <section class="tab-panel" data-panel="admins"><div class="cols2">
+     <div class="card">
       <h2>Admins</h2>
       <ul class="list">${admins.map((a) => html`<li><span><strong>${a.name}</strong> <span class="muted small">${a.email}</span></span></li>`)}</ul>
       <form method="post" action="/admin/admins" class="form">
         ${csrf(req)}
         <div class="row2">${field('Name', html`<input name="name" required maxlength="60">`)}${field('Email', html`<input name="email" type="email" required>`)}</div>
         ${field('Password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`, 'At least 6 characters')}
-        <button class="btn btn-sm">Add admin</button>
+        <button class="btn btn-primary">Add admin</button>
       </form>
+     </div>
+     <div class="card">
       <h2>Change my password</h2>
       <form method="post" action="/admin/password" class="form">
         ${csrf(req)}
         ${field('Current password', html`<input name="current" type="password" required autocomplete="current-password">`)}
         ${field('New password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`)}
-        <button class="btn btn-sm">Update password</button>
+        <button class="btn btn-primary">Update password</button>
       </form>
-    </section>
+     </div>
+    </div></section>
   </div>`;
 }
 
@@ -841,14 +877,10 @@ function register(app) {
   });
 
   // ---- Reports ----
-  app.get('/admin/reports', requireAdmin, (req, res) => {
-    const rows = db.prepare(`SELECT r.*, a.title AS ad_title, a.status AS ad_status FROM reports r JOIN ads a ON a.id = r.ad_id
-      ORDER BY r.resolved, r.id DESC LIMIT 300`).all();
-    res.html(page(req, 'Reports', reportsView(req, rows)));
-  });
+  require('./reports').register(app, { requireAdmin, page });
   app.post('/admin/reports/:id/resolve', requireAdmin, (req, res) => {
     db.prepare('UPDATE reports SET resolved = 1 WHERE id = ?').run(parseInt(req.params.id, 10) || 0);
-    res.redirect('/admin/reports');
+    res.redirect('/admin/reports#ad-reports');
   });
 
   // ---- Settings ----
@@ -866,10 +898,10 @@ function register(app) {
         const name = saveUpload(req.files.upi_qr[0], 'ads', { maxMb: 3 });
         removeFile('ads', getSettings().upi_qr_file);
         setSetting('upi_qr_file', name);
-      } catch (e) { if (e instanceof UploadError) { req.flash('error', e.message); res.redirect('/admin/settings'); return; } throw e; }
+      } catch (e) { if (e instanceof UploadError) { req.flash('error', e.message); res.redirect('/admin/settings#site'); return; } throw e; }
     }
     req.flash('success', 'Settings saved.');
-    res.redirect('/admin/settings');
+    res.redirect('/admin/settings#site');
   });
   app.post('/admin/plans', requireAdmin, (req, res) => {
     const b = req.body; const ids = [].concat(b.id || []);
@@ -885,7 +917,7 @@ function register(app) {
     });
     rescore(0);
     req.flash('success', 'Plans saved.');
-    res.redirect('/admin/settings');
+    res.redirect('/admin/settings#plans');
   });
   // ---- Categories: main → sub ----
   const catCounts = () => Object.fromEntries(db.prepare("SELECT category_id, COUNT(*) n FROM ads WHERE status != 'deleted' GROUP BY category_id").all().map((r) => [r.category_id, r.n]));
@@ -946,7 +978,7 @@ function register(app) {
       }
     });
     req.flash('success', 'TOP slot prices saved.');
-    res.redirect('/admin/settings');
+    res.redirect('/admin/settings#slots');
   });
   app.post('/admin/automation', requireAdmin, (req, res) => {
     const num = (v) => String(Math.max(0, Math.min(10080, parseInt(v, 10) || 0)));
@@ -955,13 +987,13 @@ function register(app) {
     const em = V.str(req.body.notify_email, 120);
     if (!em || V.isValidEmail(em)) setSetting('notify_email', em);
     req.flash('success', 'Saved.');
-    res.redirect('/admin/settings');
+    res.redirect('/admin/settings#approvals');
   });
   app.post('/admin/messaging/email', requireAdmin, (req, res) => {
     const provider = ['gmail', 'brevo', 'other'].includes(req.body.provider) ? req.body.provider : 'gmail';
     const user = V.str(req.body.smtp_user, 120);
     const mailFrom = V.str(req.body.mail_from, 120).toLowerCase();
-    const back = '/admin/settings#email-setup';
+    const back = '/admin/settings#email';
     if (!user) { req.flash('error', 'Enter the login / username.'); res.redirect(back); return; }
     if (provider === 'gmail' && !V.isValidEmail(user)) { req.flash('error', 'Enter your full Gmail address as the login.'); res.redirect(back); return; }
     if (mailFrom && !V.isValidEmail(mailFrom)) { req.flash('error', '"Send emails as" must be an email address.'); res.redirect(back); return; }
@@ -978,7 +1010,7 @@ function register(app) {
     setSetting('mail_from', provider === 'gmail' ? '' : mailFrom);
     if (!getSettings().notify_email) setSetting('notify_email', mailFrom || (V.isValidEmail(user) ? user.toLowerCase() : ''));
     req.flash('success', 'Email settings saved. Now click "Send test email to me" to check them.');
-    res.redirect('/admin/settings#email-setup');
+    res.redirect('/admin/settings#email');
   });
   app.post('/admin/messaging/sms', requireAdmin, (req, res) => {
     const prov = ['android', 'fast2sms', 'msg91'].includes(req.body.sms_provider) ? req.body.sms_provider : '';
@@ -989,7 +1021,7 @@ function register(app) {
     if (prov === 'fast2sms' && user) setSetting('fast2sms_api_key', user);
     if (prov === 'msg91') { if (user) setSetting('msg91_auth_key', user); if (pass) setSetting('msg91_template_id', pass); }
     req.flash('success', prov ? 'SMS settings saved. Send a test SMS to check them.' : 'SMS turned off — sellers verify by email only.');
-    res.redirect('/admin/settings#email-setup');
+    res.redirect('/admin/settings#email');
   });
   app.post('/admin/test-email', requireAdmin, async (req, res) => {
     const to = getSettings().notify_email || req.admin.email;
@@ -1005,14 +1037,14 @@ function register(app) {
     } else if (!r.ok && /sender|not.*(valid|verified)|550|553/i.test(r.error || '')) msg = `The email service refused the sender address. In Brevo, verify the "Send emails as" address first. (${r.error})`;
     else if (!r.ok) msg = `Email failed: ${r.error}. Check the internet connection and the SMTP server/port.`;
     req.flash(r.ok ? 'success' : 'error', msg);
-    res.redirect('/admin/settings#email-setup');
+    res.redirect('/admin/settings#email');
   });
   app.post('/admin/test-sms', requireAdmin, async (req, res) => {
     const phone = V.normalizePhone(req.body.phone);
-    if (!V.isValidPhone(phone)) { req.flash('error', 'Enter a valid 10-digit mobile number.'); res.redirect('/admin/settings'); return; }
+    if (!V.isValidPhone(phone)) { req.flash('error', 'Enter a valid 10-digit mobile number.'); res.redirect('/admin/settings#email'); return; }
     const r = await sendSmsOtp(phone, '123456');
     req.flash(r.ok ? 'success' : 'error', r.ok ? `Test SMS sent to ${phone}.` : r.status === 'not_configured' ? 'SMS is not set up yet — choose an SMS service above.' : `SMS failed: ${r.error}`);
-    res.redirect('/admin/settings#email-setup');
+    res.redirect('/admin/settings#email');
   });
   app.get('/admin/messages', requireAdmin, (req, res) => {
     const rows = db.prepare('SELECT * FROM outbox ORDER BY id DESC LIMIT 200').all();
@@ -1029,19 +1061,19 @@ function register(app) {
 
   app.post('/admin/admins', requireAdmin, (req, res) => {
     const email = V.str(req.body.email, 120).toLowerCase(); const name = V.str(req.body.name, 60);
-    if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6) { req.flash('error', 'Enter name, valid email and a password of 6+ characters.'); res.redirect('/admin/settings'); return; }
-    if (db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) { req.flash('error', 'Admin already exists.'); res.redirect('/admin/settings'); return; }
+    if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6) { req.flash('error', 'Enter name, valid email and a password of 6+ characters.'); res.redirect('/admin/settings#admins'); return; }
+    if (db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) { req.flash('error', 'Admin already exists.'); res.redirect('/admin/settings#admins'); return; }
     db.prepare('INSERT INTO admins (name, email, password_hash, created_at) VALUES (?,?,?,?)').run(name, email, hashPassword(req.body.password), Date.now());
     req.flash('success', 'Admin added.');
-    res.redirect('/admin/settings');
+    res.redirect('/admin/settings#admins');
   });
   app.post('/admin/password', requireAdmin, (req, res) => {
     const a = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.admin.id);
-    if (!verifyPassword(req.body.current, a.password_hash)) { req.flash('error', 'Current password is incorrect.'); res.redirect('/admin/settings'); return; }
-    if (String(req.body.password || '').length < 6) { req.flash('error', 'New password must be 6+ characters.'); res.redirect('/admin/settings'); return; }
+    if (!verifyPassword(req.body.current, a.password_hash)) { req.flash('error', 'Current password is incorrect.'); res.redirect('/admin/settings#admins'); return; }
+    if (String(req.body.password || '').length < 6) { req.flash('error', 'New password must be 6+ characters.'); res.redirect('/admin/settings#admins'); return; }
     db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(req.body.password), a.id);
     req.flash('success', 'Password updated.');
-    res.redirect('/admin/settings');
+    res.redirect('/admin/settings#admins');
   });
 }
 
