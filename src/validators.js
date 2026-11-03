@@ -64,4 +64,13 @@ function validatePassword(pw) {
   return null;
 }
 
-module.exports = { isValidAadhaar, isValidPAN, isValidPhone, isValidPincode, isValidEmail, normalizePhone, str, validatePassword, ageFromDob, checkDob, maxDob, MIN_AGE };
+
+// Words that are never allowed in an ad (sexual services). The ad is refused; the admin can still block anything else.
+const BANNED_AD_WORDS = /\b(escorts?|call\s*girls?|sex(ual)?\s*services?|body\s*to\s*body|happy\s*ending|nude|nudes|erotic|sensual\s*massage|adult\s*services?|hookups?|one\s*night|prostitut\w*|nsfw|porn\w*|xxx)\b/i;
+function bannedAdText(...texts) {
+  const m = BANNED_AD_WORDS.exec(texts.join(' '));
+  return m ? m[0] : null;
+}
+
+module.exports = {
+  bannedAdText, isValidAadhaar, isValidPAN, isValidPhone, isValidPincode, isValidEmail, normalizePhone, str, validatePassword, ageFromDob, checkDob, maxDob, MIN_AGE };

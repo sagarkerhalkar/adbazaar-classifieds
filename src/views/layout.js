@@ -48,7 +48,7 @@ function catBar(req) {
   return html`<nav class="catbar" aria-label="Categories"><div class="wrap catbar-inner">
     <details class="catbar-all">
       <summary>${icon('grid', { size: 18 })}All categories ${icon('down', { size: 16 })}</summary>
-      <div class="megamenu">${cats.map((c) => html`<div class="mm-col"><a class="mm-main" href="/?cat=${c.slug}">${c.icon} ${c.name}</a>${c.subs.map((sc) => html`<a href="/?cat=${sc.slug}">${sc.name}</a>`)}</div>`)}</div>
+      <div class="megamenu">${cats.map((c) => html`<div class="mm-col"><a class="mm-main" href="/?cat=${c.slug}">${c.name}</a>${c.subs.map((sc) => html`<a href="/?cat=${sc.slug}">${sc.name}</a>`)}</div>`)}</div>
     </details>
     ${cats.slice(0, 8).map((c) => html`<a class="catbar-link ${isActive(c) ? 'active' : ''}" href="/?cat=${c.slug}">${c.name}</a>`)}
   </div></nav>`;
@@ -87,16 +87,19 @@ function adminSidebar(req, s, counts = {}) {
   <aside class="sidebar" data-sidebar>
     <a class="logo" href="/admin"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span></a>
     <nav class="side-nav">
+      ${req.admin && req.admin.role === 'payments' ? html`
+      ${item('/admin/payments', 'card', 'Payments to confirm', counts.pay, 'pay')}
+      ${item('/admin/account', 'user', 'My login')}` : html`
       ${item('/admin', 'grid', 'Dashboard')}
       ${item('/admin/clients', 'users', 'Clients', counts.kyc, 'kyc')}
       ${item('/admin/payments', 'card', 'Payments', counts.pay, 'pay')}
-      ${item('/admin/ads', 'layers', 'Ads')}
+      ${item('/admin/ads', 'layers', 'Ads', counts.free, 'free')}
       ${item('/admin/categories', 'tag', 'Categories')}
       ${item('/admin/home', 'home', 'Home page')}
       ${item('/admin/sponsors', 'bolt', 'Sponsors')}
       ${item('/admin/reports', 'chart', 'Reports', counts.reports, 'reports')}
       ${item('/admin/messages', 'mail', 'Messages')}
-      ${item('/admin/settings', 'settings', 'Settings')}
+      ${item('/admin/settings', 'settings', 'Settings')}`}
     </nav>
     <div class="side-foot">
       <a href="/" class="side-link" target="_blank">${icon('eye')}<span>View site</span></a>
@@ -187,7 +190,7 @@ function bigFooter(req, s, home) {
     <div><h4>Popular cities</h4>${cityList(home).slice(0, 8).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${c}</a>`)}</div>
     <div><h4>Help & policies</h4><a href="/about">About us</a><a href="/contact">Contact & grievances</a><a href="/pricing">Pricing</a><a href="/safety">Safety tips</a><a href="/terms">Terms of use</a><a href="/privacy">Privacy policy</a><a href="/refund-policy">Refund & cancellation</a><a href="/client/register">Sell on ${s.site_name}</a><a href="/client/login">Seller login</a><a href="/saved">Saved ads</a></div>
   </div>
-  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. All rights reserved. By using this website you accept our <a href="/terms">Terms of use</a>. Ads are published by advertisers on their own initiative and under their sole responsibility; ${s.site_name} only provides publication and browsing services and does not mediate between users. <a href="/advertise">Advertise with us</a></div></div>
+  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. All rights reserved. By using this website you accept our <a href="/terms">Terms of use</a>. Ads are published by advertisers on their own initiative and under their sole responsibility; ${s.site_name} only provides publication and browsing services, does not mediate between users and is not responsible for any deal, payment or fraud between them. <a href="/advertise">Advertise with us</a></div></div>
 </footer>`;
 }
 

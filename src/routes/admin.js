@@ -17,6 +17,8 @@ const rtc = require('../rtc');
 const { rescore, runMaintenance } = require('../ranking');
 const { callView } = require('./client');
 const Cat = require('../categories');
+const Ph = require('../photos');
+const Free = require('../freeads');
 const life = require('../lifecycle');
 const notify = require('../notify');
 const { SLOTS, ALL_SLOTS, slotLabels, slotPrices, maskFrom } = require('../slots');
@@ -29,12 +31,24 @@ const back = (req, fallback) => {
   return fallback;
 };
 
+// Staff roles. owner: everything. admin: runs the site (not the site name / brand, not staff accounts).
+// payments: only the list of payments waiting to be confirmed — no totals, reports, sellers or settings.
+const ROLES = { owner: 'Owner', admin: 'Admin', payments: 'Payment checker' };
+const PAYMENTS_ROLE_PATHS = [/^\/admin\/payments$/, /^\/admin\/payments\/\d+\/(confirm|reject)$/, /^\/admin\/topups\/\d+\/(confirm|reject)$/,
+  /^\/admin\/payment-file\/[\w.-]+$/, /^\/admin\/account$/, /^\/admin\/password$/];
+const isOwner = (req) => req.admin && req.admin.role === 'owner';
+
 function requireAdmin(req, res) {
   if (!req.admin) { res.redirect('/admin/login'); return; }
+  if (req.admin.role === 'payments' && !PAYMENTS_ROLE_PATHS.some((re) => re.test(req.path))) {
+    if (req.method !== 'GET') req.flash('error', 'Your account can only confirm payments.');
+    res.redirect('/admin/payments'); return;
+  }
   req.adminCounts = {
     kyc: db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
     pay: db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n,
     reports: db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
+    free: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'free_review'").get().n,
   };
 }
 
@@ -269,9 +283,9 @@ function topupsTable(req, rows) {
 }
 
 function paymentsView(req, rows, status, topups = []) {
-  const tabs = [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['all', 'All']];
+  const tabs = req.admin.role === 'payments' ? [] : [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['all', 'All']];
   return html`
-  <div class="page-head"><h1>Payments</h1></div>
+  <div class="page-head"><div><h1>Payments</h1>${req.admin.role === 'payments' ? html`<p class="muted">Check each payment in the bank / UPI app, then confirm or reject it. You see only payments that are waiting.</p>` : ''}</div></div>
   ${topups.length ? html`<h2>Balance top-ups ${status === 'pending' ? 'to confirm' : ''}</h2>${topupsTable(req, topups)}<h2>Ad payments</h2>` : ''}
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${status === k ? 'active' : ''}" href="/admin/payments?status=${k}">${l}</a>`)}</div>
   ${rows.length ? html`<div class="table-wrap card"><table class="table">
@@ -292,7 +306,7 @@ function paymentsView(req, rows, status, topups = []) {
 
 
 function adsView(req, rows, f) {
-  const tabs = [['active', 'Live'], ['payment_review', 'Payment review'], ['awaiting_payment', 'Unpaid'], ['paused', 'Deactivated'], ['expired', 'Expired'], ['blocked', 'Blocked'], ['deleted', 'Deleted'], ['all', 'All']];
+  const tabs = [['active', 'Live'], ['free_review', `Free ads to check${req.adminCounts && req.adminCounts.free ? ` (${req.adminCounts.free})` : ''}`], ['payment_review', 'Payment review'], ['awaiting_payment', 'Unpaid'], ['paused', 'Deactivated'], ['expired', 'Expired'], ['blocked', 'Blocked'], ['deleted', 'Deleted'], ['all', 'All']];
   return html`
   <div class="page-head"><h1>Ads</h1><form method="post" action="/admin/ads/rerank" class="inline">${csrf(req)}<button class="btn btn-ghost btn-sm">↻ Re-run ranking now</button></form></div>
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${f.status === k ? 'active' : ''}" href="/admin/ads?status=${k}">${l}</a>`)}</div>
@@ -304,10 +318,12 @@ function adsView(req, rows, f) {
       <td><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></td>
       <td><a href="/admin/clients/${a.client_id}">${a.client_name}</a></td>
       <td>${pill(a.status)}${a.top_slots ? html` <span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html` <span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html` <span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
-      <td>${a.plan_name || '—'}<div class="small muted">${rupees(a.paid_total_paise)}</div></td>
+      <td>${a.is_free ? html`<span class="pill pill-muted">Free ad</span>` : html`${a.plan_name || '—'}<div class="small muted">${rupees(a.paid_total_paise)}</div>`}</td>
       <td>${a.expires_at ? html`${fmtDay(a.expires_at)}<div class="small muted">${a.status === 'active' ? timeLeft(a.expires_at) : ''}</div>` : '—'}</td>
       <td>${a.views}</td>
       <td class="actions">
+        ${a.status === 'free_review' ? html`<form method="post" action="/admin/ads/${a.id}/free/approve" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Approve free ad</button></form>
+          <form method="post" action="/admin/ads/${a.id}/free/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200"><button class="btn btn-sm">Turn down</button></form>` : ''}
         ${a.status === 'deleted' ? '' : a.status === 'blocked'
           ? html`<form method="post" action="/admin/ads/${a.id}/unblock" class="inline">${csrf(req)}<button class="btn btn-sm">Unblock</button></form>`
           : html`<form method="post" action="/admin/ads/${a.id}/block" class="inline reject-form">${csrf(req)}<input name="reason" placeholder="Reason" maxlength="200"><button class="btn btn-danger btn-sm">Block</button></form>`}
@@ -345,7 +361,7 @@ function categoriesView(req, mains, counts) {
   const n = (c) => counts[c.id] || 0;
   const total = (m) => n(m) + m.subs.reduce((t, sc) => t + n(sc), 0);
   const editBtn = (c, isSub) => html`<button type="button" class="icon-btn" title="Edit ${c.name}" aria-label="Edit ${c.name}" data-dialog-open="${isSub ? 'cat-edit-sub' : 'cat-edit-main'}"
-    data-fill-action="/admin/categories/${c.id}" data-fill-name="${c.name}" data-fill-icon="${c.icon}" data-fill-sort="${c.sort}" data-fill-active="${c.is_active ? '1' : '0'}" data-fill-parent="${c.parent_id || ''}" data-fill-title="${c.name}">${icon('edit', { size: 15 })}</button>`;
+    data-fill-action="/admin/categories/${c.id}" data-fill-name="${c.name}" data-fill-sort="${c.sort}" data-fill-active="${c.is_active ? '1' : '0'}" data-fill-parent="${c.parent_id || ''}" data-fill-title="${c.name}">${icon('edit', { size: 15 })}</button>`;
   const delBtn = (c, subs = []) => {
     const ads = n(c) + subs.reduce((t, sc) => t + n(sc), 0);
     const what = [subs.length ? `Its ${subs.length} sub-categor${subs.length === 1 ? 'y' : 'ies'} will be deleted too.` : '', ads ? `${ads} ad${ads === 1 ? '' : 's'} must move to another category.` : 'It has no ads.'].filter(Boolean).join(' ');
@@ -359,7 +375,6 @@ function categoriesView(req, mains, counts) {
     <div><h1>Categories</h1><p class="muted">Ads are posted in a sub-category. Hidden categories disappear from menus; their running ads stay live.</p></div>
     <form method="post" action="/admin/categories/add" class="cat-add card" style="margin:0;padding:10px 12px">
       ${csrf(req)}
-      <input name="icon" maxlength="4" class="xs" placeholder="📦" aria-label="Icon (emoji)">
       <input name="name" maxlength="40" required placeholder="New main category" aria-label="Main category name" style="width:200px">
       <button class="btn btn-primary">${icon('plus', { size: 16 })} Add main category</button>
     </form>
@@ -367,10 +382,14 @@ function categoriesView(req, mains, counts) {
   <div class="catgrid">
     ${mains.map((m) => html`<article class="catcard ${m.is_active ? '' : 'off'}">
       <div class="catcard-head">
-        <div class="catcard-ic">${m.icon}</div>
+        <img class="catcard-img" src="${m.image ? imgUrl(m.image) : Ph.photoUrl(Ph.categoryPhotoName(m))}" alt="">
         <div class="catcard-name"><strong>${m.name}</strong><small>${m.subs.length} sub-categor${m.subs.length === 1 ? 'y' : 'ies'} · ${total(m)} ad${total(m) === 1 ? '' : 's'}${m.is_active ? '' : ' · hidden'}</small></div>
         ${toggle(m)}${editBtn(m, false)}${delBtn(m, m.subs)}
       </div>
+      <form method="post" action="/admin/categories/${m.id}/photo" enctype="multipart/form-data" class="catphoto">${csrf(req)}
+        <label class="btn btn-sm btn-ghost">${icon('image', { size: 15 })} ${m.image ? 'Change photo' : 'Use my own photo'}<input type="file" name="image" accept="image/jpeg,image/png,image/webp" hidden data-autosubmit></label>
+        ${m.image ? html`<button class="btn btn-sm btn-ghost" name="reset" value="1">Use built-in photo</button>` : html`<span class="small muted">Built-in photo</span>`}
+      </form>
       <div class="subchips">
         ${m.subs.length ? m.subs.map((sc) => html`<span class="subchip ${sc.is_active ? '' : 'off'}">${sc.name}${n(sc) ? html` <span class="muted">${n(sc)}</span>` : ''}${editBtn(sc, true)}${delBtn(sc)}</span>`) : html`<span class="muted small">No sub-categories — ads go straight into ${m.name}.</span>`}
       </div>
@@ -385,8 +404,8 @@ function categoriesView(req, mains, counts) {
   <dialog class="modal" id="cat-edit-main"><form method="post" data-fill="action">
     ${csrf(req)}
     <div class="modal-body"><h2>Edit <span data-fill="title"></span></h2>
-      <div class="row3" style="grid-template-columns:90px 1fr 90px">
-        ${field('Icon', html`<input name="icon" maxlength="4" data-fill="icon">`)}${field('Name', html`<input name="name" maxlength="40" required data-fill="name">`)}${field('Order', html`<input type="number" name="sort" data-fill="sort">`)}
+      <div class="row2" style="grid-template-columns:1fr 90px">
+        ${field('Name', html`<input name="name" maxlength="40" required data-fill="name">`)}${field('Order', html`<input type="number" name="sort" data-fill="sort">`)}
       </div>
       ${field('Show on site', html`<select name="is_active" data-fill="active"><option value="1">Yes — visible</option><option value="0">No — hidden</option></select>`)}
     </div>
@@ -397,7 +416,7 @@ function categoriesView(req, mains, counts) {
     ${csrf(req)}
     <div class="modal-body"><h2>Edit <span data-fill="title"></span></h2>
       <div class="row2" style="grid-template-columns:1fr 90px">${field('Name', html`<input name="name" maxlength="40" required data-fill="name">`)}${field('Order', html`<input type="number" name="sort" data-fill="sort">`)}</div>
-      ${field('Main category', html`<select name="parent_id" data-fill="parent">${mains.map((m) => html`<option value="${m.id}">${m.icon} ${m.name}</option>`)}</select>`, 'Move it under another main category if you like.')}
+      ${field('Main category', html`<select name="parent_id" data-fill="parent">${mains.map((m) => html`<option value="${m.id}">${m.name}</option>`)}</select>`, 'Move it under another main category if you like.')}
       ${field('Show on site', html`<select name="is_active" data-fill="active"><option value="1">Yes — visible</option><option value="0">No — hidden</option></select>`)}
     </div>
     <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn btn-primary">Save</button></div>
@@ -475,7 +494,7 @@ function settingsView(req, { s, plans, cats, admins }) {
     <button type="button" class="tab" data-tab="alerts">${icon('bell', { size: 16 })} Alerts ${alertChannels().length ? html`<span class="pill pill-ok">${alertChannels().length}</span>` : ''}</button>
     <button type="button" class="tab" data-tab="site">${icon('settings', { size: 16 })} Site & payments</button>
     <button type="button" class="tab" data-tab="legal">${icon('id', { size: 16 })} Business & legal ${!s.legal_name || !(s.grievance_email || s.support_email) ? html`<span class="badge-count">!</span>` : ''}</button>
-    <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} Admins</button>
+    <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} Staff & brand</button>
   </div>
   <div class="tab-panel" data-panel="email">${messagingSetupCard(req, s)}</div>
   <section class="card tab-panel" data-panel="alerts">
@@ -484,7 +503,7 @@ function settingsView(req, { s, plans, cats, admins }) {
     <form method="post" action="/admin/alerts" class="form">
       ${csrf(req)}
       <div class="field"><span class="label">Send me alerts for</span><div class="switch-list">
-        ${[['payment', 'Payments and balance top-ups to confirm'], ['seller', 'New sellers to verify'], ['complaint', 'Complaints about ads (and automatic blocks)'], ['sponsor', 'Enquiries from advertisers']].map(([k, l]) => html`<label class="check switch-line"><input type="checkbox" class="switch" name="alert_events[]" value="${k}" ${String(s.alert_events || 'payment,seller,complaint,sponsor').split(',').includes(k) ? 'checked' : ''}><span>${l}</span></label>`)}
+        ${[['payment', 'Payments and balance top-ups to confirm'], ['seller', 'New sellers to verify'], ['complaint', 'Complaints about ads (and automatic blocks)'], ['sponsor', 'Enquiries from advertisers'], ['free_ad', 'Free ads to check']].map(([k, l]) => html`<label class="check switch-line"><input type="checkbox" class="switch" name="alert_events[]" value="${k}" ${String(s.alert_events || 'payment,seller,complaint,sponsor,free_ad').split(',').includes(k) ? 'checked' : ''}><span>${l}</span></label>`)}
       </div></div>
       <div class="cols2">
         <fieldset><legend>WhatsApp</legend>
@@ -554,6 +573,13 @@ function settingsView(req, { s, plans, cats, admins }) {
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
         ${field('Block a seller automatically after complaints from', html`<input type="number" name="complaint_block_threshold" min="0" max="100000" value="${s.complaint_block_threshold}">`, 'different people about the same ad. The ad is removed and the seller cannot post again. 0 = off (you decide).')}
         ${field('Sponsored card in listings after every', html`<input type="number" name="sponsor_every" min="3" max="50" value="${s.sponsor_every}">`, 'ads (see Sponsors)')}
+        <h3>Free ads</h3>
+        <label class="check"><input type="checkbox" name="free_ads" value="1" ${s.free_ads !== '0' ? 'checked' : ''}> <span>Sellers may post ads <strong>free</strong> (shown after all paid ads, random order, never in TOP)</span></label>
+        <div class="row3">
+          ${field('Free ad runs for (days)', html`<input type="number" name="free_ad_days" min="1" max="365" value="${s.free_ad_days || 15}">`)}
+          ${field('Free ads per seller at a time', html`<input type="number" name="free_ads_per_seller" min="1" max="50" value="${s.free_ads_per_seller || 2}">`)}
+          <label class="field"><span class="label">Check before live</span><span class="switch-row"><input type="checkbox" class="switch" name="free_ads_review" value="1" ${s.free_ads_review !== '0' ? 'checked' : ''}> Admin checks each free ad</span></label>
+        </div>
         <button class="btn btn-accent">Save</button>
       </form>
       <p class="small muted">Sellers see: login check takes ${approveTimeText(s.auto_approve_minutes)}; payment confirmation takes ${PAYMENT_TIME_TEXT}.</p>
@@ -563,8 +589,7 @@ function settingsView(req, { s, plans, cats, admins }) {
       <h2>Site & payment details</h2>
       <form method="post" action="/admin/settings" enctype="multipart/form-data" class="form">
         ${csrf(req)}
-        ${field('Site name', html`<input name="site_name" required maxlength="40" value="${s.site_name}">`)}
-        ${field('Tagline', html`<input name="tagline" maxlength="120" value="${s.tagline}">`)}
+        <p class="small muted">Site name: <strong>${s.site_name}</strong> — ${isOwner(req) ? html`change it in <a href="#admins">Staff & brand</a>.` : 'only the owner can change it.'}</p>
         <div class="row2">${field('Your UPI ID', html`<input name="upi_id" maxlength="80" value="${s.upi_id}" placeholder="yourname@okhdfcbank">`)}${field('UPI payee name', html`<input name="upi_payee_name" maxlength="80" value="${s.upi_payee_name}">`)}</div>
         ${field('UPI QR code image', html`<input type="file" name="upi_qr" accept="image/*">`, s.upi_qr_file ? 'A QR is uploaded — choose a file to replace it.' : 'Upload the QR from your UPI / merchant app')}
         ${s.upi_qr_file ? html`<img class="upi-qr" src="${imgUrl(s.upi_qr_file)}" alt="UPI QR">` : ''}
@@ -597,15 +622,31 @@ function settingsView(req, { s, plans, cats, admins }) {
     </section>
     <section class="tab-panel" data-panel="admins"><div class="cols2">
      <div class="card">
-      <h2>Admins</h2>
-      <ul class="list">${admins.map((a) => html`<li><span><strong>${a.name}</strong> <span class="muted small">${a.email}</span></span></li>`)}</ul>
-      <form method="post" action="/admin/admins" class="form">
+      <h2>Staff logins</h2>
+      <p class="small muted"><strong>Admin</strong> runs the site. <strong>Payment checker</strong> only sees payments waiting to be confirmed — no totals, reports, sellers or settings. Only the owner adds or removes staff.</p>
+      <ul class="list">${admins.map((a) => html`<li><span><strong>${a.name}</strong> <span class="pill ${a.role === 'owner' ? 'pill-top' : a.role === 'payments' ? 'pill-info' : 'pill-muted'}">${ROLES[a.role] || a.role}</span>${a.is_active ? '' : html` <span class="pill pill-bad">Removed</span>`}<span class="muted small" style="display:block">${a.email}</span></span>
+        ${isOwner(req) && a.role !== 'owner' ? html`<form method="post" action="/admin/admins/${a.id}" class="inline">${csrf(req)}
+          ${a.is_active ? html`<select name="role" data-autosubmit aria-label="Role of ${a.name}">${['admin', 'payments'].map((k) => html`<option value="${k}" ${a.role === k ? 'selected' : ''}>${ROLES[k]}</option>`)}</select>
+          <button class="btn btn-sm btn-danger" name="action" value="remove" data-confirm="Remove ${a.name}? They can no longer log in.">Remove</button>` : html`<button class="btn btn-sm" name="action" value="enable">Allow login again</button>`}</form>` : ''}</li>`)}</ul>
+      ${isOwner(req) ? html`<form method="post" action="/admin/admins" class="form">
         ${csrf(req)}
+        <h3>Add a staff login</h3>
         <div class="row2">${field('Name', html`<input name="name" required maxlength="60">`)}${field('Email', html`<input name="email" type="email" required>`)}</div>
-        ${field('Password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`, 'At least 6 characters')}
-        <button class="btn btn-primary">Add admin</button>
-      </form>
+        <div class="row2">${field('Password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`, 'At least 6 characters')}
+          ${field('Can do', html`<select name="role"><option value="payments">Payment checker — only confirm payments</option><option value="admin">Admin — run the site</option></select>`)}</div>
+        <button class="btn btn-primary">Add staff login</button>
+      </form>` : ''}
      </div>
+     ${isOwner(req) ? html`<div class="card">
+      <h2>Brand (owner only)</h2>
+      <p class="small muted">The site name shows in the header, emails, receipts and legal pages. Change it any time, for example when you pick your final brand name.</p>
+      <form method="post" action="/admin/brand" class="form">
+        ${csrf(req)}
+        ${field('Site name', html`<input name="site_name" required maxlength="40" value="${s.site_name}">`)}
+        ${field('Tagline', html`<input name="tagline" maxlength="120" value="${s.tagline}">`)}
+        <button class="btn btn-primary">Save brand</button>
+      </form>
+     </div>` : ''}
      <div class="card">
       <h2>Change my password</h2>
       <form method="post" action="/admin/password" class="form">
@@ -635,11 +676,11 @@ function register(app) {
   app.post('/admin/login', (req, res) => {
     const email = V.str(req.body.email, 120).toLowerCase();
     if (!rateLimit(`alogin:${req.ip}`, 10, 15 * 60_000)) { res.status(429).html(page(req, 'Admin login', loginForm(req, 'Too many attempts. Wait 15 minutes.'))); return; }
-    const a = db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
+    const a = db.prepare('SELECT * FROM admins WHERE email = ? AND is_active = 1').get(email);
     if (!a || !verifyPassword(req.body.password, a.password_hash)) { res.status(401).html(page(req, 'Admin login', loginForm(req, 'Incorrect email or password.'))); return; }
     req.regenerateSession();
     req.session.adminId = a.id;
-    res.redirect('/admin');
+    res.redirect(a.role === 'payments' ? '/admin/payments' : '/admin');
   });
   app.post('/admin/logout', (req, res) => { req.regenerateSession(); res.redirect('/admin/login'); });
 
@@ -776,7 +817,7 @@ function register(app) {
         .run(status, note, req.admin.id, now, status, callAt, c.id);
       if (status === 'suspended') {
         // Hide their live ads; remaining time is kept so unblocking restores them.
-        db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment','paused')").run(now, c.id);
+        db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment','paused','free_review')").run(now, c.id);
       }
       if (status === 'approved' && c.status === 'suspended') {
         // Unblock: ads that were hidden because of the block come back (live if their paid time is not over).
@@ -901,7 +942,7 @@ function register(app) {
 
   // ---- Payments ----
   app.get('/admin/payments', requireAdmin, (req, res) => {
-    const status = ['pending', 'paid', 'rejected', 'all'].includes(req.query.status) ? req.query.status : 'pending';
+    const status = req.admin.role === 'payments' ? 'pending' : ['pending', 'paid', 'rejected', 'all'].includes(req.query.status) ? req.query.status : 'pending';
     const rows = db.prepare(`SELECT p.*, c.name AS client_name, a.title AS ad_title FROM payments p
       JOIN clients c ON c.id = p.client_id JOIN ads a ON a.id = p.ad_id
       WHERE ${status === 'all' ? "p.status != 'created'" : 'p.status = ?'} ORDER BY p.id ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 300`)
@@ -957,7 +998,7 @@ function register(app) {
 
   // ---- Ads ----
   app.get('/admin/ads', requireAdmin, (req, res) => {
-    const status = ['active', 'payment_review', 'awaiting_payment', 'paused', 'expired', 'blocked', 'deleted', 'all'].includes(req.query.status) ? req.query.status : 'active';
+    const status = ['active', 'free_review', 'payment_review', 'awaiting_payment', 'paused', 'expired', 'blocked', 'deleted', 'all'].includes(req.query.status) ? req.query.status : 'active';
     const q = V.str(req.query.q, 80);
     const where = []; const args = [];
     if (status !== 'all') { where.push('a.status = ?'); args.push(status); } else where.push("a.status != 'deleted'");
@@ -969,6 +1010,24 @@ function register(app) {
   });
   const adById = (id) => db.prepare('SELECT * FROM ads WHERE id = ?').get(parseInt(id, 10) || 0);
 
+  // Free ads waiting for the admin's check
+  app.post('/admin/ads/:id/free/approve', requireAdmin, (req, res) => {
+    const ad = Free.approve(parseInt(req.params.id, 10) || 0);
+    if (ad) {
+      notify.inbox(ad.client_id, { kind: 'free_live', tone: 'success', title: `Your free ad is live — ${ad.title}`, body: `It runs for ${Free.config().days} days and is shown after paid ads. Upgrade any time to be seen first.`, link: `/client/ads/${ad.id}/pay`, linkText: 'Upgrade to paid' });
+      req.flash('success', `Free ad #${ad.id} is live.`);
+    }
+    res.redirect(back(req, '/admin/ads?status=free_review'));
+  });
+  app.post('/admin/ads/:id/free/reject', requireAdmin, (req, res) => {
+    const note = V.str(req.body.note, 200) || 'It does not follow our posting rules';
+    const ad = Free.reject(parseInt(req.params.id, 10) || 0);
+    if (ad) {
+      notify.inbox(ad.client_id, { kind: 'free_rejected', tone: 'warn', title: `Free ad not approved — ${ad.title}`, body: `Reason: ${note}. Edit the ad and try again, or publish it with a paid plan.`, link: `/client/ads/${ad.id}/edit`, linkText: 'Edit ad' });
+      req.flash('success', `Free ad #${ad.id} turned down. The seller sees the reason.`);
+    }
+    res.redirect(back(req, '/admin/ads?status=free_review'));
+  });
   app.post('/admin/ads/:id/block', requireAdmin, (req, res) => {
     const ad = adById(req.params.id);
     if (ad) {
@@ -1074,17 +1133,19 @@ function register(app) {
   app.get('/admin/live', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (!req.admin) { res.status(401).json({ ok: false }); return; }
+    const payOnly = req.admin.role === 'payments';
     const last = db.prepare(`SELECT p.id, p.amount_paise, p.wallet_paise, c.name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.status = 'pending' ORDER BY p.id DESC LIMIT 1`).get();
     const lastTop = db.prepare(`SELECT t.id, t.amount_paise, c.name FROM wallet_topups t JOIN clients c ON c.id = t.client_id WHERE t.status = 'pending' ORDER BY t.id DESC LIMIT 1`).get();
     const lastSeller = db.prepare("SELECT id, name FROM clients WHERE status IN ('pending','video_call') ORDER BY id DESC LIMIT 1").get();
     res.json({
       ok: true,
-      kyc: db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
+      kyc: payOnly ? 0 : db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
       pay: db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n,
-      reports: db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
+      reports: payOnly ? 0 : db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
       payKey: `${last ? last.id : 0}-${lastTop ? lastTop.id : 0}`,
       payText: last ? `New payment ${rupees(last.amount_paise - (last.wallet_paise || 0))} from ${last.name}` : lastTop ? `Balance top-up ${rupees(lastTop.amount_paise)} from ${lastTop.name}` : '',
-      sellerKey: lastSeller ? lastSeller.id : 0, sellerText: lastSeller ? `New seller to verify: ${lastSeller.name}` : '',
+      sellerKey: payOnly ? 0 : lastSeller ? lastSeller.id : 0, sellerText: payOnly ? '' : lastSeller ? `New seller to verify: ${lastSeller.name}` : '',
+      free: payOnly ? 0 : db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'free_review'").get().n,
     });
   });
   require('./reports').register(app, { requireAdmin, page });
@@ -1099,12 +1160,12 @@ function register(app) {
   app.get('/admin/settings', requireAdmin, (req, res) => {
     res.html(page(req, 'Settings', settingsView(req, {
       s: getSettings(), plans: db.prepare('SELECT * FROM plans ORDER BY sort, days').all(),
-      cats: db.prepare('SELECT * FROM categories ORDER BY sort, name').all(), admins: db.prepare('SELECT id, name, email FROM admins').all(),
+      cats: db.prepare('SELECT * FROM categories ORDER BY sort, name').all(), admins: db.prepare('SELECT id, name, email, role, is_active FROM admins ORDER BY role = \'owner\' DESC, id').all(),
     })));
   });
   app.post('/admin/settings', requireAdmin, (req, res) => {
     const b = req.body;
-    for (const k of ['site_name', 'tagline', 'upi_id', 'upi_payee_name', 'support_phone', 'support_email']) setSetting(k, V.str(b[k], 120));
+    for (const k of ['upi_id', 'upi_payee_name', 'support_phone', 'support_email']) setSetting(k, V.str(b[k], 120));
     if (req.files.upi_qr?.[0]) {
       try {
         const name = saveUpload(req.files.upi_qr[0], 'ads', { maxMb: 3 });
@@ -1177,6 +1238,25 @@ function register(app) {
     req.flash('success', `"${name}" saved${active ? '' : ' — deactivated (hidden from the site menus and new ads; existing ads keep running)'}.`);
     res.redirect('/admin/categories');
   });
+  // Category tile photo: the admin's own picture, or back to the built-in photo.
+  app.post('/admin/categories/:id/photo', requireAdmin, (req, res) => {
+    const c = Cat.byId(req.params.id);
+    if (!c) { res.redirect('/admin/categories'); return; }
+    const file = req.files && req.files.image && req.files.image[0];
+    if (req.body.reset === '1') {
+      if (c.image) removeFile('ads', c.image);
+      db.prepare('UPDATE categories SET image = NULL WHERE id = ?').run(c.id);
+      req.flash('success', `"${c.name}" uses the built-in photo again.`);
+    } else if (file && file.data && file.data.length) {
+      try {
+        const name = saveUpload(file, 'ads', { maxMb: 4 });
+        if (c.image) removeFile('ads', c.image);
+        db.prepare('UPDATE categories SET image = ? WHERE id = ?').run(name, c.id);
+        req.flash('success', `New photo saved for "${c.name}".`);
+      } catch (e) { if (!(e instanceof UploadError)) throw e; req.flash('error', e.message); }
+    } else req.flash('error', 'Choose a photo first.');
+    res.redirect('/admin/categories');
+  });
   app.post('/admin/categories/:id/delete', requireAdmin, (req, res) => {
     const c = Cat.byId(req.params.id);
     if (!c) { res.redirect('/admin/categories'); return; }
@@ -1214,13 +1294,17 @@ function register(app) {
     setSetting('require_mobile_otp', req.body.require_mobile_otp === '1' ? '1' : '0');
     setSetting('complaint_block_threshold', String(Math.max(0, Math.min(100000, parseInt(req.body.complaint_block_threshold, 10) || 0))));
     setSetting('sponsor_every', String(Math.max(3, Math.min(50, parseInt(req.body.sponsor_every, 10) || 8))));
+    setSetting('free_ads', req.body.free_ads === '1' ? '1' : '0');
+    setSetting('free_ads_review', req.body.free_ads_review === '1' ? '1' : '0');
+    setSetting('free_ad_days', String(Math.max(1, Math.min(365, parseInt(req.body.free_ad_days, 10) || 15))));
+    setSetting('free_ads_per_seller', String(Math.max(1, Math.min(50, parseInt(req.body.free_ads_per_seller, 10) || 2))));
     const em = V.str(req.body.notify_email, 120);
     if (!em || V.isValidEmail(em)) setSetting('notify_email', em);
     req.flash('success', 'Saved.');
     res.redirect('/admin/settings#approvals');
   });
   const saveAlerts = (b) => {
-    const ev = [].concat(b['alert_events[]'] || b.alert_events || []).filter((k) => ['payment', 'seller', 'complaint', 'sponsor'].includes(k));
+    const ev = [].concat(b['alert_events[]'] || b.alert_events || []).filter((k) => ['payment', 'seller', 'complaint', 'sponsor', 'free_ad'].includes(k));
     setSetting('alert_events', ev.join(',') || 'none');
     setSetting('alert_wa_mode', ['callmebot', 'cloud'].includes(b.alert_wa_mode) ? b.alert_wa_mode : '');
     setSetting('alert_wa_phone', V.str(b.alert_wa_phone, 20).replace(/[^0-9+]/g, ''));
@@ -1314,21 +1398,61 @@ function register(app) {
         </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No messages yet.</p></div>`}`));
   });
 
+  // Staff accounts — only the owner can add, change or remove them.
+  const ownerOnly = (req, res) => { if (isOwner(req)) return true; req.flash('error', 'Only the owner can do this.'); res.redirect('/admin/settings#admins'); return false; };
   app.post('/admin/admins', requireAdmin, (req, res) => {
+    if (!ownerOnly(req, res)) return;
     const email = V.str(req.body.email, 120).toLowerCase(); const name = V.str(req.body.name, 60);
+    const role = ['admin', 'payments'].includes(req.body.role) ? req.body.role : 'payments';
     if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6) { req.flash('error', 'Enter name, valid email and a password of 6+ characters.'); res.redirect('/admin/settings#admins'); return; }
-    if (db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) { req.flash('error', 'Admin already exists.'); res.redirect('/admin/settings#admins'); return; }
-    db.prepare('INSERT INTO admins (name, email, password_hash, created_at) VALUES (?,?,?,?)').run(name, email, hashPassword(req.body.password), Date.now());
-    req.flash('success', 'Admin added.');
+    if (db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) { req.flash('error', 'Someone with this email already has a staff login.'); res.redirect('/admin/settings#admins'); return; }
+    db.prepare('INSERT INTO admins (name, email, password_hash, created_at, role) VALUES (?,?,?,?,?)').run(name, email, hashPassword(req.body.password), Date.now(), role);
+    req.flash('success', `${ROLES[role]} login added for ${name}.`);
     res.redirect('/admin/settings#admins');
   });
+  app.post('/admin/admins/:id', requireAdmin, (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    const a = db.prepare('SELECT * FROM admins WHERE id = ?').get(parseInt(req.params.id, 10) || 0);
+    if (!a || a.role === 'owner') { req.flash('error', 'The owner account cannot be changed here.'); res.redirect('/admin/settings#admins'); return; }
+    if (req.body.action === 'remove') {
+      db.prepare('UPDATE admins SET is_active = 0 WHERE id = ?').run(a.id);
+      db.prepare("DELETE FROM sessions WHERE data LIKE ?").run(`%"adminId":${a.id},%`);
+      db.prepare("DELETE FROM sessions WHERE data LIKE ?").run(`%"adminId":${a.id}}%`);
+      req.flash('success', `${a.name} can no longer log in.`);
+    } else if (req.body.action === 'enable') {
+      db.prepare('UPDATE admins SET is_active = 1 WHERE id = ?').run(a.id);
+      req.flash('success', `${a.name} can log in again.`);
+    } else if (['admin', 'payments'].includes(req.body.role)) {
+      db.prepare('UPDATE admins SET role = ? WHERE id = ?').run(req.body.role, a.id);
+      req.flash('success', `${a.name} is now: ${ROLES[req.body.role]}.`);
+    }
+    res.redirect('/admin/settings#admins');
+  });
+  // Brand: site name and tagline — owner only (the name can change later, e.g. if "AdBazaar" is taken).
+  app.post('/admin/brand', requireAdmin, (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    const name = V.str(req.body.site_name, 40);
+    if (!name) { req.flash('error', 'Enter the site name.'); res.redirect('/admin/settings#admins'); return; }
+    setSetting('site_name', name); setSetting('tagline', V.str(req.body.tagline, 120));
+    req.flash('success', `Site name is now "${name}". It shows everywhere: header, emails, receipts and legal pages.`);
+    res.redirect('/admin/settings#admins');
+  });
+  // Own password (every staff member, including the payment checker)
+  app.get('/admin/account', requireAdmin, (req, res) => res.html(page(req, 'My login', html`
+    <div class="page-head"><div><h1>My login</h1><p class="muted">${req.admin.name} · ${req.admin.email} · ${ROLES[req.admin.role] || 'Admin'}</p></div></div>
+    <form method="post" action="/admin/password" class="card form narrow">${csrf(req)}
+      <h2>Change my password</h2>
+      ${field('Current password', html`<input type="password" name="current" required autocomplete="current-password">`)}
+      ${field('New password', html`<input type="password" name="password" required minlength="6" autocomplete="new-password">`)}
+      <button class="btn btn-primary">Save new password</button></form>`)));
   app.post('/admin/password', requireAdmin, (req, res) => {
     const a = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.admin.id);
-    if (!verifyPassword(req.body.current, a.password_hash)) { req.flash('error', 'Current password is incorrect.'); res.redirect('/admin/settings#admins'); return; }
-    if (String(req.body.password || '').length < 6) { req.flash('error', 'New password must be 6+ characters.'); res.redirect('/admin/settings#admins'); return; }
+    const to = req.admin.role === 'payments' ? '/admin/account' : '/admin/settings#admins';
+    if (!verifyPassword(req.body.current, a.password_hash)) { req.flash('error', 'Current password is incorrect.'); res.redirect(to); return; }
+    if (String(req.body.password || '').length < 6) { req.flash('error', 'New password must be 6+ characters.'); res.redirect(to); return; }
     db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(req.body.password), a.id);
     req.flash('success', 'Password updated.');
-    res.redirect('/admin/settings#admins');
+    res.redirect(to);
   });
 }
 

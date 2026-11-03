@@ -204,6 +204,15 @@ addColumn('plans', 'label', 'TEXT');                                   // e.g. "
 // Admin TOP: pin an ad in TOP until a date, in chosen 3-hour slots (on top of what the seller bought)
 addColumn('ads', 'admin_top_until', 'INTEGER');
 addColumn('ads', 'admin_top_slots', 'INTEGER NOT NULL DEFAULT 255');
+// Free ads: posted without payment, shown after all paid ads (never in TOP unless the admin pins them).
+addColumn('ads', 'is_free', 'INTEGER NOT NULL DEFAULT 0');
+// A photo the admin uploads for a category tile (empty = a built-in photo is used).
+addColumn('categories', 'image', 'TEXT');
+// Staff roles: owner (everything, incl. site name and staff) | admin (runs the site) | payments (only confirms payments).
+// The first admin account becomes the owner.
+addColumn('admins', 'role', "TEXT NOT NULL DEFAULT 'admin'", "UPDATE admins SET role = 'owner' WHERE id = (SELECT MIN(id) FROM admins)");
+addColumn('admins', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
+if (!db.prepare("SELECT 1 FROM admins WHERE role = 'owner' LIMIT 1").get()) db.exec("UPDATE admins SET role = 'owner' WHERE id = (SELECT MIN(id) FROM admins)");
 db.exec(`
 CREATE TABLE IF NOT EXISTS wallet_tx (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -296,6 +305,17 @@ if (!db.prepare("SELECT 1 FROM settings WHERE key = 'subcats_seeded'").get()) {
   db.prepare("INSERT INTO settings (key, value) VALUES ('subcats_seeded', '1')").run();
 }
 
+// "Spa & Wellness" main category (added once; rename or delete it in Admin → Categories). Wellness only — no adult services.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'wellness_seeded'").get()) {
+  if (!db.prepare("SELECT 1 FROM categories WHERE slug = 'wellness'").get()) {
+    const r = db.prepare("INSERT INTO categories (name, slug, icon, sort) VALUES ('Spa & Wellness', 'wellness', '', 10)").run();
+    const ins = db.prepare('INSERT OR IGNORE INTO categories (name, slug, icon, sort, parent_id) VALUES (?, ?, ?, ?, ?)');
+    [['Massage & spa', 'wellness-massage-spa'], ['Beauty & salon', 'wellness-beauty-salon'], ['Yoga & meditation', 'wellness-yoga-meditation']]
+      .forEach(([n, s], i) => ins.run(n, s, '', i, Number(r.lastInsertRowid)));
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('wellness_seeded', '1')").run();
+}
+
 if (!db.prepare('SELECT 1 FROM top_slots LIMIT 1').get()) {
   // Default TOP price per day for each 3-hour slot (₹): night is cheap, evening is prime time.
   const prices = [5, 5, 10, 20, 20, 20, 30, 25];
@@ -312,7 +332,11 @@ const DEFAULT_SETTINGS = {
   upi_qr_file: '',
   auto_approve_minutes: '1',
   complaint_block_threshold: '500',  // block a seller when one ad gets complaints from this many different people (0 = off)
-  sponsor_every: '8',                 // show a sponsored card after every N ads in listings          // approve verified clients automatically if admin doesn't act (0 = off)
+  sponsor_every: '8',                 // show a sponsored card after every N ads in listings
+  free_ads: '1',                      // sellers may post ads without paying (shown after paid ads)
+  free_ad_days: '15',                 // how long a free ad stays live
+  free_ads_per_seller: '2',           // free ads one seller may have live or waiting at the same time
+  free_ads_review: '1',               // admin checks each free ad before it goes live (1) or it goes live at once (0)
   require_mobile_otp: '1',            // mobile must be verified by SMS code when SMS is set up
   notify_email: process.env.ADMIN_EMAIL || '',
   // Business & legal details (Admin → Settings → Business & legal) — shown on receipts, Terms, Contact page

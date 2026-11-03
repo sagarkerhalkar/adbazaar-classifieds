@@ -15,9 +15,11 @@ if (!email || !password || password.length < 6) {
 }
 const existing = db.prepare('SELECT id FROM admins WHERE email = ?').get(email.toLowerCase());
 if (existing) {
-  db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(password), existing.id);
+  db.prepare('UPDATE admins SET password_hash = ?, is_active = 1 WHERE id = ?').run(hashPassword(password), existing.id);
   console.log(`Password updated for ${email}`);
 } else {
-  db.prepare('INSERT INTO admins (name, email, password_hash, created_at) VALUES (?, ?, ?, ?)').run(name, email.toLowerCase(), hashPassword(password), Date.now());
-  console.log(`Admin created: ${email}`);
+  // The first account (or the first one when no owner exists) is the owner; later ones are normal admins.
+  const role = db.prepare("SELECT 1 FROM admins WHERE role = 'owner' AND is_active = 1").get() ? 'admin' : 'owner';
+  db.prepare('INSERT INTO admins (name, email, password_hash, created_at, role) VALUES (?, ?, ?, ?, ?)').run(name, email.toLowerCase(), hashPassword(password), Date.now(), role);
+  console.log(`${role === 'owner' ? 'Owner' : 'Admin'} created: ${email}`);
 }

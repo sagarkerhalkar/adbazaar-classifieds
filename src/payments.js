@@ -60,7 +60,7 @@ function confirmPayment(paymentId, { adminId = null, razorpayPaymentId = null, n
     const dayMs = 86400_000;
 
     let startsAt, expiresAt, paidTotal, topSlots;
-    if (ad.status === 'active' && ad.expires_at > now) {
+    if (ad.status === 'active' && ad.expires_at > now && !ad.is_free) {
       // Extension of a running ad: add days on top of the current expiry.
       startsAt = ad.starts_at;
       expiresAt = ad.expires_at + pay.days * dayMs;
@@ -79,7 +79,8 @@ function confirmPayment(paymentId, { adminId = null, razorpayPaymentId = null, n
 
     // Never re-activate an ad the admin has blocked; keep the payment recorded.
     if (ad.status !== 'blocked') {
-      db.prepare(`UPDATE ads SET status = 'active', plan_id = ?, is_top = ?, top_slots = ?, paid_total_paise = ?,
+      // A free ad that gets paid becomes a normal paid ad (its free days end, the paid days start now).
+      db.prepare(`UPDATE ads SET status = 'active', is_free = 0, plan_id = ?, is_top = ?, top_slots = ?, paid_total_paise = ?,
                   starts_at = ?, expires_at = ?, updated_at = ? WHERE id = ?`)
         .run(pay.plan_id, topSlots ? 1 : 0, topSlots, paidTotal, startsAt, expiresAt, now, ad.id);
       rescore(ad.id);

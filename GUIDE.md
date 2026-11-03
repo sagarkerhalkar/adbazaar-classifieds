@@ -592,3 +592,55 @@ Things to know:
 5. **Online payments (Razorpay or another gateway):** they check your policy and contact pages, then ask for KYC (PAN, bank account, business proof). Put the keys in `.env`.
 6. **Get found on Google (free):** add your domain to **Google Search Console** and submit `https://your-domain/sitemap.xml`. Make a free **Google Business Profile**.
 7. **Before launch:** remove the test data (`npm run seed:remove`), set a strong admin password, set up email and alerts, and ask a lawyer to read the Terms, Privacy and Refund pages. They are good templates, not legal advice.
+
+---
+
+## Part 22 — Real photos, free ads, staff roles, your brand name, smarter search (3 Nov, late night)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5** in the browser. The update swaps the old test ads for new ones with real photos by itself. Your real sellers and ads are not touched.
+
+**Real photos.** The banners, the category tiles, ads without a picture and the test ads now use real photos (people at work, phones, laptops, cars and more) that ship with the app, so nothing has to download. They are from Unsplash and free for commercial use; the list is in `public/photos/CREDITS.md`. Use your own instead at any time:
+- Banners: Admin → **Home page** → Edit banner → upload a picture.
+- Category tiles: Admin → **Categories** → **Use my own photo** on any main category.
+
+**Free ads.** Sellers can now post without paying. On the payment screen they see **Post it free**:
+- Free ads show **after every paid ad**, in random order, and never in TOP. There is no guarantee of a high place.
+- You set the rules in Admin → Settings → **Approvals → Free ads**: on or off, how many days a free ad runs (default 15), how many free ads one seller may have at a time (default 2), and whether you check each free ad first (default on).
+- Free ads to check are in Admin → **Ads → Free ads to check**: **Approve** or **Turn down** (the seller sees your reason).
+- A seller can **Upgrade to paid** any time; the ad then moves above every free ad.
+
+**Staff roles.** Admin → Settings → **Staff & brand**. Your first login is the **Owner**.
+
+| Role | What they can do |
+|---|---|
+| **Owner** (you) | Everything, including the site name and the staff list |
+| **Admin** | Runs the site (sellers, ads, payments, reports, settings), but cannot change the site name or add or remove staff |
+| **Payment checker** | Sees only the payments waiting to be confirmed, and confirms or rejects them. No totals, no reports, no sellers, no settings |
+
+To add someone, fill in **Add a staff login**, choose what they can do, and give them the email and password. **Remove** stops their login at once.
+
+**Your brand name (owner only).** In **Staff & brand → Brand** you can change the site name and tagline at any time, for example if "AdBazaar" is already taken. The new name shows everywhere: header, emails, receipts and legal pages. Admins and payment checkers cannot change it.
+
+**Smarter search.** People can type the way they talk:
+
+| They type | They find |
+|---|---|
+| `mob` | Mobile phones (part of a word is enough) |
+| `iphnoe`, `speker` | iPhone, speaker (typing mistakes are corrected and shown) |
+| `gadi`, `naukri`, `ghar`, `kiraya` | Cars, jobs, houses, rent (common Hinglish words) |
+| `mobile` | Phones, including OnePlus, Redmi and other brands |
+| `tuition` | Everything in Education › Tuition (category names count) |
+| `spa nashik`, `flat in bombay` | Only Nashik, only Mumbai (city names in the search, old names too) |
+
+- While typing, a list shows matching categories, ads and cities; use ↓ ↑ and Enter.
+- Order of results: TOP ads first; then ads whose title has every word; then the rest. Inside each group, the normal order applies (more paid, higher).
+- If nothing is found in a city, one click shows the same search in all cities.
+
+**Terms (stronger).** On top of the earlier rules, the Terms now also say:
+- licences, taxes (GST) and the law are the seller's own job;
+- our payment and ad records are treated as correct, payment problems must be reported within 7 days, and no staff member can promise anything on your behalf;
+- general clauses: no partnership, events outside our control, the English version applies.
+
+The arbitration clause was changed to "an arbitrator chosen by both sides". Since a 2024 Supreme Court judgment, an arbitrator chosen by one side alone can make the clause fail.
+
+**What the site does not allow.** Adult or sexual services, escort or "companion" ads are not allowed. In India, advertising them is a crime under the Immoral Traffic (Prevention) Act and the IT Act, and the site owner can be held responsible too. Massage and spa ads are welcome only for genuine wellness and therapy; there is a **Spa & Wellness** category for them. Toys, beauty, salons and every normal product or service are fine.

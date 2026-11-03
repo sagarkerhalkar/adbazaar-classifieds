@@ -219,7 +219,7 @@
   });
 
   // Selects that submit their form when changed (sort menu)
-  $$('select[data-autosubmit]').forEach((sel) => sel.addEventListener('change', () => sel.form.submit()));
+  $$('select[data-autosubmit], input[type=file][data-autosubmit]').forEach((el) => el.addEventListener('change', () => { if (el.type !== 'file' || el.files.length) el.form.submit(); }));
 
   // Gentle 3D tilt on ad cards (mouse only, off when motion is reduced)
   function bindTilt() {
@@ -367,4 +367,5 @@
   const load = (f) => { const s = document.createElement('script'); s.src = '/public/js/' + f + v; s.defer = true; document.body.appendChild(s); };
   load('live.js');
   if (!document.body.classList.contains('portal-admin')) load('ring.js');
+  if (document.querySelector('.hsearch input[name="q"]')) load('suggest.js');
 })();

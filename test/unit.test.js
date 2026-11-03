@@ -155,3 +155,25 @@ test('one ID document: Aadhaar / PAN / Passport rules', () => {
   assert.equal(describeId({ id_type: 'passport', id_number: 'K1234567' }), 'Passport K1234567');
   assert.equal(describeId({ id_type: 'aadhaar', id_number: '2346' }), 'Aadhaar XXXX XXXX 2346');
 });
+
+test('smart search: typos, plurals, same-meaning words, cities, whole words', () => {
+  const S = require('../src/search');
+  const { db } = require('../src/db');
+  assert.equal(S.distance('iphnoe', 'iphone'), 1);
+  assert.equal(S.stem('cars'), 'car');
+  assert.equal(S.stem('hiring'), 'hiring');
+  assert.equal(S.stem('classes'), 'class');
+  const p = S.parse('gadi in bombay');
+  assert.equal(p.city, 'Mumbai');
+  assert.ok(p.groups[0].terms.includes('car'));
+  assert.deepEqual(S.parse('iphnoe').corrections, [{ from: 'iphnoe', to: 'iphone' }]);
+  assert.ok(S.parse('iphone').groups[0].related.includes('phone'));
+  // whole words: "car" must not match "card"; a word being typed ("mob") matches the start of words
+  const score = (q, title, rest = '') => db.prepare('SELECT search_score(?, 0, ?, ?) s').get(S.sql(S.parse(q)).args[0], title, rest).s;
+  assert.equal(score('car', 'Leather card wallet'), 0);
+  assert.equal(score('car', 'Swift car, 2019'), 4);
+  assert.equal(score('mob', 'Mobile cover'), 4);
+  assert.equal(score('naukri', 'Shirt for men'), 0);
+  assert.equal(score('flat rent', '2 BHK flat', 'available for rent'), 3);
+  assert.equal(score('flat rent', '2 BHK flat'), 2);
+});

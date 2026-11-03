@@ -20,6 +20,7 @@ const W = require('../wallet');
 const rtc = require('../rtc');
 const Cat = require('../categories');
 const life = require('../lifecycle');
+const Free = require('../freeads');
 
 const MAX_IMAGES = 5;
 const MAX_VIDEOS = 2;
@@ -167,7 +168,7 @@ function statusView(req, c) {
   }[c.status];
   return html`
   <section class="card narrow center" data-autorefresh="${c.status === 'pending' ? 30 : ''}">
-    <div class="empty-icon">${c.status === 'approved' ? '✅' : c.status === 'rejected' || c.status === 'suspended' ? '⚠️' : c.status === 'video_call' ? '🎥' : '⏳'}</div>
+    <div class="empty-icon">${icon(c.status === 'approved' ? 'check' : c.status === 'rejected' || c.status === 'suspended' ? 'x' : c.status === 'video_call' ? 'video' : 'clock', { size: 26 })}</div>
     <h1>Verification status</h1>
     <p>${pill(c.status)}</p>
     <p>${msg}</p>
@@ -223,7 +224,7 @@ const timeAgoText = (ms) => { const d = Date.now() - ms; if (d < 60_000) return 
 function messagesView(req, rows) {
   return html`
   <div class="page-head"><div><h1>Messages</h1><p class="muted">Updates about your account, payments and ads.</p></div></div>
-  ${rows.length ? html`<div class="msgs">${rows.map(messageCard)}</div>` : html`<div class="card empty center"><div class="empty-icon">📭</div><h3>No messages yet</h3><p class="muted">We will post updates about your payments and ads here.</p></div>`}`;
+  ${rows.length ? html`<div class="msgs">${rows.map(messageCard)}</div>` : html`<div class="card empty center"><div class="empty-icon">${icon('bell', { size: 26 })}</div><h3>No messages yet</h3><p class="muted">We will post updates about your payments and ads here.</p></div>`}`;
 }
 
 const TX_LABEL = { ad_deleted: 'Unused days kept', topup: 'Money added', spent: 'Used for an ad', refund: 'Returned', admin: 'Added by our team' };
@@ -265,7 +266,7 @@ function dashboardView(req, ads, stats, alerts = []) {
   return html`
   ${alerts.length ? html`<div class="msgs dash-alerts">${alerts.map(messageCard)}</div>` : ''}
   <div class="page-head">
-    <div><h1>My ads</h1><p class="muted">Welcome, ${req.seller.name}. Ads go live as soon as payment is confirmed.</p></div>
+    <div><h1>My ads</h1><p class="muted">Welcome, ${req.seller.name}. Paid ads go live as soon as payment is confirmed and are shown before free ads.</p></div>
     <a class="btn btn-accent" href="/client/ads/new">+ Post a new ad</a>
   </div>
   <div class="stats">
@@ -281,20 +282,20 @@ function dashboardView(req, ads, stats, alerts = []) {
     <tbody>${ads.map((a) => {
       const imgs = parseImages(a);
       return html`<tr>
-        <td><div class="cell-ad">${imgs[0] ? html`<img src="${imgUrl(imgs[0])}" alt="">` : html`<div class="thumb-ph sm">📦</div>`}<div><a href="${adUrl(a)}"><strong>${a.title}</strong></a><div class="muted small">${a.city} · #${a.id}</div></div></div></td>
+        <td><div class="cell-ad">${imgs[0] ? html`<img src="${imgUrl(imgs[0])}" alt="">` : html`<div class="thumb-ph sm">${icon('image', { size: 18 })}</div>`}<div><a href="${adUrl(a)}"><strong>${a.title}</strong></a><div class="muted small">${a.city} · #${a.id}</div></div></div></td>
         <td>${pill(a.status)}${a.top_slots && a.status === 'active' ? html` <span class="pill pill-top" title="TOP time slots">★ TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.status === 'blocked' && a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
-        <td>${a.plan_name || '—'}</td>
+        <td>${a.is_free ? html`<span class="pill pill-muted">Free ad</span>` : a.plan_name || '—'}</td>
         <td>${a.status === 'active' ? html`${fmtDay(a.expires_at)}<div class="small muted">${timeLeft(a.expires_at)}</div>` : '—'}</td>
         <td>${a.views}</td>
         <td class="actions">
           ${a.status === 'awaiting_payment' ? html`<a class="btn btn-accent btn-sm" href="/client/ads/${a.id}/pay">Pay & publish</a>` : ''}
           ${a.status === 'expired' ? html`<a class="btn btn-accent btn-sm" href="/client/ads/${a.id}/pay">Renew</a>` : ''}
-          ${a.status === 'active' ? html`<a class="btn btn-sm" href="/client/ads/${a.id}/pay">Extend / Top</a>` : ''}
+          ${a.status === 'active' ? (a.is_free ? html`<a class="btn btn-accent btn-sm" href="/client/ads/${a.id}/pay">Upgrade to paid</a>` : html`<a class="btn btn-sm" href="/client/ads/${a.id}/pay">Extend / Top</a>`) : ''}
           ${a.status !== 'blocked' ? html`<a class="btn btn-ghost btn-sm" href="/client/ads/${a.id}/edit">Edit</a>` : ''}
           ${a.status === 'paused' ? html`<div class="small muted">Hidden by admin · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} paid day(s) saved</div>` : ''}
         </td></tr>`;
     })}</tbody></table></div>`
-  : html`<div class="card empty center"><div class="empty-icon">📝</div><h3>You have no ads yet</h3><p class="muted">Create your first ad — it takes 2 minutes.</p><a class="btn btn-accent" href="/client/ads/new">Post an ad</a></div>`}`;
+  : html`<div class="card empty center"><div class="empty-icon">${icon('edit', { size: 26 })}</div><h3>You have no ads yet</h3><p class="muted">Create your first ad — it takes 2 minutes.</p><a class="btn btn-accent" href="/client/ads/new">Post an ad</a></div>`}`;
 }
 
 function adFormView(req, { ad = {}, cats, error }) {
@@ -304,7 +305,8 @@ function adFormView(req, { ad = {}, cats, error }) {
   return html`
   <section class="card form-card">
     <h1>${isEdit ? 'Edit ad' : 'Post a new ad'}</h1>
-    ${!isEdit ? html`<p class="muted">Step 1 of 2 — describe what you're selling. Next you'll choose how long it runs and pay.</p>` : ''}
+    ${!isEdit ? html`<p class="muted">Step 1 of 2 — describe what you're selling. Next you choose: post it free, or pay to be shown first.</p>` : ''}
+    <p class="small muted">${icon('shield', { size: 14 })} Your ad is your own responsibility. Not allowed: sexual or adult services of any kind, escort or "companion" services, illegal goods, fake offers. Such ads are removed and the account is blocked. <a href="/terms#ads" target="_blank">Posting rules</a></p>
     ${!isEdit && W.balance(req.seller.id) > 0 ? html`<div class="flash flash-success">${icon('card', { size: 18 })}<span>You have <strong>${rupees(W.balance(req.seller.id))}</strong> balance waiting. Use it to run this ad on the next screen.</span></div>` : ''}
     ${isEdit && ad.status === 'active' ? html`<p class="muted small">Your ad stays live while you edit. You can change the text, photos and videos any time.</p>` : ''}
     ${error ? html`<div class="flash flash-error">${error}</div>` : ''}
@@ -347,8 +349,8 @@ function categorySelect(cats, selected) {
   return html`<select name="category_id" required>
     <option value="">Select category</option>
     ${cats.map((m) => (m.subs.length
-    ? html`<optgroup label="${m.icon} ${m.name}">${m.subs.map((sc) => html`<option value="${sc.id}" ${sel(sc.id)}>${sc.name}</option>`)}</optgroup>`
-    : html`<option value="${m.id}" ${sel(m.id)}>${m.icon} ${m.name}</option>`))}
+    ? html`<optgroup label="${m.name}">${m.subs.map((sc) => html`<option value="${sc.id}" ${sel(sc.id)}>${sc.name}</option>`)}</optgroup>`
+    : html`<option value="${m.id}" ${sel(m.id)}>${m.name}</option>`))}
   </select>`;
 }
 
@@ -372,14 +374,30 @@ function videosSection(req, ad) {
   </section>`;
 }
 
-function payView(req, { ad, plans, pending, settings, wallet = 0 }) {
-  const extending = ad.status === 'active';
+function freeCard(req, ad, free) {
+  if (!free.cfg.enabled || ad.is_free || !['awaiting_payment', 'expired'].includes(ad.status)) return '';
+  return html`<div class="freecard">
+    <div><h2>${icon('tag', { size: 18 })} Post it free</h2>
+      <p class="muted small">Your ad runs <strong>${free.cfg.days} days</strong> free. Free ads are shown <strong>after all paid ads</strong>, in random order, and never in TOP — there is no guarantee of a high place.
+      ${free.cfg.review ? 'We check free ads before they go live.' : ''} You can upgrade to a paid plan any time.</p>
+      ${free.why ? html`<p class="small bad">${free.why}</p>` : ''}</div>
+    ${free.why ? '' : html`<form method="post" action="/client/ads/${ad.id}/free">${csrf(req)}
+      <label class="check small"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms" target="_blank">Terms of use</a>. My ad is my own responsibility.</span></label>
+      <button class="btn btn-lg">Post free</button></form>`}
+  </div>
+  <div class="or"><span>or pay to be seen first</span></div>`;
+}
+
+function payView(req, { ad, plans, pending, settings, wallet = 0, free = null }) {
+  const extending = ad.status === 'active' && !ad.is_free;
   const upiLink = settings.upi_id ? `upi://pay?${new URLSearchParams({ pa: settings.upi_id, pn: settings.upi_payee_name || settings.site_name, cu: 'INR', tn: `Ad #${ad.id}` })}` : '';
   return html`
   <section class="card form-card">
-    <h1>${extending ? 'Extend or boost your ad' : ad.status === 'expired' ? 'Renew your ad' : 'Choose your plan & pay'}</h1>
+    <h1>${extending ? 'Extend or boost your ad' : ad.is_free && ad.status === 'active' ? 'Upgrade your free ad' : ad.status === 'expired' ? 'Renew your ad' : 'Publish your ad'}</h1>
     <p class="muted">Ad: <a href="${adUrl(ad)}"><strong>${ad.title}</strong></a> ${pill(ad.status)}
-      ${extending ? html`<br>Currently live until <strong>${fmtDate(ad.expires_at)}</strong>. New days are added on top.` : ''}</p>
+      ${extending ? html`<br>Currently live until <strong>${fmtDate(ad.expires_at)}</strong>. New days are added on top.` : ''}
+      ${ad.is_free && ad.status === 'active' ? html`<br>Free until <strong>${fmtDate(ad.expires_at)}</strong>. A paid plan moves it above every free ad and starts today.` : ''}</p>
+    ${free ? freeCard(req, ad, free) : ''}
 
     ${pending ? html`<div class="flash flash-info">We received your UPI payment reference <strong>${pending.utr}</strong> for ${rupees(pending.amount_paise)} on ${fmtDate(pending.created_at)}. Payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong>; your ad goes live as soon as it is confirmed.</div>` : ''}
 
@@ -535,6 +553,7 @@ function readAdForm(req) {
   else if (!ad.city) error = 'City is required.';
   else if (!V.isValidPhone(ad.contact_phone)) error = 'Enter a valid 10-digit contact phone number.';
   else if (ad.whatsapp && !V.isValidPhone(ad.whatsapp)) error = 'Enter a valid 10-digit WhatsApp number.';
+  else if (V.bannedAdText(ad.title, ad.description, ad.price_note)) error = `This ad cannot be posted: "${V.bannedAdText(ad.title, ad.description, ad.price_note)}" is not allowed. Sexual or adult services of any kind are not allowed on this site (see Terms, section 3).`;
   return { ad, error };
 }
 
@@ -754,7 +773,7 @@ function register(app) {
     const paused = db.prepare("SELECT COUNT(*) n FROM ads WHERE client_id = ? AND status = 'paused' AND paused_by = 'account'").get(c.id).n;
     res.html(renderPage(req, { title: 'Reactivate account', body: html`
       <section class="card narrow center">
-        <div class="empty-icon">👋</div>
+        <div class="empty-icon">${icon('user', { size: 26 })}</div>
         <h1>Welcome back, ${c.name}</h1>
         <p>Your account is deactivated since ${fmtDate(c.deactivated_at)}.</p>
         ${paused ? html`<p>${paused} ad${paused === 1 ? '' : 's'} will go live again with the paid days that were left.</p>` : ''}
@@ -814,10 +833,10 @@ function register(app) {
   // Dashboard
   app.get('/client', requireClient, (req, res) => {
     const ads = db.prepare(`SELECT a.*, p.name AS plan_name FROM ads a LEFT JOIN plans p ON p.id = a.plan_id
-      WHERE a.client_id = ? AND a.status != 'deleted' ORDER BY CASE a.status WHEN 'active' THEN 0 WHEN 'payment_review' THEN 1 WHEN 'awaiting_payment' THEN 2 ELSE 3 END, a.updated_at DESC`).all(req.seller.id);
+      WHERE a.client_id = ? AND a.status != 'deleted' ORDER BY CASE a.status WHEN 'active' THEN 0 WHEN 'payment_review' THEN 1 WHEN 'free_review' THEN 1 WHEN 'awaiting_payment' THEN 2 ELSE 3 END, a.updated_at DESC`).all(req.seller.id);
     const stats = {
       live: ads.filter((a) => a.status === 'active').length,
-      waiting: ads.filter((a) => a.status === 'awaiting_payment' || a.status === 'payment_review').length,
+      waiting: ads.filter((a) => ['awaiting_payment', 'payment_review', 'free_review'].includes(a.status)).length,
       views: ads.reduce((s, a) => s + a.views, 0),
       spent: db.prepare("SELECT COALESCE(SUM(amount_paise),0) AS s FROM payments WHERE client_id = ? AND status = 'paid'").get(req.seller.id).s,
     };
@@ -843,7 +862,7 @@ function register(app) {
       contact_phone, whatsapp, images, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'awaiting_payment', ?, ?)`)
       .run(req.seller.id, ad.category_id, ad.kind, ad.title, ad.description, ad.price_paise, ad.price_note, ad.city, ad.locality,
         ad.contact_phone, ad.whatsapp, JSON.stringify(images), now, now);
-    req.flash('success', 'Ad saved. Choose a plan to publish it.');
+    req.flash('success', Free.config().enabled ? 'Ad saved. Post it free, or choose a paid plan to be shown first.' : 'Ad saved. Choose a plan to publish it.');
     res.redirect(`/client/ads/${r.lastInsertRowid}/pay`);
   });
 
@@ -919,7 +938,23 @@ function register(app) {
     if (ad.status === 'blocked') { req.flash('error', 'This ad was blocked by the admin.'); res.redirect('/client'); return; }
     if (ad.status === 'paused') { req.flash('error', 'This ad is deactivated by the admin. Please contact support.'); res.redirect('/client'); return; }
     const pending = db.prepare("SELECT * FROM payments WHERE ad_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1").get(ad.id);
-    res.html(renderPage(req, { title: 'Pay', portal: 'client', body: payView(req, { ad, plans: activePlans(), pending, settings: getSettings(), wallet: W.balance(req.seller.id) }), scripts: P.razorpayEnabled() ? ['https://checkout.razorpay.com/v1/checkout.js', '/public/js/pay.js'] : ['/public/js/pay.js'] }));
+    res.html(renderPage(req, { title: 'Pay', portal: 'client', body: payView(req, { ad, plans: activePlans(), pending, settings: getSettings(), wallet: W.balance(req.seller.id), free: { cfg: Free.config(), why: Free.whyNot(ad) } }), scripts: P.razorpayEnabled() ? ['https://checkout.razorpay.com/v1/checkout.js', '/public/js/pay.js'] : ['/public/js/pay.js'] }));
+  });
+
+  // Publish free (no payment): shown after paid ads; may need the admin's check first.
+  app.post('/client/ads/:id/free', requireClient, requireAdult, (req, res) => {
+    const ad = ownAd(req, res); if (!ad) return;
+    const back = `/client/ads/${ad.id}/pay`;
+    if (req.body.accept_terms !== '1') { req.flash('error', 'Please tick the box to accept the Terms of use.'); res.redirect(back); return; }
+    const why = Free.whyNot(ad);
+    if (why) { req.flash('error', why); res.redirect(back); return; }
+    const r = Free.publish(ad);
+    if (r === 'review') {
+      notify.adminAlert('free_ad', `🆓 Free ad to check: "${ad.title}" by ${req.seller.name} (#${ad.id}). Admin → Ads → Free ads to check.`);
+      notify.inbox(req.seller.id, { kind: 'free_review', tone: 'info', title: `Free ad sent for checking — ${ad.title}`, body: 'We check free ads before they go live, usually within a few hours. Want it live now and above free ads? Choose a paid plan.', link: back, linkText: 'See paid plans' });
+      req.flash('success', 'Thank you! Your free ad is being checked and goes live once approved.');
+    } else req.flash('success', `Your free ad is live for ${Free.config().days} days. Free ads show after paid ads — upgrade any time to be seen first.`);
+    res.redirect('/client');
   });
 
   function readPlan(req) {

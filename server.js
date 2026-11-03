@@ -23,7 +23,7 @@ const notify = require('./src/notify');
 if (!db.prepare('SELECT 1 FROM admins LIMIT 1').get()) {
   const email = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
   const password = process.env.ADMIN_PASSWORD || randomToken(12);
-  db.prepare('INSERT INTO admins (name, email, password_hash, created_at) VALUES (?, ?, ?, ?)').run('Owner', email, hashPassword(password), Date.now());
+  db.prepare("INSERT INTO admins (name, email, password_hash, created_at, role) VALUES (?, ?, ?, ?, 'owner')").run('Owner', email, hashPassword(password), Date.now());
   console.log('\n========================================================');
   console.log(' Admin account created');
   console.log(`   Email:    ${email}`);
@@ -43,7 +43,7 @@ app.use((req) => {
   req.settings = getSettings();
   notify.rememberOrigin(req);   // so links in emails point to the address people use (your domain)
   if (req.session.adminId) {
-    req.admin = db.prepare('SELECT id, name, email FROM admins WHERE id = ?').get(req.session.adminId) || null;
+    req.admin = db.prepare('SELECT id, name, email, role FROM admins WHERE id = ? AND is_active = 1').get(req.session.adminId) || null;
     if (!req.admin) delete req.session.adminId;
   }
   if (req.session.clientId) {

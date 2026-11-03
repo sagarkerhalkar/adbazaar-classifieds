@@ -190,5 +190,22 @@ Commit: `a92c2cb`
 
 ---
 
+## 13. Real photos, strict terms, free ads, staff roles, brand name, smart search — 3 Nov 21:20
+
+> I want realistic photos on the website, not this type, it looks like a child app … T&C so no one can blame us for payment, ad, client or customer fraud; admin has full authority to block or delete users … users can post ads without payment but shown last or randomly, no guarantee for top … anyone can post; adult content service, toys, massage etc. … AddBazaar is already in the market so I can change the name in future — that option only with me, not with admin … one user only for approval of payments, without access to total payments … you are the owner, use your own mind … search should be optimized, it's too word-oriented: if I type just a word, related things should come, top to low, by category word or anything
+
+**What was built:**
+- **Real photos** (60, Unsplash License) shipped inside the app for banners, category tiles and test ads; emoji icons replaced. The update replaces old test ads once (only `*.test@example.com` accounts).
+- **Free ads:** "Post it free" on the payment screen; shown after every paid ad, random order, never TOP; days, per-seller limit and admin check set in Settings → Approvals.
+- **Staff roles:** Owner, Admin, Payment checker (sees only waiting payments, no totals, reports, sellers or settings). **Site name and tagline: owner only.**
+- **Smart search:** part words, typo correction, same-meaning and Hinglish words, brands, category and city names, suggestions while typing; results TOP → best match → amount paid; "show in all cities" when a city has nothing.
+- **Terms:** fraud between users, payments and ads are not our responsibility; full authority to block or delete; seller responsible for licences and taxes; records, 7-day payment reporting, no staff promises; general clauses; the arbitration clause made fair (one-sided appointment is invalid in India since 2024).
+- **Not built:** adult or sexual-service ads (illegal to advertise in India, and the site owner is liable). Genuine massage and spa ads go in the new **Spa & Wellness** category.
+- **Guide:** Part 22.
+
+*(Photos, free ads, roles, brand and terms were started by another session on the same request and finished, fixed and tested here.)*
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

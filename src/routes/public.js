@@ -9,6 +9,8 @@ const { html, raw, fmtDate, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = requ
 const { icon } = require('../views/icons');
 const Sp = require('./sponsors');
 const { getHome, cityList } = require('../homeconfig');
+const Ph = require('../photos');
+const Search = require('../search');
 const { renderPage } = require('../views/layout');
 const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist } = require('../views/components');
 const { DIRS, sendFile, safeName } = require('../lib/files');
@@ -43,10 +45,13 @@ const SORTS = {
 function listAds({ q, city, cat, kind, page, sort, excludeTop = false, seed = 0 }) {
   const where = ["a.status = 'active'", 'a.expires_at > ?', SELLER_OK];
   const args = [Date.now()];
+  // Smart search (src/search.js): parts of words, typos, same-meaning words, category and city names.
+  let parsed = null; let match = null;
   if (q) {
-    where.push("(a.title LIKE ? ESCAPE '\\' OR a.description LIKE ? ESCAPE '\\')");
-    const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
-    args.push(like, like);
+    parsed = Search.parse(q, { cityGiven: !!city });
+    if (parsed.city) city = parsed.city;
+    match = Search.sql(parsed);
+    if (match) { where.push(`${match.expr} > 0`); args.push(...match.args); }
   }
   if (city) { where.push('a.city = ? COLLATE NOCASE'); args.push(city); }
   if (cat) {
@@ -60,25 +65,31 @@ function listAds({ q, city, cat, kind, page, sort, excludeTop = false, seed = 0 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM ads a ${CAT_JOIN} WHERE ${w}`).get(...args).n;
   // Ads that bought the CURRENT 3-hour slot always come first (TOP), then the chosen order.
   const slot = currentSlot();
-  const order = (SORTS[sort] || SORTS.best).replace('SHUFFLE', SHUFFLE(seed));
-  const rows = db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS top_now
+  let order = (SORTS[sort] || SORTS.best).replace('SHUFFLE', SHUFFLE(seed));
+  // With a search: TOP first, then how well the ad matches (all words in the title → some words in the text),
+  // then the normal paid order inside each group.
+  if (match) order = order.replace(/^top_now DESC/, 'top_now DESC, match_score DESC');
+  const rows = db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS top_now, ${match ? match.expr : '0'} AS match_score
     FROM ads a ${CAT_JOIN} WHERE ${w}
-    ORDER BY ${order} LIMIT ? OFFSET ?`).all(...args, PAGE_SIZE, (page - 1) * PAGE_SIZE);
+    ORDER BY ${order} LIMIT ? OFFSET ?`).all(...(match ? match.args : []), ...args, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   rows.forEach((r) => { r.is_top = r.top_now; });
-  return { rows, total, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), slot };
+  return { rows, total, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), slot, city, search: parsed };
 }
+
+// Each banner shows its uploaded picture, or one of the built-in photos (public/photos).
+const slidePic = (x, i) => (x.image ? imgUrl(x.image) : Ph.photoUrl(x.photo && Ph.exists(x.photo) ? x.photo : Ph.BANNER_DEFAULTS[i % Ph.BANNER_DEFAULTS.length]));
 
 function bannerSlider(slides) {
   const list = slides.filter((x) => x.active && (x.title || x.image));
   if (!list.length) return '';
   return html`<section class="banner" data-banner aria-roledescription="carousel" aria-label="Highlights">
     <div class="banner-track">
-      ${list.map((x, i) => html`<div class="slide theme-${x.theme} ${x.image ? 'has-img' : ''} ${i === 0 ? 'active' : ''}" data-slide role="group" aria-label="${i + 1} of ${list.length}">
-        ${x.image ? html`<img class="slide-img" src="${imgUrl(x.image)}" alt="" ${i ? raw('loading="lazy"') : ''}>` : html`<div class="slide-art" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="slide-emoji">${x.art || '★'}</span></div>`}
+      ${list.map((x, i) => html`<div class="slide theme-${x.theme} has-img ${i === 0 ? 'active' : ''}" data-slide role="group" aria-label="${i + 1} of ${list.length}">
+        <img class="slide-img" src="${slidePic(x, i)}" alt="" ${i ? raw('loading="lazy"') : raw('fetchpriority="high"')}>
         <div class="slide-text">
           ${x.title ? html`<h2>${x.title}</h2>` : ''}
           ${x.subtitle ? html`<p>${x.subtitle}</p>` : ''}
-          ${x.button && x.link ? html`<a class="btn btn-lg ${x.theme === 'marigold' ? 'btn-primary' : 'btn-sell'}" href="${x.link}">${x.button}</a>` : ''}
+          ${x.button && x.link ? html`<a class="btn btn-lg btn-sell" href="${x.link}">${x.button}</a>` : ''}
         </div>
       </div>`)}
     </div>
@@ -88,6 +99,9 @@ function bannerSlider(slides) {
       <div class="banner-dots">${list.map((_, i) => html`<button type="button" class="${i === 0 ? 'active' : ''}" data-banner-dot="${i}" aria-label="Show ${i + 1}"></button>`)}</div>` : ''}
   </section>`;
 }
+
+/** Photo for a category tile: the admin's own upload, or a built-in photo that fits the name. */
+const catPic = (c) => (c.image ? imgUrl(c.image) : Ph.photoUrl(Ph.categoryPhotoName(c)));
 
 function loadMore(filters, data) {
   if (filters.page >= data.totalPages) return '';
@@ -106,7 +120,7 @@ function homeLanding(req, { cats, data, filters, cities, tops, home }) {
 
   ${home.show.categories ? html`<section class="section">
     <div class="section-head"><h2>Browse categories</h2></div>
-    <div class="cattiles">${cats.map((c) => html`<a class="cattile" href="/?cat=${c.slug}"><span class="cattile-ic">${c.icon}</span><span>${c.name}</span></a>`)}</div>
+    <div class="cattiles">${cats.map((c) => html`<a class="cattile" href="/?cat=${c.slug}"><img src="${catPic(c)}" alt="" loading="lazy"><span>${c.name}</span></a>`)}</div>
   </section>` : ''}
 
   ${home.show.top && tops.length ? html`<section class="section topstrip" data-scroller>
@@ -124,17 +138,27 @@ function homeLanding(req, { cats, data, filters, cities, tops, home }) {
   <section class="section" data-results>
     <div class="section-head"><h2>${home.fresh_title}</h2><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}</span></div>
     ${data.rows.length ? html`<div class="grid">${Sp.weave(data.rows.map(adCard))}</div>` : html`
-      <div class="empty card center"><div class="empty-icon">🛍️</div><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/post">Post your ad</a></div>`}
+      <div class="empty card center"><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/post">Post your ad</a></div>`}
     ${loadMore(filters, data)}
   </section>
 
   ${Sp.card(Sp.pick('home'), 'wide')}
   ${home.show.sell ? html`<section class="sellband">
-    <div class="sell-art" aria-hidden="true"><span>🛵</span><span>📷</span><span>🛋️</span></div>
+    <img class="sell-photo" src="${Ph.photoUrl('people-man-cafe')}" alt="" loading="lazy">
     <div><h2>${home.sell_title}</h2><p>${home.sell_text}</p>
       <p class="small sell-time">${icon('clock', { size: 15 })} Login check takes ${approveTimeText(req.settings.auto_approve_minutes)} · payment confirmation ${PAYMENT_TIME_TEXT}</p></div>
     <a class="btn btn-sell btn-lg" href="/post">${icon('plus', { size: 18 })} Post your ad</a>
   </section>` : ''}`;
+}
+
+// "· showing results for iphone (you typed iphnoe) · in Pune" — tells people how the search read their words.
+function searchNote(data, filters) {
+  const s = data.search;
+  if (!s) return '';
+  const parts = [];
+  if (s.corrections.length) parts.push(html`including <strong>${s.corrections.map((c) => c.to).join(' ')}</strong> (you typed ${s.corrections.map((c) => c.from).join(' ')})`);
+  if (s.city && !filters.city) parts.push(html`in <strong>${s.city}</strong>`);
+  return parts.length ? html` · ${parts.map((p, i) => html`${i ? ' · ' : ''}${p}`)}` : '';
 }
 
 function homeResults(req, { cats, data, filters, cities }) {
@@ -160,7 +184,7 @@ function homeResults(req, { cats, data, filters, cities }) {
     <aside class="filters" data-filters>
       <div class="f-group"><h3>Categories</h3>
         <a class="f-opt ${!filters.cat ? 'active' : ''}" href="${q({ cat: '', page: '' })}">All categories</a>
-        ${cats.map((c) => html`<a class="f-opt ${activeMain && activeMain.id === c.id ? 'active' : ''}" href="${q({ cat: c.slug, page: '' })}">${c.icon} ${c.name}</a>`)}
+        ${cats.map((c) => html`<a class="f-opt ${activeMain && activeMain.id === c.id ? 'active' : ''}" href="${q({ cat: c.slug, page: '' })}">${c.name}</a>`)}
       </div>
       <div class="f-group"><h3>Type</h3>
         ${[['', 'Everything'], ['product', 'Products'], ['service', 'Services']].map(([k, l]) => html`<a class="f-opt ${filters.kind === k ? 'active' : ''}" href="${q({ kind: k, page: '' })}">${l}</a>`)}
@@ -172,7 +196,7 @@ function homeResults(req, { cats, data, filters, cities }) {
     </aside>
     <section data-results>
       <div class="sortbar">
-        <div><h1 class="results-h">${heading}</h1><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}</span></div>
+        <div><h1 class="results-h">${heading}</h1><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}${searchNote(data, filters)}</span></div>
         <div class="btn-row" style="margin:0">
           <button type="button" class="btn btn-sm only-filters" data-toggle-filters>${icon('layers', { size: 16 })} Filters</button>
           <form method="get" action="/" class="inline">
@@ -185,9 +209,11 @@ function homeResults(req, { cats, data, filters, cities }) {
       </div>
       ${data.rows.length ? html`<div class="grid">${Sp.weave(data.rows.map(adCard))}</div>` : html`
         <div class="empty card center">
-          <div class="empty-icon">🔎</div>
+          <div class="empty-icon">${icon('search', { size: 26 })}</div>
           <h3>No ads match this search</h3>
-          <p class="muted">Try another word, city or category.</p>
+          ${(filters.city || data.city) && data.search && data.search.groups.length ? html`<p><a class="btn" href="${q({ q: data.search.groups.map((g) => g.word).join(' '), city: '', page: '' })}">Show “${data.search.groups.map((g) => g.word).join(' ')}” in all cities</a></p>` : ''}
+          <p class="muted">Try a shorter word, another city, or one of these categories.</p>
+          <div class="subcats" style="justify-content:center">${cats.slice(0, 8).map((c) => html`<a class="chip" href="/?cat=${encodeURIComponent(c.slug)}">${c.name}</a>`)}</div>
           <a class="btn btn-primary" href="/">Show all ads</a>
         </div>`}
       ${loadMore(filters, data)}
@@ -199,7 +225,7 @@ function homeResults(req, { cats, data, filters, cities }) {
 function savedView(ads) {
   return html`
   <div class="page-head"><div><h1>Saved ads</h1><p class="muted">Ads you saved with the ♥ button. They are kept in this browser only.</p></div></div>
-  ${ads.length ? html`<div class="grid">${ads.map(adCard)}</div>` : html`<div class="empty card center"><div class="empty-icon">♡</div><h3>No saved ads yet</h3><p class="muted">Tap the heart on any ad to keep it here.</p><a class="btn btn-primary" href="/">Browse ads</a></div>`}`;
+  ${ads.length ? html`<div class="grid">${ads.map(adCard)}</div>` : html`<div class="empty card center"><div class="empty-icon">${icon('heart', { size: 26 })}</div><h3>No saved ads yet</h3><p class="muted">Tap the heart on any ad to keep it here.</p><a class="btn btn-primary" href="/">Browse ads</a></div>`}`;
 }
 
 function adView(req, { ad, images, videos = [], related }) {
@@ -214,7 +240,7 @@ function adView(req, { ad, images, videos = [], related }) {
         ${images.length ? html`
           <div class="gallery-main"><img src="${imgUrl(images[0])}" alt="${ad.title}" data-gallery-main></div>
           ${images.length > 1 ? html`<div class="gallery-thumbs">${images.map((f, i) => html`<button type="button" class="${i === 0 ? 'active' : ''}" data-gallery-thumb="${imgUrl(f)}" aria-label="Photo ${i + 1}"><img src="${imgUrl(f)}" alt=""></button>`)}</div>` : ''}`
-        : html`<div class="gallery-main ph">${ad.cat_icon}</div>`}
+        : html`<div class="gallery-main ph"><img src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name, slug: ad.main_slug }))}" alt=""><span class="ph-note">The seller has not added photos yet</span></div>`}
       </div>
       <section class="card" data-tab-scope>
         <div class="tabs" data-tabs role="tablist">
@@ -237,6 +263,7 @@ function adView(req, { ad, images, videos = [], related }) {
         </div>
         <div class="tab-panel safety" data-panel="safety">
           <ul><li>Meet in a busy public place.</li><li>Check the item or service before you pay.</li><li>Never share an OTP or UPI PIN, and never pay strangers in advance.</li></ul>
+          <p class="small muted">This ad was posted by the advertiser under their own responsibility. ${req.settings.site_name} does not check, guarantee or take part in any deal and is not responsible for any loss or fraud. If you are cheated, call <strong>1930</strong> or report at cybercrime.gov.in. <a href="/terms#fraud">Terms</a></p>
           <details class="report">
             <summary>${icon('flag', { size: 14 })} Report this ad</summary>
             <form method="post" action="/ad/${ad.id}/report">
@@ -320,6 +347,12 @@ function register(app) {
     res.html(renderPage(req, { title: activeCat || (filters.q ? `Search: ${filters.q}` : ''), body }));
   });
 
+  // Suggestions under the search box while typing (categories, matching ads, cities).
+  app.get('/api/suggest', (req, res) => {
+    if (!rateLimit(`suggest:${req.ip}`, 240, 60_000)) { res.status(429).json({ cats: [], ads: [], cities: [] }); return; }
+    res.json(Search.suggest(str(req.query.q, 60)));
+  });
+
   app.get('/saved', (req, res) => {
     const ids = String(req.query.ids || '').split(',').map((x) => parseInt(x, 10)).filter((n) => n > 0).slice(0, 100);
     const ads = ids.length ? db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW()} AS is_top FROM ads a ${CAT_JOIN}
@@ -337,7 +370,7 @@ function register(app) {
     const isOwner = ad && req.seller && req.seller.id === ad.client_id;
     const visible = ad && ad.status === 'active' && ad.expires_at > Date.now() && ad.seller_status === 'approved';
     if (!ad || (!visible && !isOwner && !req.admin)) {
-      res.status(410).html(renderPage(req, { title: 'Ad not available', body: html`<section class="card narrow center"><div class="empty-icon">⌛</div><h1>This ad is no longer available</h1><p class="muted">Its paid period may have ended or it was removed.</p><a class="btn btn-accent" href="/">Browse other ads</a></section>` }));
+      res.status(410).html(renderPage(req, { title: 'Ad not available', body: html`<section class="card narrow center"><div class="empty-icon">${icon('clock', { size: 26 })}</div><h1>This ad is no longer available</h1><p class="muted">Its paid period may have ended or it was removed.</p><a class="btn btn-accent" href="/">Browse other ads</a></section>` }));
       return;
     }
     if (visible) {

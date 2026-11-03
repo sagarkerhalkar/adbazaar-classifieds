@@ -7,15 +7,16 @@ const { icon } = require('../views/icons');
 const { saveUpload, removeFile, UploadError } = require('../lib/files');
 const { getHome, saveHome, safeLink, THEMES } = require('../homeconfig');
 const V = require('../validators');
+const Ph = require('../photos');
 
 const THEME_LABELS = { peacock: 'Blue', marigold: 'Yellow', green: 'Green', berry: 'Pink', ink: 'Dark' };
 
 function view(req, cfg) {
   const slideCard = (x, i, n) => html`
   <article class="bcard">
-    <div class="bcard-preview slide theme-${x.theme} active ${x.image ? 'has-img' : ''}">
-      ${x.image ? html`<img class="slide-img" src="${imgUrl(x.image)}" alt="">` : html`<div class="slide-art"><span class="slide-emoji">${x.art || '★'}</span></div>`}
-      <div class="slide-text"><h2>${x.title || 'No title'}</h2>${x.subtitle ? html`<p>${x.subtitle}</p>` : ''}${x.button ? html`<span class="btn btn-sm ${x.theme === 'marigold' ? 'btn-primary' : 'btn-sell'}">${x.button}</span>` : ''}</div>
+    <div class="bcard-preview slide theme-${x.theme} active has-img">
+      <img class="slide-img" src="${x.image ? imgUrl(x.image) : Ph.photoUrl(x.photo && Ph.exists(x.photo) ? x.photo : Ph.BANNER_DEFAULTS[i % Ph.BANNER_DEFAULTS.length])}" alt="">
+      <div class="slide-text"><h2>${x.title || 'No title'}</h2>${x.subtitle ? html`<p>${x.subtitle}</p>` : ''}${x.button ? html`<span class="btn btn-sm btn-sell">${x.button}</span>` : ''}</div>
       ${x.active ? '' : html`<span class="pill pill-muted bcard-off">Hidden</span>`}
     </div>
     <details class="bcard-edit" ${x.title === 'New banner' ? 'open' : ''}><summary>${icon('edit', { size: 15 })} Edit banner ${i + 1}</summary>
@@ -29,11 +30,11 @@ function view(req, cfg) {
       </div>
       <div class="row3">
         ${field('Colour', html`<select name="theme">${THEMES.map((t) => html`<option value="${t}" ${t === x.theme ? 'selected' : ''}>${THEME_LABELS[t]}</option>`)}</select>`)}
-        ${field('Big emoji', html`<input name="art" maxlength="4" value="${x.art}" placeholder="📱">`, 'Shown when there is no picture')}
+        ${field('Built-in photo', html`<select name="photo">${Ph.list().map((n) => html`<option value="${n}" ${n === (x.photo || Ph.BANNER_DEFAULTS[i % Ph.BANNER_DEFAULTS.length]) ? 'selected' : ''}>${Ph.label(n)}</option>`)}</select>`, 'Used when you have not uploaded your own picture')}
         <label class="field"><span class="label">Show on site</span><span class="switch-row"><input type="checkbox" class="switch" name="active" value="1" ${x.active ? 'checked' : ''}> ${x.active ? 'On' : 'Off'}</span></label>
       </div>
-      ${field('Picture (optional)', html`<input type="file" name="image" accept="image/jpeg,image/png,image/webp">`, 'Wide picture, about 1600 × 400 pixels, max 4 MB. The text is shown on top of it.')}
-      ${x.image ? html`<label class="check"><input type="checkbox" name="remove_image" value="1"> <span>Remove the picture</span></label>` : ''}
+      ${field('Your own picture (optional)', html`<input type="file" name="image" accept="image/jpeg,image/png,image/webp">`, 'Wide photo, about 1600 × 500 pixels, max 4 MB. The text is shown on its left side.')}
+      ${x.image ? html`<label class="check"><input type="checkbox" name="remove_image" value="1"> <span>Remove my picture and use the built-in photo</span></label>` : ''}
       <div class="bcard-actions">
         <button class="btn btn-primary">${icon('check', { size: 16 })} Save banner</button>
         <span class="bcard-tools">
@@ -60,7 +61,7 @@ function view(req, cfg) {
 
     <div class="tab-panel" data-panel="banners">
       <div class="section-head" style="align-items:center"><p class="muted small" style="margin:0">Banners slide by themselves every 5 seconds at the top of the home page. Up to 8.</p>
-        <form method="post" action="/admin/home/sample-photos" class="inline">${csrf(req)}<button class="btn btn-sm">${icon('image', { size: 15 })} Add real sample photos to banners</button></form></div>
+</div>
       <div class="bgrid">${cfg.slides.map((x, i) => slideCard(x, i, cfg.slides.length))}
         ${cfg.slides.length < 8 ? html`<form method="post" action="/admin/home/slides/add" class="bcard bcard-add">${csrf(req)}<button class="btn btn-lg">${icon('plus', { size: 20 })} Add a banner</button></form>` : ''}
       </div>
@@ -99,23 +100,9 @@ function register(app, { requireAdmin, page }) {
 
   app.get('/admin/home', requireAdmin, (req, res) => res.html(page(req, 'Home page', view(req, getHome()))));
 
-  // Free photos of people using phones and laptops (Pexels), put on banners that have no picture yet.
-  app.post('/admin/home/sample-photos', requireAdmin, async (req, res) => {
-    const STOCK = require('../stockphotos');
-    const got = await STOCK.downloadAll(STOCK.BANNER_PHOTOS, 1600);
-    if (!got.size) { req.flash('error', 'Could not download photos — check the internet connection of this computer, or upload your own pictures.'); res.redirect('/admin/home#banners'); return; }
-    const cfg = getHome();
-    const pics = [...got.values()];
-    let n = 0;
-    cfg.slides.forEach((x) => { if (!x.image && pics[n]) { x.image = saveUpload({ filename: 'banner.jpg', data: pics[n] }, 'ads', { maxMb: 8 }); n += 1; } });
-    saveHome(cfg);
-    req.flash('success', n ? `${n} banner(s) now have a real photo. Photos from Pexels (free to use).` : 'All banners already have a picture.');
-    res.redirect('/admin/home#banners');
-  });
-
   app.post('/admin/home/slides/add', requireAdmin, (req, res) => {
     const cfg = getHome();
-    if (cfg.slides.length < 8) cfg.slides.push({ title: 'New banner', subtitle: '', button: 'Post your ad', link: '/client/register', theme: 'peacock', art: '✨', image: '', active: false });
+    if (cfg.slides.length < 8) cfg.slides.push({ title: 'New banner', subtitle: '', button: 'Post your ad', link: '/client/register', theme: 'peacock', photo: 'people-man-cafe', image: '', active: false });
     saveHome(cfg);
     req.flash('success', 'Banner added. It is hidden until you switch "Show on site" on and save.');
     res.redirect('/admin/home#banners');
@@ -128,7 +115,7 @@ function register(app, { requireAdmin, page }) {
     x.title = V.str(b.title, 80); x.subtitle = V.str(b.subtitle, 160); x.button = V.str(b.button, 30);
     const link = String(b.link || '').trim();
     if (link && !safeLink(link)) { req.flash('error', 'The button link must start with / (a page of this site) or https://'); res.redirect('/admin/home#banners'); return; }
-    x.link = safeLink(link); x.theme = THEMES.includes(b.theme) ? b.theme : 'peacock'; x.art = V.str(b.art, 4); x.active = b.active === '1';
+    x.link = safeLink(link); x.theme = THEMES.includes(b.theme) ? b.theme : 'peacock'; if (Ph.exists(String(b.photo || '').replace(/[^a-z0-9-]/g, ''))) x.photo = String(b.photo).replace(/[^a-z0-9-]/g, ''); x.active = b.active === '1';
     if (b.remove_image === '1' && x.image) { removeFile('ads', x.image); x.image = ''; }
     const file = req.files && req.files.image && req.files.image[0];
     if (file && file.data && file.data.length) {

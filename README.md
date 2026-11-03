@@ -43,6 +43,10 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 - **Video call any seller** from the admin portal. The seller's open page rings (pop-up plus sound) and they get an email link (`src/rtc.js`, `public/js/ring.js`).
 
 - **Money:** seller messages (bell) for confirmed, rejected and failed payments, receipts, a seller **balance** (`src/wallet.js`: unused days of deleted ads, UPI top-ups confirmed by the admin, admin credits; pay fully or partly from balance), 1-day, monthly and yearly plans with an admin-set discount %, admin **Boost & TOP** (days or until a date, chosen slots), automatic blocking after complaints from N different people, and **instant alerts** (WhatsApp via CallMeBot or the Cloud API, Telegram, Google Chat) plus live admin and seller counters (`public/js/live.js`).
+- **Smart search** (`src/search.js`): part words, typo correction, same-meaning and Hinglish words, brands, category and city names, with suggestions while typing (`public/js/suggest.js`). Results: TOP → best match → amount paid.
+- **Free ads** (`src/freeads.js`): shown after all paid ads, never in TOP; days, per-seller limit and admin check set by the admin.
+- **Staff roles:** Owner (everything, incl. site name), Admin (runs the site), Payment checker (only confirms waiting payments, no totals).
+- **Real photos** in `public/photos` (Unsplash License, see `CREDITS.md`) for banners, category tiles and test ads.
 - **Sponsors** (`src/routes/sponsors.js`): third-party ads between listings, under ad pages and on the home page, with view and click counts and an `/advertise` enquiry form.
 
 ## Ranking algorithm (`src/ranking.js`)

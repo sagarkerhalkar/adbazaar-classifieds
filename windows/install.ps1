@@ -259,6 +259,9 @@ if ($firstInstall) {
   Step 'Test data'
   $t = Ask 'Add test sellers, ads and payments so you can try everything? (Y/N)' 'Y'
   if ($t -match '^[Yy]') { & node scripts\seed-test.js | Out-Host }
+} elseif ($isUpdate) {
+  # Old test ads (if any) are replaced once with the newest test ads and real photos. Your real sellers and ads are not touched.
+  & node scripts\seed-test.js --upgrade | Out-Host
 }
 
 # ---------- 9. Auto-start with Windows ----------

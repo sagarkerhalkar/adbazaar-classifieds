@@ -13,7 +13,7 @@ const zlib = require('node:zlib');
 if (fs.existsSync(path.join(__dirname, '..', '.env'))) process.loadEnvFile(path.join(__dirname, '..', '.env'));
 process.removeAllListeners('warning');
 
-const { db, tx, parseImages } = require('../src/db');
+const { db, tx, parseImages, getSettings } = require('../src/db');
 const { hashPassword, randomToken } = require('../src/lib/security');
 const { saveUpload, removeFile } = require('../src/lib/files');
 const { rescore } = require('../src/ranking');
@@ -57,18 +57,10 @@ const COLORS = [[232, 69, 44], [43, 108, 176], [31, 157, 85], [107, 63, 160], [2
 const img = (i, area = 'ads', shape = ['circle', 'square', 'diamond'][i % 3]) =>
   saveUpload({ filename: 'test.png', data: png(640, 480, COLORS[i % COLORS.length], COLORS[(i + 3) % COLORS.length], shape) }, area);
 
-// Product pictures for the test ads (scripts/seed-images, one per ad + a second angle)
-const PHOTOS = ['iphone', 'tv', 'repair', 'headphones', 'tuition', 'english', 'drawing', 'scooter', 'car', 'carwash', 'makeup', 'salon', 'dresser', 'laptop'];
-// Real photos (downloaded from Pexels when online) → else the illustrations in scripts/seed-images → else coloured shapes.
-const STOCK = require('../src/stockphotos');
-let REAL = new Map();
-const photo = (i, suffix = '') => {
-  const name = PHOTOS[i % PHOTOS.length];
-  const real = REAL.get((STOCK.AD_PHOTOS[name] || [])[suffix ? 1 : 0]);
-  if (real) return saveUpload({ filename: 'photo.jpg', data: real }, 'ads');
-  const f = path.join(__dirname, 'seed-images', `${name}${suffix}.jpg`);
-  return fs.existsSync(f) ? saveUpload({ filename: 'photo.jpg', data: fs.readFileSync(f) }, 'ads') : img(i);
-};
+// Real photos for the test ads (public/photos — Unsplash License, see public/photos/CREDITS.md).
+const Ph = require('../src/photos');
+const photo = (name) => (Ph.exists(name) ? saveUpload({ filename: 'photo.jpg', data: fs.readFileSync(Ph.photoFile(name)) }, 'ads') : img(name.length));
+const SEED_VERSION = '3';   // bump when the test ads change; "Update AdBazaar" then refreshes old test data once
 
 // ---------- remove ----------
 function removeTestData() {
@@ -91,6 +83,13 @@ function removeTestData() {
 }
 
 if (process.argv.includes('--remove')) { removeTestData(); process.exit(0); }
+// Used by "Update AdBazaar": if old test data is there, replace it once with the newest test data (real photos).
+if (process.argv.includes('--upgrade')) {
+  const has = db.prepare("SELECT 1 FROM clients WHERE email LIKE '%.test@example.com' LIMIT 1").get();
+  const ver = (db.prepare("SELECT value FROM settings WHERE key = 'test_seed_version'").get() || {}).value;
+  if (!has || ver === SEED_VERSION) process.exit(0);
+  removeTestData();
+}
 
 // ---------- add ----------
 (async () => {
@@ -103,14 +102,6 @@ const plans = db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY days'
 if (plans.length < 3) { console.error('Need at least 3 active plans (Admin → Settings).'); process.exit(1); }
 const near = (d) => plans.reduce((a, b) => (Math.abs(b.days - d) < Math.abs(a.days - d) ? b : a));
 const [p7, p15, p29] = [near(7), near(15), near(29)];
-if (!process.argv.includes('--no-photos')) {
-  process.stdout.write('Downloading sample photos from Pexels… ');
-  REAL = await STOCK.downloadAll(Object.values(STOCK.AD_PHOTOS).flat(), 1000);
-  console.log(REAL.size ? `${REAL.size} photos.` : 'no internet — using illustrations.');
-}
-// Make sure a "Beauty & salon" sub-category exists for the beauty test ads.
-const hf = db.prepare("SELECT * FROM categories WHERE slug = 'health-fitness'").get();
-if (hf) db.prepare("INSERT OR IGNORE INTO categories (name, slug, icon, sort, parent_id) VALUES ('Beauty & salon', 'health-fitness-beauty-salon', ?, 9, ?)").run(hf.icon, hf.id);
 const catId = (slug) => (db.prepare('SELECT id FROM categories WHERE slug = ?').get(slug)
   || db.prepare('SELECT id FROM categories WHERE slug = ?').get(slug.split('-')[0])
   || db.prepare('SELECT id FROM categories LIMIT 1').get()).id;
@@ -133,21 +124,27 @@ const CLIENTS = [
 ];
 
 const ADS = [
-  // client, category, kind, title, description, price ₹, note, city, locality, plan, top, startedDaysAgo, state
-  ['rahul', 'electronics-mobile-phones', 'product', 'iPhone 14, 128GB, Midnight — 1 year old', 'Bought Oct 2025, battery health 92%. Original box, bill and charger. No scratches, always used with cover.', 46500, 'Negotiable', 'Pune', 'Kothrud', p29, ALL_SLOTS, 1, 'active'],
-  ['rahul', 'electronics-tv-audio', 'product', 'Samsung 43" 4K Smart TV with wall mount', 'Crystal 4K, works perfectly. Remote and wall mount included. Moving out sale.', 18999, null, 'Pune', 'Baner', p15, 0, 3, 'active'],
-  ['rahul', 'home-services-ac-appliance-repair', 'service', 'Laptop & mobile repair — doorstep pickup', 'Screen, battery, charging port, software issues. All brands. 30-day warranty on repairs.', 299, 'starting', 'Pune', 'Shivaji Nagar', p7, 0, 0, 'active'],
-  ['rahul', 'electronics-accessories', 'product', 'Sony WH-1000XM5 headphones', 'Noise cancelling, 3 months old, with case. Selling because I got a gift.', 19500, null, 'Pune', 'Aundh', p7, 0, 0, 'payment_review'],
-  ['sneha', 'education-tuition', 'service', 'Maths & Science tuition, Class 8–12 (CBSE/State)', 'Experienced teacher, 10+ years. Small batches of 5. Weekend doubt sessions. Demo class free.', 3000, 'per month', 'Mumbai', 'Andheri West', p29, DAYTIME, 4, 'active'],
-  ['sneha', 'education-coaching-classes', 'service', 'Spoken English classes — online & offline', 'Improve speaking confidence in 60 days. Interview preparation included.', 2500, 'per month', 'Mumbai', 'Goregaon', p15, 0, 6, 'active'],
-  ['sneha', 'education-music-dance', 'service', 'Kids drawing & craft summer camp', 'Ages 6–12. Materials provided. 4 weeks, 3 days a week.', 4000, 'full course', 'Mumbai', 'Malad', p7, 0, 8, 'expired'],
-  ['amit', 'vehicles-bikes-scooters', 'product', 'Honda Activa 6G 2022 — single owner', '9,800 km, all papers clear, insurance valid till 2027. Serviced at showroom.', 65000, null, 'Nagpur', 'Dharampeth', p15, 0, 2, 'active'],
-  ['amit', 'vehicles-cars', 'product', 'Maruti Swift VXI 2019, petrol', '42,000 km, first owner, no accidents. New tyres. Test drive available.', 495000, 'Slightly negotiable', 'Nagpur', 'Sadar', p29, 0, 5, 'active'],
-  ['amit', 'home-services-cleaning', 'service', 'Car washing at your home — ₹349', 'Foam wash, interior vacuum and dashboard polish. Book a slot on WhatsApp.', 349, null, 'Nagpur', 'Civil Lines', p7, 0, 6.6, 'active'], // ends within a day
-  ['fatima', 'health-fitness-beauty-salon', 'service', 'Bridal makeup & mehendi packages', 'HD and airbrush makeup, hairstyling, saree draping. Trial available. Travel to venue.', 8000, 'starting', 'Nashik', 'College Road', p29, EVENING, 0.2, 'active'],
-  ['fatima', 'health-fitness-beauty-salon', 'service', 'Home salon for women — facial, waxing, threading', 'Hygienic kits, trained beauticians. Combo offers on weekdays.', 499, 'starting', 'Nashik', 'Gangapur Road', p15, 0, 1.5, 'active'],
-  ['fatima', 'furniture-sofas-beds', 'product', 'Teak wood dressing table with mirror', 'Solid teak, 3 drawers. 2 years old, very good condition. Self pickup.', 7500, null, 'Nashik', 'Indira Nagar', null, 0, 0, 'awaiting_payment'],
-  ['karan', 'electronics-laptops-computers', 'product', 'Dell Inspiron 15 laptop, i5 12th gen, 16GB', 'Used 1 year, 512GB SSD, charger included. Perfect for office and college.', 38000, null, 'Surat', 'Adajan', p15, 0, 2, 'active'],
+  // client, category, kind, title, description, price ₹, note, city, locality, plan, top, startedDaysAgo, state, [photos], free ad?
+  ['rahul', 'electronics-mobile-phones', 'product', 'OnePlus 11 5G, 128 GB, with wireless charger', 'Bought in 2025, battery health 94%. Box, bill and the wireless charging stand included. No scratches, always used with a cover.', 34500, 'Negotiable', 'Pune', 'Kothrud', p29, ALL_SLOTS, 1, 'active', ['phone-charger', 'laptop-phone']],
+  ['rahul', 'electronics-tv-audio', 'product', 'Portable Bluetooth speaker, 30 W, red', 'Deep bass, 12-hour battery, water resistant. Used for 3 months, works perfectly. Charging cable included.', 4999, null, 'Pune', 'Baner', p15, 0, 3, 'active', ['speaker-1', 'speaker-2']],
+  ['rahul', 'home-services-ac-appliance-repair', 'service', 'Laptop & computer repair — doorstep pickup', 'Screen, battery, keyboard, charging port and software issues. All brands. 30-day warranty on repairs.', 299, 'starting', 'Pune', 'Shivaji Nagar', p7, 0, 0, 'active', ['repair-board', 'repair-laptop']],
+  ['rahul', 'electronics-accessories', 'product', 'Wireless noise-cancelling headphones', '40-hour battery, with carry case. 3 months old, selling because I got a gift.', 9500, null, 'Pune', 'Aundh', p7, 0, 0, 'payment_review', ['headphones-1', 'headphones-2']],
+  ['rahul', 'jobs-full-time', 'service', 'Hiring: sales executive for electronics store', 'Full-time job in Pune. Freshers welcome, training given. Salary plus incentive, Sunday off.', 22000, 'per month', 'Pune', 'Camp', p15, 0, 2, 'active', ['people-team-handshake', 'office-room']],
+  ['sneha', 'education-tuition', 'service', 'Maths & Science tuition, Class 8–12 (CBSE/State)', 'Experienced teacher, 10+ years. Small batches of 5. Weekend doubt sessions. First class free.', 3000, 'per month', 'Mumbai', 'Andheri West', p29, DAYTIME, 4, 'active', ['people-whiteboard', 'whiteboard-plan']],
+  ['sneha', 'education-coaching-classes', 'service', 'Spoken English classes — online & offline', 'Speak with confidence in 60 days. Interview practice included. Morning and evening batches.', 2500, 'per month', 'Mumbai', 'Goregaon', p15, 0, 6, 'active', ['people-meeting', 'people-women-laptop']],
+  ['sneha', 'education-music-dance', 'service', 'Pottery & craft weekend classes', 'For beginners. Clay and tools provided. 4 weekends, small groups.', 4000, 'full course', 'Mumbai', 'Malad', p7, 0, 8, 'expired', ['pottery-class', 'pottery-hands']],
+  ['sneha', 'furniture-home-decor', 'product', 'Work-from-home desk with monitor and chair', 'Complete desk setup, 1 year old. Pickup from Andheri.', 6500, null, 'Mumbai', 'Andheri East', null, 0, 1, 'active', ['desk-setup', 'laptop-wood'], true],
+  ['amit', 'vehicles-bikes-scooters', 'product', 'Electric bicycle 2024 — 60 km range', 'Single owner, 1,200 km. Removable battery, bill and warranty card. Helmet free.', 38000, null, 'Nagpur', 'Dharampeth', p15, 0, 2, 'active', ['ebike-1', 'ebike-2']],
+  ['amit', 'vehicles-bikes-scooters', 'product', 'City bicycle with basket — like new', 'Comfortable seat, 7 gears, front basket. Used only on weekends.', 7900, 'Slightly negotiable', 'Nagpur', 'Sadar', p29, 0, 5, 'active', ['citybike', 'roadbike']],
+  ['amit', 'vehicles-spare-parts', 'service', 'Bicycle service & repair at your home — ₹349', 'Brake and gear tuning, chain cleaning, puncture repair. Book a slot on WhatsApp.', 349, null, 'Nagpur', 'Civil Lines', p7, 0, 6.6, 'active', ['bike-repair', 'helmet']], // ends within a day
+  ['amit', 'property-for-rent', 'product', '2 BHK flat for rent, semi-furnished', 'Near metro station, lift and parking. Family preferred. 2 months deposit.', 18000, 'per month', 'Nagpur', 'Wardha Road', p29, 0, 3, 'active', ['property-apartment', 'living-room']],
+  ['amit', 'fashion-men', 'product', 'Leather travel bag & card wallet', 'Genuine leather, hardly used. The bag fits a weekend of clothes.', 3200, 'for both', 'Nagpur', 'Ramdaspeth', null, 0, 0.5, 'active', ['leather-bag', 'wallet-hands'], true],
+  ['fatima', 'wellness-beauty-salon', 'service', 'Facial, hair spa & bridal packages', 'Trained beauticians, branded products. Bridal trial available. Women only.', 1499, 'starting', 'Nashik', 'College Road', p29, EVENING, 0.2, 'active', ['salon-facial', 'salon-hair']],
+  ['fatima', 'wellness-beauty-salon', 'service', 'Nail art & manicure studio', 'Gel nails, extensions and manicure. Hygienic tools, appointments on WhatsApp.', 499, 'starting', 'Nashik', 'Gangapur Road', p15, 0, 1.5, 'active', ['salon-nails', 'spa-candles']],
+  ['fatima', 'wellness-massage-spa', 'service', 'Ayurvedic massage & spa — certified therapists', 'Full-body oil massage, foot reflexology and hot-stone therapy at a licensed spa. Women therapists for women guests.', 1200, 'per hour', 'Nashik', 'Indira Nagar', p15, 0, 1, 'active', ['spa-stones', 'spa-foot']],
+  ['fatima', 'events-catering', 'service', 'Wedding & party catering — 50 to 500 guests', 'Veg and non-veg menus, live counters, decoration on request. Taste session before booking.', 450, 'per plate', 'Nashik', 'Panchavati', p15, 0, 2, 'active', ['event-table', 'event-food']],
+  ['fatima', 'furniture-sofas-beds', 'product', 'Leather armchair with floor lamp', 'Comfortable armchair, 2 years old, very good condition. Self pickup.', 7500, null, 'Nashik', 'Indira Nagar', null, 0, 0, 'awaiting_payment', ['armchair', 'sofa-cushion']],
+  ['karan', 'electronics-laptops-computers', 'product', 'Laptop 14", i5 12th gen, 16 GB RAM', 'Used 1 year, 512 GB SSD, charger included. Good for office and college.', 38000, null, 'Surat', 'Adajan', p15, 0, 2, 'active', ['laptop-open', 'laptop-dark']],
 ];
 
 tx(() => {
@@ -169,21 +166,22 @@ tx(() => {
     db.prepare("INSERT INTO kyc_snapshots (client_id, file, source, created_at) VALUES (?, ?, 'selfie', ?)").run(ids[key], docs.live, created);
   });
 
-  ADS.forEach(([key, cat, kind, title, desc, price, note, city, loc, plan, top, ago, state], i) => {
-    const images = [photo(i), photo(i, '-2')];
+  const freeDays = Number(getSettings().free_ad_days) || 15;
+  ADS.forEach(([key, cat, kind, title, desc, price, note, city, loc, plan, top, ago, state, pics, free], i) => {
+    const images = pics.map(photo);
     const start = now - ago * DAY;
     const isLive = state === 'active';
     const paid = plan ? plan.price_paise + topCost(top, plan.days) : 0;
-    const expires = plan && state !== 'awaiting_payment' && state !== 'payment_review' ? start + plan.days * DAY : null;
+    const expires = free ? start + freeDays * DAY : plan && state !== 'awaiting_payment' && state !== 'payment_review' ? start + plan.days * DAY : null;
     const r = db.prepare(`INSERT INTO ads (client_id, category_id, kind, title, description, price_paise, price_note, city, locality, contact_phone, whatsapp, images,
-      status, plan_id, is_top, top_slots, paid_total_paise, starts_at, expires_at, views, created_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      status, plan_id, is_top, top_slots, paid_total_paise, starts_at, expires_at, views, created_at, updated_at, is_free)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(ids[key], catId(cat), kind, title, desc, price * 100, note, city, loc, CLIENTS.find((c) => c[0] === key)[4], CLIENTS.find((c) => c[0] === key)[4],
-        JSON.stringify(images), state, isLive || state === 'expired' ? plan.id : null, isLive && top ? 1 : 0, isLive ? top : 0, isLive || state === 'expired' ? paid : 0,
-        isLive || state === 'expired' ? start : null, expires, isLive ? Math.floor(Math.random() * 180) : 0, start - HOUR, start);
+        JSON.stringify(images), state, plan && (isLive || state === 'expired') ? plan.id : null, isLive && top ? 1 : 0, isLive ? top : 0, plan && (isLive || state === 'expired') ? paid : 0,
+        isLive || state === 'expired' ? start : null, expires, isLive ? Math.floor(Math.random() * 180) : 0, start - HOUR, start, free ? 1 : 0);
     const adId = Number(r.lastInsertRowid);
 
-    if (isLive || state === 'expired') {
+    if (plan && (isLive || state === 'expired')) {
       // A paid payment record → shows in revenue
       const online = i % 2 === 0;
       db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, method, status, razorpay_order_id, razorpay_payment_id, utr, confirmed_at, created_at)
@@ -196,13 +194,14 @@ tx(() => {
       db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, amount_paise, method, status, utr, created_at)
         VALUES (?,?,?,?,0,?, 'upi_manual', 'pending', '512345678901', ?)`).run(ids[key], adId, p7.id, p7.days, p7.price_paise, now - 20 * 60_000);
     }
-    if (title.startsWith('Samsung')) {
+    if (title.startsWith('Portable Bluetooth')) {
       db.prepare('INSERT INTO reports (ad_id, reason, details, reporter_ip, created_at) VALUES (?, ?, ?, ?, ?)')
         .run(adId, 'Wrong category', 'Test report — try "Dismiss" or "Block ad" in Admin → Reports.', '127.0.0.1', now - 3 * HOUR);
     }
   });
   return ids;
 });
+db.prepare("INSERT INTO settings (key, value) VALUES ('test_seed_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(SEED_VERSION);
 rescore(0);
 // Karan deactivated his own account: his live ad is hidden with its remaining days saved.
 const karan = db.prepare("SELECT id FROM clients WHERE email = 'karan.test@example.com'").get();
@@ -212,10 +211,10 @@ console.log(`
 Test data added.
 
   Test seller logins (password for all: ${PASSWORD})
-    rahul.test@example.com   approved  - 3 live ads, 1 payment waiting for you
-    sneha.test@example.com   approved  - TOP ad, 1 expired ad (try Renew)
-    amit.test@example.com    approved  - car ads, one ends within a day
-    fatima.test@example.com  approved  - TOP ad, 1 unpaid ad (try Pay)
+    rahul.test@example.com   approved  - 4 live ads (incl. a job), 1 payment waiting for you
+    sneha.test@example.com   approved  - TOP ad, 1 expired ad (try Renew), 1 FREE ad
+    amit.test@example.com    approved  - bicycles, a flat for rent, 1 FREE ad, one ad ends within a day
+    fatima.test@example.com  approved  - salon, spa, catering, TOP ad, 1 unpaid ad (try Pay)
     vikram.test@example.com  PENDING   - review & approve him in Admin → Clients
     pooja.test@example.com   VIDEO CALL requested
     ravi.test@example.com    REJECTED
@@ -223,9 +222,9 @@ Test data added.
     karan.test@example.com   DEACTIVATED himself - log in as him to see "Reactivate"
 
   TOP ads by time slot (India time):
-    iPhone 14 (Rahul)        ${slotLabels(ALL_SLOTS).join(', ')}
+    OnePlus phone (Rahul)    ${slotLabels(ALL_SLOTS).join(', ')}
     Maths tuition (Sneha)    ${slotLabels(DAYTIME).join(', ')}
-    Bridal makeup (Fatima)   ${slotLabels(EVENING).join(', ')}
+    Facial & hair (Fatima)   ${slotLabels(EVENING).join(', ')}
 
   Remove all test data later with:  npm run seed:remove
 `);

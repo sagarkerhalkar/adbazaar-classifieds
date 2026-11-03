@@ -105,7 +105,7 @@ function blockClient(clientId, note, adminId = null) {
   tx(() => {
     db.prepare("UPDATE clients SET status = 'suspended', admin_note = ?, blocked_reason = ?, reviewed_by = COALESCE(?, reviewed_by), reviewed_at = ? WHERE id = ?")
       .run(note, note, adminId, now(), c.id);
-    db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment','paused')").run(now(), c.id);
+    db.prepare("UPDATE ads SET status = 'blocked', block_reason = 'Seller suspended', rank_score = -1, updated_at = ? WHERE client_id = ? AND status IN ('active','payment_review','awaiting_payment','paused','free_review')").run(now(), c.id);
   });
   return true;
 }

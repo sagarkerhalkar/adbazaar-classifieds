@@ -125,7 +125,7 @@ function splitBar(groups, counts) {
 // ---------- page ----------
 function view(req, d) {
   const exp = (kind) => html`<a class="btn btn-sm" href="/admin/reports/export/${kind}?days=${d.days}">${icon('download', { size: 15 })} Download CSV</a>`;
-  const empty = (t) => html`<div class="empty center"><div class="empty-icon">✨</div><p class="muted">${t}</p></div>`;
+  const empty = (t) => html`<div class="empty center"><div class="empty-icon">${icon('chart', { size: 26 })}</div><p class="muted">${t}</p></div>`;
   const k = d.kpi;
   return html`
   <div class="page-head">

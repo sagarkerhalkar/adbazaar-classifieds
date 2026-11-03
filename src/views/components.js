@@ -1,6 +1,7 @@
 'use strict';
 const { html, rupees, timeAgo, slugify } = require('../lib/html');
 const { icon } = require('./icons');
+const Ph = require('../photos');
 
 const csrf = (req) => html`<input type="hidden" name="_csrf" value="${req.csrfToken}">`;
 
@@ -8,7 +9,7 @@ const STATUS_LABELS = {
   unverified: ['Email/phone not verified', 'muted'], pending: ['Pending review', 'warn'], video_call: ['Video call scheduled', 'info'], approved: ['Approved', 'ok'],
   rejected: ['Rejected', 'bad'], suspended: ['Blocked', 'bad'], deactivated: ['Deactivated', 'muted'], deleted: ['Deleted', 'bad'],
   paused: ['Deactivated', 'muted'],
-  awaiting_payment: ['Awaiting payment', 'warn'], payment_review: ['Payment under review', 'info'],
+  awaiting_payment: ['Awaiting payment', 'warn'], payment_review: ['Payment under review', 'info'], free_review: ['Free ad — being checked', 'info'],
   active: ['Live', 'ok'], expired: ['Expired', 'muted'], blocked: ['Blocked', 'bad'],
   created: ['Started', 'muted'], paid: ['Paid', 'ok'], failed: ['Failed', 'bad'],
 };
@@ -34,7 +35,7 @@ function adCard(ad) {
   return html`
   <article class="ad-card ${ad.is_top ? 'is-top' : ''}">
     <a href="${adUrl(ad)}" class="ad-thumb" tabindex="-1" aria-hidden="true">
-      ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" loading="lazy">` : html`<div class="thumb-ph">${ad.cat_icon || '📦'}</div>`}
+      ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" loading="lazy">` : html`<img class="thumb-stock" src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name || ad.cat_name, slug: ad.main_slug }))}" alt="" loading="lazy"><span class="thumb-note">No photo yet</span>`}
       ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
       ${images.length > 1 || hasVideo(ad) ? html`<span class="img-count">${images.length > 1 ? html`${icon('camera', { size: 12 })} ${images.length}` : ''}${hasVideo(ad) ? html` ${icon('video', { size: 12 })}` : ''}</span>` : ''}
     </a>

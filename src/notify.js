@@ -82,11 +82,11 @@ async function sendPhoneOtp(client) {
 const fire = (p) => { Promise.resolve(p).catch((e) => console.error('[notify]', e.message)); };
 
 // ---------------- admin alerts (WhatsApp / Telegram / Google Chat) ----------------
-// kind: payment | seller | complaint | sponsor. Admin chooses which kinds to receive in Settings → Alerts.
+// kind: payment | seller | complaint | sponsor | free_ad. Admin chooses which kinds to receive in Settings → Alerts.
 function adminAlert(kind, text) {
   try {
     const s = getSettings();
-    const on = String(s.alert_events || 'payment,seller,complaint,sponsor').split(',');
+    const on = String(s.alert_events || 'payment,seller,complaint,sponsor,free_ad').split(',');
     if (!on.includes(kind)) return;
     const { sendAlert } = require('./messaging');
     fire(sendAlert(`${text}\n${baseUrl()}/admin`));

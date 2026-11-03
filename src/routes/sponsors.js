@@ -76,14 +76,14 @@ function adminView(req, rows, enquiries) {
       ${rows.length ? html`<div class="table-wrap card"><table class="table">
         <thead><tr><th>Sponsored ad</th><th>Where</th><th>Dates</th><th>Views</th><th>Clicks</th><th>Status</th><th></th></tr></thead>
         <tbody>${rows.map((sp) => { const [l, t] = state(sp); return html`<tr>
-          <td><div class="cell-ad">${sp.image ? html`<img src="${imgUrl(sp.image)}" alt="">` : html`<div class="thumb-ph sm">★</div>`}<div><strong>${sp.title}</strong><div class="small muted">${sp.advertiser} · <a href="${sp.link}" target="_blank" rel="noopener">link</a></div></div></div></td>
+          <td><div class="cell-ad">${sp.image ? html`<img src="${imgUrl(sp.image)}" alt="">` : html`<div class="thumb-ph sm">${icon('image', { size: 18 })}</div>`}<div><strong>${sp.title}</strong><div class="small muted">${sp.advertiser} · <a href="${sp.link}" target="_blank" rel="noopener">link</a></div></div></div></td>
           <td>${PLACES[sp.placement]}</td>
           <td class="small">${sp.starts_at ? new Date(sp.starts_at).toLocaleDateString('en-IN') : 'now'} → ${sp.ends_at ? new Date(sp.ends_at).toLocaleDateString('en-IN') : 'no end'}</td>
           <td>${sp.impressions}</td><td>${sp.clicks}${sp.impressions ? html` <span class="muted small">(${((sp.clicks / sp.impressions) * 100).toFixed(1)}%)</span>` : ''}</td>
           <td><span class="pill pill-${t}">${l}</span></td>
           <td class="actions"><details><summary class="btn btn-sm">Edit</summary><div class="card" style="margin-top:8px;min-width:420px">${form(sp)}</div></details>
             <form method="post" action="/admin/sponsors/${sp.id}/delete" class="inline" data-confirm="Delete this sponsored ad?">${csrf(req)}<button class="btn btn-danger btn-sm">Delete</button></form></td></tr>`; })}
-        </tbody></table></div>` : html`<div class="card empty center"><div class="empty-icon">📣</div><h3>No sponsored ads yet</h3><p class="muted">When a business wants to advertise with you, add their ad here.</p></div>`}
+        </tbody></table></div>` : html`<div class="card empty center"><div class="empty-icon">${icon('bolt', { size: 26 })}</div><h3>No sponsored ads yet</h3><p class="muted">When a business wants to advertise with you, add their ad here.</p></div>`}
     </div>
     <div class="tab-panel narrow-ish" data-panel="add" hidden><section class="card">${form()}</section></div>
     <div class="tab-panel" data-panel="enquiries" hidden>

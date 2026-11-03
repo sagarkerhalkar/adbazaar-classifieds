@@ -9,9 +9,9 @@ const THEMES = ['peacock', 'marigold', 'green', 'berry', 'ink'];
 const DEFAULTS = {
   announcement: '',
   slides: [
-    { title: 'Sell anything in minutes', subtitle: 'Post your ad and get calls from real buyers near you.', button: 'Post your ad', link: '/post', theme: 'peacock', art: '📱', image: '', active: true },
-    { title: 'Find trusted local services', subtitle: 'Tutors, repairs, beauty, events and more. Call directly, no middleman.', button: 'Explore services', link: '/?kind=service', theme: 'marigold', art: '🛠️', image: '', active: true },
-    { title: 'Be seen first with TOP ads', subtitle: 'Choose your time slots and your ad shows at the very top.', button: 'See how', link: '/client/register', theme: 'green', art: '★', image: '', active: true },
+    { title: 'Sell anything in minutes', subtitle: 'Post your ad free or paid, and get calls from real buyers near you.', button: 'Post your ad', link: '/post', theme: 'peacock', photo: 'people-women-laptop', image: '', active: true },
+    { title: 'Find trusted local services', subtitle: 'Tutors, repairs, salons, events and more. Call the seller directly.', button: 'Explore services', link: '/?kind=service', theme: 'marigold', photo: 'people-team-handshake', image: '', active: true },
+    { title: 'Be seen first with TOP ads', subtitle: 'Pick your time slots and your ad shows at the very top of every page.', button: 'See prices', link: '/pricing', theme: 'green', photo: 'people-meeting', image: '', active: true },
   ],
   show: { categories: true, top: true, cities: true, sell: true },
   cities: 'Mumbai, Delhi, Bengaluru, Pune, Hyderabad, Chennai, Kolkata, Ahmedabad, Jaipur, Nagpur, Nashik, Surat',
@@ -19,7 +19,7 @@ const DEFAULTS = {
   fresh_title: 'Fresh recommendations',
   sell_title: 'Have something to sell?',
   sell_text: 'Post your ad in about 3 minutes and reach buyers in your city.',
-  footer_about: 'A friendly marketplace to buy, sell and find local services across India.',
+  footer_about: 'Buy, sell and find local services across India. Ads are posted by sellers under their own responsibility.',
 };
 
 function clean(raw) {
@@ -31,7 +31,7 @@ function clean(raw) {
     d.slides = raw.slides.slice(0, 8).map((s) => ({
       title: String(s.title || '').slice(0, 80), subtitle: String(s.subtitle || '').slice(0, 160),
       button: String(s.button || '').slice(0, 30), link: safeLink(s.link), theme: THEMES.includes(s.theme) ? s.theme : 'peacock',
-      art: String(s.art || '').slice(0, 4), image: String(s.image || '').replace(/[^A-Za-z0-9._-]/g, ''), active: s.active !== false,
+      photo: String(s.photo || '').replace(/[^a-z0-9-]/g, '').slice(0, 40), image: String(s.image || '').replace(/[^A-Za-z0-9._-]/g, ''), active: s.active !== false,
     }));
   }
   return d;
