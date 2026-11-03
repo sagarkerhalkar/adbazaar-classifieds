@@ -186,7 +186,7 @@ Commit: `33859ac`
 - **Real photos:** test data and banners download real Pexels photos on your computer (drawings when offline).
 - **Guide:** Part 19 (all of this), Part 20 (Swiss hosting, run from India), Part 21 (going public in India).
 
-Commit: `COMMIT_PLACEHOLDER`
+Commit: `a92c2cb`
 
 ---
 
