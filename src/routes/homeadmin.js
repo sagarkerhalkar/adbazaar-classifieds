@@ -33,7 +33,7 @@ function view(req, cfg) {
         ${field('Built-in photo', html`<select name="photo">${Ph.list().map((n) => html`<option value="${n}" ${n === (x.photo || Ph.BANNER_DEFAULTS[i % Ph.BANNER_DEFAULTS.length]) ? 'selected' : ''}>${Ph.label(n)}</option>`)}</select>`, 'Used when you have not uploaded your own picture')}
         <label class="field"><span class="label">Show on site</span><span class="switch-row"><input type="checkbox" class="switch" name="active" value="1" ${x.active ? 'checked' : ''}> ${x.active ? 'On' : 'Off'}</span></label>
       </div>
-      ${field('Your own picture (optional)', html`<input type="file" name="image" accept="image/jpeg,image/png,image/webp">`, 'Wide photo, about 1600 × 500 pixels, max 4 MB. The text is shown on its left side.')}
+      ${field('Your own picture (optional)', html`<input type="file" name="image" accept="image/jpeg,image/png,image/webp" data-max-mb="4" data-max-px="2000">`, 'Wide photo, about 1600 × 500 pixels, max 4 MB. The text is shown on its left side.')}
       ${x.image ? html`<label class="check"><input type="checkbox" name="remove_image" value="1"> <span>Remove my picture and use the built-in photo</span></label>` : ''}
       <div class="bcard-actions">
         <button class="btn btn-primary">${icon('check', { size: 16 })} Save banner</button>

@@ -3,11 +3,11 @@
 
 const path = require('node:path');
 const { db, tx, getSettings, setSetting, parseImages } = require('../db');
-const { html, rupees, fmtDate, fmtDay, timeLeft, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
+const { html, rupees, fmtDate, fmtShort, fmtDay, timeLeft, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { icon } = require('../views/icons');
 const { renderPage } = require('../views/layout');
 const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
-const { checkId, describeId, ID_TYPES } = require('../idproof');
+const { checkId, describeId, ID_TYPES, sides } = require('../idproof');
 const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib/security');
 const { saveUpload, saveDataUrl, removeFile, UploadError, sendFile, DIRS, safeName } = require('../lib/files');
 const V = require('../validators');
@@ -114,7 +114,7 @@ function clientsView(req, rows, filter) {
     <thead><tr><th>Client</th><th>Contact</th><th>City</th><th>Submitted</th><th>Status</th><th>Ads</th><th></th></tr></thead>
     <tbody>${rows.map((c) => html`<tr>
       <td><div class="cell-ad">${c.live_photo_file ? html`<img class="round" src="/admin/kyc/${c.live_photo_file}" alt="">` : html`<div class="avatar">${c.name.slice(0, 1)}</div>`}<div><strong>${c.name}</strong>${c.business_name ? html`<div class="small muted">${c.business_name}</div>` : ''}</div></div></td>
-      <td>${c.phone}<div class="small muted">${c.email}</div></td><td>${c.city}</td><td>${fmtDate(c.created_at)}</td>
+      <td>${c.phone}<div class="small muted">${c.email}</div></td><td>${c.city}</td><td class="nowrap">${fmtShort(c.created_at)}</td>
       <td>${pill(c.status)}</td><td>${c.ad_count}</td>
       <td><a class="btn btn-sm" href="/admin/clients/${c.id}">${c.status === 'pending' ? 'Review' : 'Open'}</a></td></tr>`)}
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No clients here.</p></div>`}`;
@@ -156,8 +156,8 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
       </form>
       <h3>Documents</h3>
       <div class="docs">
-        ${docLink(c.id_file || c.aadhaar_file, `${(ID_TYPES[c.id_type] || ID_TYPES.aadhaar).label}`)}
-        ${c.id_back_file || c.aadhaar_back_file ? docLink(c.id_back_file || c.aadhaar_back_file, 'Back side') : ''}
+        ${docLink(c.id_file || c.aadhaar_file, `${(ID_TYPES[c.id_type] || ID_TYPES.aadhaar).short} — ${sides(c.id_type).front}`)}
+        ${c.id_back_file || c.aadhaar_back_file || sides(c.id_type).needBack ? docLink(c.id_back_file || c.aadhaar_back_file, `${(ID_TYPES[c.id_type] || ID_TYPES.aadhaar).short} — ${sides(c.id_type).back || 'Back side'}`) : ''}
         ${c.pan_file && c.pan_file !== c.id_file ? docLink(c.pan_file, 'PAN card') : ''}
         ${c.address_proof_file ? docLink(c.address_proof_file, 'Address proof') : ''}
         ${c.photo_file ? docLink(c.photo_file, 'Uploaded photo') : ''}
@@ -233,7 +233,7 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
     </tbody></table></div>` : html`<p class="muted">No ads yet.</p>`}
     <h2>Payments (${payments.length})</h2>
     ${payments.length ? html`<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>
-      ${payments.map((p) => html`<tr><td>${p.id}</td><td>${fmtDate(p.created_at)}</td><td>${rupees(p.amount_paise)}</td><td>${p.method === 'razorpay' ? 'Online' : `UPI ${p.utr}`}</td><td>${pill(p.status)}</td></tr>`)}
+      ${payments.map((p) => html`<tr><td>${p.id}</td><td class="nowrap">${fmtShort(p.created_at)}</td><td>${rupees(p.amount_paise)}</td><td>${p.method === 'razorpay' ? 'Online' : `UPI ${p.utr}`}</td><td>${pill(p.status)}</td></tr>`)}
     </tbody></table></div>` : html`<p class="muted">No payments yet.</p>`}
   </section>`;
 }
@@ -284,41 +284,49 @@ function newClientView(req, v = {}, error) {
   </div>`;
 }
 
+// "More" menu used in admin lists: a small button that opens a floating list of extra actions (public/js/app.js).
+const moreMenu = (label, inner) => html`<details class="more-menu"><summary class="btn btn-sm btn-ghost" aria-label="${label}">More ${icon('down', { size: 14 })}</summary><div class="more-pop">${inner}</div></details>`;
+const REJECT_REASONS = html`<datalist id="reject-reasons"><option value="UTR not found in our bank account"><option value="Amount received is less than the total"><option value="Payment sent to a wrong UPI ID"><option value="Same UTR already used"></datalist>`;
+const FAIL_REASONS = html`<datalist id="fail-reasons"><option value="Payment bounced / reversed by the bank"><option value="Charge-back from the card or UPI app"><option value="Money never reached our account"></datalist>`;
+
 function topupsTable(req, rows) {
-  return html`<div class="table-wrap card"><table class="table">
-    <thead><tr><th>#</th><th>Date</th><th>Seller</th><th>Amount</th><th>UTR</th><th>Status</th><th></th></tr></thead>
+  return html`<div class="table-wrap card"><table class="table table-fit">
+    <thead><tr><th>Top-up</th><th>Seller</th><th>Reference</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows.map((t) => html`<tr>
-      <td>T${t.id}</td><td>${fmtDate(t.created_at)}</td><td><a href="/admin/clients/${t.client_id}">${t.client_name}</a></td>
-      <td><strong>${rupees(t.amount_paise)}</strong></td>
-      <td class="mono">${t.utr}${t.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${t.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}</td>
+      <td><strong class="amt">${rupees(t.amount_paise)}</strong><div class="small muted nowrap">T${t.id} · ${fmtShort(t.created_at)}</div></td>
+      <td><a href="/admin/clients/${t.client_id}">${t.client_name}</a></td>
+      <td><span class="mono">${t.utr}</span>${t.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${t.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}</td>
       <td>${pill(t.status === 'pending' ? 'payment_review' : t.status)}${t.admin_note ? html`<div class="small muted">${t.admin_note}</div>` : ''}</td>
-      <td class="actions">${t.status === 'pending' ? html`
-        <form method="post" action="/admin/topups/${t.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">✔ Confirm & add to balance</button></form>
-        <form method="post" action="/admin/topups/${t.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>` : ''}</td>
-    </tr>`)}</tbody></table></div>`;
+      <td class="actions"><div class="act-row">${t.status === 'pending' ? html`
+        <form method="post" action="/admin/topups/${t.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Confirm</button></form>
+        ${moreMenu(`More for top-up ${t.id}`, html`<form method="post" action="/admin/topups/${t.id}/reject" class="more-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>`)}` : ''}</div></td>
+    </tr>`)}</tbody></table>${REJECT_REASONS}</div>`;
 }
 
 function paymentsView(req, rows, status, topups = []) {
   const tabs = !can(req, 'money') ? [] : [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['failed', 'Failed later'], ['all', 'All']];
+  const how = (p) => (p.method === 'wallet' ? html`Balance`
+    : p.method === 'razorpay' ? html`Online<div class="small muted mono">${p.razorpay_payment_id || p.razorpay_order_id}</div>`
+      : html`UPI <span class="mono">${p.utr}</span>${p.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${p.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}`);
   return html`
-  <div class="page-head"><div><h1>Payments</h1>${!can(req, 'money') ? html`<p class="muted">Check each payment in the bank / UPI app, then confirm or reject it. You see only payments that are waiting.</p>` : ''}</div></div>
+  <div class="page-head"><div><h1>Payments</h1>${!can(req, 'money') ? html`<p class="muted">Check each payment in the bank / UPI app, then confirm or reject it. You see only payments that are waiting.</p>` : html`<p class="muted">Only you can make an ad live: check the money in your bank or UPI app, then confirm.</p>`}</div></div>
   ${topups.length ? html`<h2>Balance top-ups ${status === 'pending' ? 'to confirm' : ''}</h2>${topupsTable(req, topups)}<h2>Ad payments</h2>` : ''}
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${status === k ? 'active' : ''}" href="/admin/payments?status=${k}">${l}</a>`)}</div>
-  ${rows.length ? html`<div class="table-wrap card"><table class="table">
-    <thead><tr><th>#</th><th>Date</th><th>Client</th><th>Ad</th><th>Plan</th><th>Amount</th><th>Reference</th><th>Status</th><th></th></tr></thead>
+  ${rows.length ? html`<div class="table-wrap card"><table class="table table-fit">
+    <thead><tr><th>Payment</th><th>Seller &amp; ad</th><th>Plan</th><th>Paid by</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows.map((p) => html`<tr>
-      <td>${p.id}</td><td>${fmtDate(p.created_at)}</td>
-      <td><a href="/admin/clients/${p.client_id}">${p.client_name}</a></td>
-      <td><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></td>
-      <td>${p.days} days${p.top_slots ? html`<div class="small"><span class="pill pill-top">TOP ${slotLabels(p.top_slots).join(', ')}</span></div>` : ''}</td>
-      <td><strong>${rupees(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${p.method === 'wallet' ? 'all from balance' : html`UPI ${rupees(p.amount_paise - p.wallet_paise)} + balance ${rupees(p.wallet_paise)}`}</div>` : ''}</td>
-      <td>${p.method === 'wallet' ? html`Balance` : p.method === 'razorpay' ? html`Online<div class="small muted mono">${p.razorpay_payment_id || p.razorpay_order_id}</div>` : html`UPI <span class="mono">${p.utr}</span>${p.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${p.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}`}</td>
+      <td><strong class="amt">${rupees(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${p.method === 'wallet' ? 'all from balance' : html`UPI ${rupees(p.amount_paise - p.wallet_paise)} + balance ${rupees(p.wallet_paise)}`}</div>` : ''}
+        <div class="small muted nowrap">#${p.id} · ${fmtShort(p.created_at)}</div></td>
+      <td class="cell-wide"><a href="/admin/clients/${p.client_id}"><strong>${p.client_name}</strong></a><div class="small clamp1"><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></div></td>
+      <td class="nowrap">${p.days} days${p.top_slots ? html`<div class="small"><span class="pill pill-top">TOP ${slotLabels(p.top_slots).join(', ')}</span></div>` : ''}</td>
+      <td>${how(p)}</td>
       <td>${pill(p.status)}${p.admin_note ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
-      <td class="actions">${p.status === 'pending' ? html`
-        <form method="post" action="/admin/payments/${p.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">✔ Confirm & go live</button></form>
-        <form method="post" action="/admin/payments/${p.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>` : p.status === 'paid' ? html`<a class="btn btn-sm" href="/admin/payments/${p.id}/receipt" target="_blank">${icon('receipt', { size: 15 })} Receipt</a>
-        <form method="post" action="/admin/payments/${p.id}/failed" class="inline reject-form" data-confirm="Mark payment #${p.id} as failed? The ad goes back to unpaid and is removed from the site until the seller pays again.">${csrf(req)}<input name="note" placeholder="Why (seller sees it)" maxlength="200" list="fail-reasons"><button class="btn btn-danger btn-sm">Payment failed</button></form>` : ''}</td>
-    </tr>`)}</tbody></table><datalist id="reject-reasons"><option value="UTR not found in our bank account"><option value="Amount received is less than the total"><option value="Payment sent to a wrong UPI ID"><option value="Same UTR already used"></datalist><datalist id="fail-reasons"><option value="Payment bounced / reversed by the bank"><option value="Charge-back from the card or UPI app"><option value="Money never reached our account"></datalist></div>` : html`<div class="card empty center"><p class="muted">Nothing here.</p></div>`}`;
+      <td class="actions"><div class="act-row">${p.status === 'pending' ? html`
+        <form method="post" action="/admin/payments/${p.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Confirm &amp; go live</button></form>
+        ${moreMenu(`More for payment ${p.id}`, html`<form method="post" action="/admin/payments/${p.id}/reject" class="more-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>`)}`
+    : p.status === 'paid' ? html`<a class="btn btn-sm" href="/admin/payments/${p.id}/receipt" target="_blank">${icon('receipt', { size: 15 })} Receipt</a>
+        ${can(req, 'money') ? moreMenu(`More for payment ${p.id}`, html`<form method="post" action="/admin/payments/${p.id}/failed" class="more-form" data-confirm="Mark payment #${p.id} as failed? The ad goes back to unpaid and is removed from the site until the seller pays again.">${csrf(req)}<input name="note" placeholder="Why it failed (seller sees it)" maxlength="200" list="fail-reasons"><button class="btn btn-danger btn-sm">Payment failed</button></form>`) : ''}` : ''}</div></td>
+    </tr>`)}</tbody></table>${REJECT_REASONS}${FAIL_REASONS}</div>` : html`<div class="card empty center"><div class="empty-icon">${icon('check', { size: 26 })}</div><p class="muted">${status === 'pending' ? 'No payments waiting. New ones appear here by themselves.' : 'Nothing here.'}</p></div>`}`;
 }
 
 
@@ -406,7 +414,7 @@ function categoriesView(req, mains, counts) {
         ${toggle(m)}${editBtn(m, false)}${delBtn(m, m.subs)}
       </div>
       <form method="post" action="/admin/categories/${m.id}/photo" enctype="multipart/form-data" class="catphoto">${csrf(req)}
-        <label class="btn btn-sm btn-ghost">${icon('image', { size: 15 })} ${m.image ? 'Change photo' : 'Use my own photo'}<input type="file" name="image" accept="image/jpeg,image/png,image/webp" hidden data-autosubmit></label>
+        <label class="btn btn-sm btn-ghost">${icon('image', { size: 15 })} ${m.image ? 'Change photo' : 'Use my own photo'}<input type="file" name="image" accept="image/jpeg,image/png,image/webp" data-max-mb="4" hidden data-autosubmit></label>
         ${m.image ? html`<button class="btn btn-sm btn-ghost" name="reset" value="1">Use built-in photo</button>` : html`<span class="small muted">Built-in photo</span>`}
       </form>
       <div class="subchips">
@@ -610,7 +618,7 @@ function settingsView(req, { s, plans, cats, admins }) {
         ${csrf(req)}
         <p class="small muted">Site name: <strong>${s.site_name}</strong> — ${isOwner(req) ? html`change it in <a href="#admins">Staff & brand</a>.` : 'only the owner can change it.'}</p>
         <div class="row2">${field('Your UPI ID', html`<input name="upi_id" maxlength="80" value="${s.upi_id}" placeholder="yourname@okhdfcbank">`)}${field('UPI payee name', html`<input name="upi_payee_name" maxlength="80" value="${s.upi_payee_name}">`)}</div>
-        ${field('UPI QR code image', html`<input type="file" name="upi_qr" accept="image/*">`, s.upi_qr_file ? 'A QR is uploaded — choose a file to replace it.' : 'Upload the QR from your UPI / merchant app')}
+        ${field('UPI QR code image', html`<input type="file" name="upi_qr" accept="image/*" data-max-mb="3" data-no-shrink>`, s.upi_qr_file ? 'A QR is uploaded — choose a file to replace it.' : 'Upload the QR from your UPI / merchant app')}
         ${s.upi_qr_file ? html`<img class="upi-qr" src="${imgUrl(s.upi_qr_file)}" alt="UPI QR">` : ''}
         <div class="row2">${field('Support phone', html`<input name="support_phone" maxlength="20" value="${s.support_phone}">`)}${field('Support email', html`<input name="support_email" type="email" maxlength="120" value="${s.support_email}">`)}</div>
         <p class="small muted">Online payments (Razorpay): ${P.razorpayEnabled() ? html`<strong class="ok">enabled</strong>` : html`<strong>not configured</strong> — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env`}</p>
@@ -709,7 +717,7 @@ function staffAndBrand(req, s, admins) {
       <div class="row2">${field('Site name', html`<input name="site_name" required maxlength="40" value="${s.site_name}">`)}${field('Tagline', html`<input name="tagline" maxlength="120" value="${s.tagline}">`)}</div>
       <div class="brand-logo-row">
         <div class="brand-preview" aria-hidden="true">${s.brand_logo ? html`<img src="/media/ads/${s.brand_logo}" alt="">` : html`<span class="logo-mark">${icon('tag', { size: 22 })}</span>`}<strong>${s.site_name}</strong></div>
-        ${field('Logo (square, PNG/JPG/WEBP, max 2 MB)', html`<input type="file" name="logo" accept="image/png,image/jpeg,image/webp">`, s.brand_logo ? html`<label class="check small"><input type="checkbox" name="remove_logo" value="1"> Remove my logo</label>` : 'Without a logo, the tag symbol is used.')}
+        ${field('Logo (square, PNG/JPG/WEBP, max 2 MB)', html`<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" data-max-mb="2" data-max-px="512">`, s.brand_logo ? html`<label class="check small"><input type="checkbox" name="remove_logo" value="1"> Remove my logo</label>` : 'Without a logo, the tag symbol is used.')}
       </div>
       <fieldset class="theme-pick"><legend class="label">Colours</legend>
         ${Object.entries(Brand.THEMES).map(([k, t]) => html`<label class="theme-opt"><input type="radio" name="brand_theme" value="${k}" ${theme === k ? 'checked' : ''}><span class="theme-sw" style="--a:${t.main};--b:${t.acc}"></span><span class="small">${t.label}</span></label>`)}
@@ -807,6 +815,8 @@ function register(app) {
     if (db.prepare('SELECT 1 FROM clients WHERE email = ?').get(v.email)) return fail('A client with this email already exists.');
     const idc = checkId(v.id_type, v.id_number); if (idc.error) return fail(idc.error);
     if (!req.files.id_file?.[0]) return fail('Upload a photo of the ID document.');
+    { const sd = sides(v.id_type);
+      if (sd.needBack && !req.files.id_back_file?.[0]) return fail(`Please also upload the ${sd.back.toLowerCase()} of the ${ID_TYPES[v.id_type].short}.`); }
     if (v.pincode && !V.isValidPincode(v.pincode)) return fail('The PIN code should be 6 digits (or leave it empty).');
     if (approve && !b.live_photo_data) return fail('Take the live photo with the webcam before approving (or untick "approve now" and verify on a video call).');
     const password = b.password ? String(b.password) : randomToken(9);
@@ -1481,7 +1491,7 @@ function register(app) {
       ${rows.length ? html`<div class="table-wrap card"><table class="table">
         <thead><tr><th>Time</th><th>Type</th><th>To</th><th>Subject / message</th><th>Status</th></tr></thead>
         <tbody>${rows.map((m) => html`<tr>
-          <td>${fmtDate(m.created_at)}</td><td>${({ sms: '📱 SMS', email: '📧 Email', telegram: '✈️ Telegram', whatsapp: '🟢 WhatsApp', gchat: '💬 Google Chat' })[m.channel] || m.channel}</td><td>${m.to_addr}</td>
+          <td class="nowrap">${fmtShort(m.created_at)}</td><td>${({ sms: '📱 SMS', email: '📧 Email', telegram: '✈️ Telegram', whatsapp: '🟢 WhatsApp', gchat: '💬 Google Chat' })[m.channel] || m.channel}</td><td>${m.to_addr}</td>
           <td><details><summary>${m.subject || m.body.slice(0, 60)}</summary><pre class="msg-body">${m.body}</pre></details></td>
           <td>${m.status === 'sent' ? html`<span class="pill pill-ok">Sent</span>` : m.status === 'failed' ? html`<span class="pill pill-bad" title="${m.error}">Failed</span><div class="small muted">${String(m.error || '').slice(0, 80)}</div>` : html`<span class="pill pill-warn">Not set up</span>`}</td></tr>`)}
         </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No messages yet.</p></div>`}`));

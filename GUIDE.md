@@ -692,3 +692,38 @@ Failed payments are listed under **Payments → Failed later**.
 - links and buttons are bigger on touch screens;
 - the phone footer is shorter;
 - the settings tabs wrap instead of being cut off.
+
+---
+
+## Part 24 — Lists that fit every screen, instant photo checks, both sides of the ID (4 Nov, evening)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5**.
+
+**Admin lists fit on every screen.** Payments, top-ups, clients, ads, reports and messages now fit on a laptop, a Mac, a tablet, a phone and a zoomed-in browser. Nothing is cut off at the right any more.
+- **Payments:** each row shows the amount, the payment number and a short date on one line ("2 Nov, 4:42 pm"), the seller and the ad, the plan, how it was paid and the status.
+- **Buttons:** one main button per row (**Confirm & go live** or **Receipt**). **Reject** and **Payment failed** (with the reason box) are in the **More** menu.
+- **Smaller screens** (tablet, phone, or a browser zoomed in): each row becomes a small card with labels.
+
+**Photos are checked the moment they are chosen** (seller photos, ID, payment screenshot, banners, logo, sponsors, category photos):
+- **A big photo is made smaller by itself**, before uploading. For example, 19.8 MB becomes 616 KB, so the upload is fast and still sharp.
+- **A wrong file** (not a photo, a PDF where only photos are allowed, too many photos) shows a red message at once and is removed.
+- **Videos:** length (max 1 minute) and size (max 90 MB) are checked as before.
+- The chosen photos appear as small previews under the box; the first one is marked **Cover**.
+
+**ID photos.**
+
+| ID | What the seller uploads |
+|---|---|
+| **Aadhaar** | Front side (photo, name, date of birth) **and** back side (address) |
+| **Passport** | First page (photo, name, date of birth) **and** last page (address) |
+| **PAN** | Front side only |
+
+The form changes by itself when the seller picks the ID, and the server refuses an Aadhaar or passport without both sides. Admin → **Add client** works the same way. On a client's page you see both sides labelled.
+
+**New category: Toys & Kids** (Toys & games, Baby products, School & study). Rename or delete it in Admin → Categories.
+
+**Every requirement checked.** The file `docs/REQUIREMENTS.md` (also in your project) lists all 57 things you asked for since the start, with where each one is in the app.
+
+Phone fixes in this round:
+- the payment page no longer goes wider than a small phone (long button text now wraps);
+- the **More** menu stays open while you type a reason on a phone.

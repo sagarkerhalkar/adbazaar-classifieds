@@ -3,7 +3,7 @@ const Staff = require('../staff');
 // Admin → Reports: KPIs, charts, rejected sellers, rejected payments, ad reports, all sellers. Every list exports to CSV.
 
 const { db } = require('../db');
-const { html, raw, rupees, fmtDate } = require('../lib/html');
+const { html, raw, rupees, fmtDate, fmtShort } = require('../lib/html');
 const { csrf, pill, adUrl } = require('../views/components');
 const { icon } = require('../views/icons');
 
@@ -194,7 +194,7 @@ function view(req, d) {
       <div class="section-head" style="margin-top:18px"><span class="muted small">Every confirmed payment in the last ${d.days} days.</span>${exp('payments')}</div>
       ${d.paidList.length ? html`<div class="table-wrap card"><table class="table">
         <thead><tr><th>Receipt</th><th>Confirmed</th><th>Seller</th><th>Ad</th><th>Plan</th><th>Amount</th><th>How</th></tr></thead>
-        <tbody>${d.paidList.map((p) => html`<tr><td><a href="/admin/payments/${p.id}/receipt" target="_blank">#${p.id}</a></td><td>${fmtDate(p.confirmed_at)}</td>
+        <tbody>${d.paidList.map((p) => html`<tr><td><a href="/admin/payments/${p.id}/receipt" target="_blank">#${p.id}</a></td><td class="nowrap">${fmtShort(p.confirmed_at)}</td>
           <td><a href="/admin/clients/${p.client_id}">${p.client_name}</a></td><td>${p.ad_title}</td><td>${p.days} days</td>
           <td><strong>${M(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${M(p.wallet_paise)} from balance</div>` : ''}</td>
           <td>${({ upi_manual: 'UPI (checked by you)', razorpay: 'Online (Razorpay)', wallet: 'Paid from balance' })[p.method] || p.method}${p.utr ? html`<div class="small muted mono">${p.utr}</div>` : ''}</td></tr>`)}</tbody></table></div>` : html`<div class="card">${empty('No payments in this period yet.')}</div>`}
@@ -217,7 +217,7 @@ function view(req, d) {
         <tbody>${d.liveAds.map((a) => { const left = a.expires_at - Date.now(); return html`<tr>
           <td><a href="/ad/${a.id}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.city}</div></td>
           <td>${a.client_name}</td><td>${a.plan}</td><td>${M(a.paid_total_paise)}</td>
-          <td>${fmtDate(a.expires_at)}<div class="small ${left < DAY ? 'bad' : 'muted'}">${left < DAY ? 'ends within 24 h' : `${Math.ceil(left / DAY)} days left`}</div></td>
+          <td class="nowrap">${fmtShort(a.expires_at)}<div class="small ${left < DAY ? 'bad' : 'muted'}">${left < DAY ? 'ends within 24 h' : `${Math.ceil(left / DAY)} days left`}</div></td>
           <td>${a.views}</td>
           <td>${a.top_slots ? html`<span class="pill pill-top">TOP (paid)</span> ` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top">★ Admin TOP</span> ` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}${!a.top_slots && !(a.admin_top_until > Date.now()) && !a.admin_boost ? html`<span class="muted small">by payment</span>` : ''}</td>
           <td><a class="btn btn-sm" href="/admin/ads?status=active&q=${a.id}">${icon('bolt', { size: 14 })} Boost & TOP</a></td></tr>`; })}</tbody></table></div>` : html`<div class="card">${empty('No ads are live right now.')}</div>`}
@@ -230,7 +230,7 @@ function view(req, d) {
         <tbody>${d.rejectedSellers.map((c) => html`<tr>
           <td><strong>${c.name}</strong>${c.business_name ? html`<div class="small muted">${c.business_name}</div>` : ''}</td>
           <td>${c.phone}<div class="small muted">${c.email}</div></td>
-          <td>${fmtDate(c.created_at)}</td><td>${fmtDate(c.reviewed_at)}${c.reviewer ? html`<div class="small muted">by ${c.reviewer}</div>` : ''}</td>
+          <td class="nowrap">${fmtShort(c.created_at)}</td><td class="nowrap">${fmtShort(c.reviewed_at)}${c.reviewer ? html`<div class="small muted">by ${c.reviewer}</div>` : ''}</td>
           <td>${c.admin_note || html`<span class="muted">—</span>`}</td>
           <td><a class="btn btn-sm" href="/admin/clients/${c.id}">Open</a></td></tr>`)}</tbody></table></div>` : html`<div class="card">${empty('No rejected sellers in this period.')}</div>`}
     </div>
@@ -240,7 +240,7 @@ function view(req, d) {
       ${d.rejectedPayments.length ? html`<div class="table-wrap card"><table class="table">
         <thead><tr><th>#</th><th>Date</th><th>Seller</th><th>Ad</th><th>Amount</th><th>UTR</th><th>Reason</th></tr></thead>
         <tbody>${d.rejectedPayments.map((p) => html`<tr>
-          <td>${p.id}</td><td>${fmtDate(p.created_at)}</td>
+          <td>${p.id}</td><td class="nowrap">${fmtShort(p.created_at)}</td>
           <td><a href="/admin/clients/${p.cid}">${p.client_name}</a><div class="small muted">${p.client_phone}</div></td>
           <td><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></td>
           <td>${M(p.amount_paise)}</td><td class="mono">${p.utr || '—'}</td>
@@ -252,7 +252,7 @@ function view(req, d) {
       ${d.adReports.length ? html`<div class="table-wrap card"><table class="table">
         <thead><tr><th>Date</th><th>Ad</th><th>Reason</th><th>Details</th><th></th></tr></thead>
         <tbody>${d.adReports.map((r) => html`<tr class="${r.resolved ? 'dim' : ''}">
-          <td>${fmtDate(r.created_at)}</td><td><a href="${adUrl({ id: r.ad_id, title: r.ad_title })}" target="_blank">${r.ad_title}</a> ${pill(r.ad_status)}</td>
+          <td class="nowrap">${fmtShort(r.created_at)}</td><td><a href="${adUrl({ id: r.ad_id, title: r.ad_title })}" target="_blank">${r.ad_title}</a> ${pill(r.ad_status)}</td>
           <td>${r.reason}</td><td>${r.details}</td>
           <td class="actions">${!r.resolved ? html`
             <form method="post" action="/admin/ads/${r.ad_id}/block" class="inline" data-confirm="Block this ad? It disappears from the site.">${csrf(req)}<input type="hidden" name="reason" value="Reported: ${r.reason}"><input type="hidden" name="report_id" value="${r.id}"><button class="btn btn-danger btn-sm">Block ad</button></form>
@@ -267,7 +267,7 @@ function view(req, d) {
         <tbody>${d.sellers.map((c) => html`<tr>
           <td>${c.id}</td><td><a href="/admin/clients/${c.id}"><strong>${c.name}</strong></a>${c.business_name ? html`<div class="small muted">${c.business_name}</div>` : ''}</td>
           <td>${c.phone}<div class="small muted">${c.email}</div></td><td>${c.city || '—'}</td><td>${pill(c.status)}</td>
-          <td>${c.ads}</td><td>${M(c.paid)}</td><td>${M(c.wallet)}</td><td>${fmtDate(c.created_at)}</td><td>${fmtDate(c.last_login_at)}</td></tr>`)}</tbody></table></div>
+          <td>${c.ads}</td><td>${M(c.paid)}</td><td>${M(c.wallet)}</td><td class="nowrap">${fmtShort(c.created_at)}</td><td class="nowrap">${fmtShort(c.last_login_at)}</td></tr>`)}</tbody></table></div>
     </div>
   </div>`;
 }

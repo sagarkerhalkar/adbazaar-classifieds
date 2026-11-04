@@ -47,6 +47,8 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 - **Free ads** (`src/freeads.js`): shown after all paid ads, never in TOP; days, per-seller limit and admin check set by the admin.
 - **Staff roles** (`src/staff.js`): the owner makes roles from 10 permissions (payments, money, sellers, ads, categories, home, sponsors, reports, messages, settings); pages, menu and figures follow the role. Brand name, logo and 6 colour themes are owner-only (`src/brand.js`).
 - **Payment failed later:** mark a confirmed payment failed or move an ad to unpaid; the seller is told and it goes live again after the next confirmed payment.
+- **Uploads checked at once** (`public/js/upload.js`): wrong type or too many files flagged on choosing; big photos shrunk in the browser; previews. ID: Aadhaar front+back, Passport first+last page, PAN front.
+- **Requirements checklist:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 - **Real photos** in `public/photos` (Unsplash License, see `CREDITS.md`) for banners, category tiles and test ads.
 - **Sponsors** (`src/routes/sponsors.js`): third-party ads between listings, under ad pages and on the home page, with view and click counts and an `/advertise` enquiry form.
 

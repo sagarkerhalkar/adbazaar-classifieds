@@ -329,6 +329,17 @@ if (!db.prepare("SELECT 1 FROM settings WHERE key = 'wellness_seeded'").get()) {
   db.prepare("INSERT INTO settings (key, value) VALUES ('wellness_seeded', '1')").run();
 }
 
+// "Toys & Kids" main category (added once; rename or delete it in Admin → Categories).
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'toys_seeded'").get()) {
+  if (!db.prepare("SELECT 1 FROM categories WHERE slug = 'toys-kids'").get()) {
+    const r = db.prepare("INSERT INTO categories (name, slug, icon, sort) VALUES ('Toys & Kids', 'toys-kids', '', 11)").run();
+    const ins = db.prepare('INSERT OR IGNORE INTO categories (name, slug, icon, sort, parent_id) VALUES (?, ?, ?, ?, ?)');
+    [['Toys & games', 'toys-kids-toys-games'], ['Baby products', 'toys-kids-baby'], ['School & study', 'toys-kids-school']]
+      .forEach(([n, s], i) => ins.run(n, s, '', i, Number(r.lastInsertRowid)));
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('toys_seeded', '1')").run();
+}
+
 if (!db.prepare('SELECT 1 FROM top_slots LIMIT 1').get()) {
   // Default TOP price per day for each 3-hour slot (₹): night is cheap, evening is prime time.
   const prices = [5, 5, 10, 20, 20, 20, 30, 25];

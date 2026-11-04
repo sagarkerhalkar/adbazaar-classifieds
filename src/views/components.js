@@ -77,13 +77,14 @@ function idFields(v = {}) {
   return html`
     <div class="id-types" role="radiogroup" aria-label="ID document">
       ${Object.entries(ID_TYPES).map(([k, x]) => html`<label class="id-type"><input type="radio" name="id_type" value="${k}" ${k === type ? 'checked' : ''} required
-        data-id-type data-placeholder="${x.placeholder}" data-inputmode="${x.inputmode}" data-maxlength="${x.maxlength}" data-hint="${x.hint}" data-short="${x.short}"><span>${x.label}</span></label>`)}
+        data-id-type data-placeholder="${x.placeholder}" data-inputmode="${x.inputmode}" data-maxlength="${x.maxlength}" data-hint="${x.hint}" data-short="${x.short}"
+        data-front="${x.front}" data-back="${x.back}" data-need-back="${x.needBack ? '1' : ''}"><span>${x.label}</span></label>`)}
     </div>
-    <div class="row2">
-      ${field(html`<span data-id-label>${t.short}</span> number *`, html`<input name="id_number" required class="upper" maxlength="${t.maxlength}" inputmode="${t.inputmode}" placeholder="${t.placeholder}" value="${v.id_number}" data-id-number autocomplete="off">`, html`<span data-id-hint>${t.hint}</span>`)}
-      ${field(html`Photo of your <span data-id-label>${t.short}</span> *`, html`<input type="file" name="id_file" required accept="image/*,application/pdf">`, 'Clear photo or PDF, max 5 MB. Name and date of birth must be readable.')}
-    </div>
-    ${field('Back side (optional)', html`<input type="file" name="id_back_file" accept="image/*,application/pdf">`, 'Only if your document has details on the back')}`;
+    ${field(html`<span data-id-label>${t.short}</span> number *`, html`<input name="id_number" required class="upper" maxlength="${t.maxlength}" inputmode="${t.inputmode}" placeholder="${t.placeholder}" value="${v.id_number}" data-id-number autocomplete="off">`, html`<span data-id-hint>${t.hint}</span>`)}
+    <div class="row2 id-sides">
+      ${field(html`<span data-id-front>${t.front}</span> *`, html`<input type="file" name="id_file" required accept="image/*,application/pdf" data-max-mb="5">`, 'Clear photo or PDF. Big photos are made smaller by themselves.')}
+      <div data-id-back-wrap ${t.needBack ? '' : 'hidden'}>${field(html`<span data-id-back>${t.back || 'Back side'}</span> *`, html`<input type="file" name="id_back_file" ${t.needBack ? 'required' : ''} accept="image/*,application/pdf" data-max-mb="5" data-id-back-input>`, 'All details must be readable.')}</div>
+    </div>`;
 }
 
 // Address — optional, but always shown open so people see they can fill it.

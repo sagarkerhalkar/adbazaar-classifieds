@@ -5,11 +5,11 @@ const path = require('node:path');
 const { db, tx, getSettings, parseImages, parseVideos } = require('../db');
 const notify = require('../notify');
 const { SLOTS, maskFrom, sanitizeMask, slotLabels, slotPrices } = require('../slots');
-const { html, rupees, fmtDate, fmtDay, timeLeft, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
+const { html, rupees, fmtDate, fmtShort, fmtDay, timeLeft, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { renderPage } = require('../views/layout');
 const { icon } = require('../views/icons');
 const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
-const { checkId, describeId } = require('../idproof');
+const { checkId, describeId, ID_TYPES, sides } = require('../idproof');
 const { hashPassword, verifyPassword, randomToken, rateLimit } = require('../lib/security');
 const { saveUpload, saveVideo, saveDataUrl, removeFile, UploadError, sendFile, DIRS, safeName } = require('../lib/files');
 const V = require('../validators');
@@ -253,7 +253,7 @@ function walletView(req, { bal, rows, topups, settings }) {
           ${field('Amount (₹)', html`<input name="amount" type="number" min="50" max="100000" step="1" required placeholder="e.g. 1000">`)}
           ${field('UPI transaction ID / UTR', html`<input name="utr" required minlength="6" maxlength="30" pattern="[A-Za-z0-9]{6,30}">`)}
         </div>
-        ${field('Payment screenshot (optional)', html`<input type="file" name="screenshot" accept="image/*">`)}
+        ${field('Payment screenshot (optional)', html`<input type="file" name="screenshot" accept="image/*" data-max-mb="5">`)}
         <label class="check"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms#payments" target="_blank">payment terms</a>. A wrong UPI ID, amount or UTR is my own responsibility.</span></label>
         <button class="btn btn-accent">Submit for confirmation</button>
       </form>
@@ -331,9 +331,9 @@ function adFormView(req, { ad = {}, cats, error }) {
         ${field('WhatsApp number', html`<input name="whatsapp" inputmode="numeric" maxlength="13" value="${ad.whatsapp ?? req.seller.phone}">`)}
       </div>
       ${images.length ? html`<div class="field"><span class="label">Current photos (tick to remove)</span><div class="img-edit">${images.map((f) => html`<label><img src="${imgUrl(f)}" alt=""><input type="checkbox" name="remove_images[]" value="${f}"> Remove</label>`)}</div></div>` : ''}
-      ${field(`Photos (up to ${MAX_IMAGES})`, html`<input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" multiple data-max-files="${MAX_IMAGES - images.length}">`, `JPG, PNG or WEBP, max 5 MB each. The first photo is the cover.${isEdit ? '' : ' You can add up to 2 videos (1 minute each) on the next screens — go to My ads → Edit.'}`)}
+      ${field(`Photos (up to ${MAX_IMAGES})`, html`<input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" data-max-mb="5" multiple data-max-files="${MAX_IMAGES - images.length}">`, `JPG, PNG or WEBP, max 5 MB each. The first photo is the cover.${isEdit ? '' : ' You can add up to 2 videos (1 minute each) on the next screens — go to My ads → Edit.'}`)}
       <div class="form-actions">
-        <button class="btn btn-accent btn-lg">${isEdit ? 'Save changes' : 'Continue to payment →'}</button>
+        <button class="btn btn-accent btn-lg">${isEdit ? 'Save changes' : 'Next: post free or paid'}</button>
         <a class="btn btn-ghost" href="/client">Cancel</a>
       </div>
     </form>
@@ -367,7 +367,7 @@ function videosSection(req, ad) {
     ${videos.length < MAX_VIDEOS ? html`
       <form method="post" action="/client/ads/${ad.id}/videos" enctype="multipart/form-data" class="form" data-video-form>
         ${csrf(req)}
-        ${field('Add a video', html`<input type="file" name="video" accept="video/mp4,video/quicktime,.mp4,.mov" required data-video-input>`, 'MP4 or MOV from your phone, up to 1 minute and 90 MB. Tip: record in 720p.')}
+        ${field('Add a video', html`<input type="file" name="video" accept="video/mp4,video/quicktime,.mp4,.mov" required data-video-input data-max-mb="90" data-max-sec="60">`, 'MP4 or MOV from your phone, up to 1 minute and 90 MB. Tip: record in 720p.')}
         <p class="hint" data-video-msg></p>
         <button class="btn">Upload video</button>
       </form>` : ''}
@@ -466,7 +466,7 @@ function payView(req, { ad, plans, pending, settings, wallet = 0, free = null })
         </div>
         <div class="row2">
           ${field('UPI transaction ID / UTR *', html`<input name="utr" required minlength="6" maxlength="30" pattern="[A-Za-z0-9]{6,30}" placeholder="e.g. 412345678901">`)}
-          ${field('Payment screenshot', html`<input type="file" name="screenshot" accept="image/*">`, 'Optional, helps faster confirmation')}
+          ${field('Payment screenshot', html`<input type="file" name="screenshot" accept="image/*" data-max-mb="5">`, 'Optional, helps faster confirmation')}
         </div>
         <button class="btn btn-lg ${P.razorpayEnabled() ? '' : 'btn-accent'}" name="pay_with" value="upi">I have paid — submit for confirmation</button>
         </div>
@@ -481,7 +481,7 @@ function paymentsView(req, rows) {
   ${rows.length ? html`<div class="table-wrap card"><table class="table">
     <thead><tr><th>#</th><th>Date</th><th>Ad</th><th>Plan</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows.map((p) => html`<tr>
-      <td>${p.id}</td><td>${fmtDate(p.created_at)}</td><td>${p.ad_title}</td>
+      <td>${p.id}</td><td class="nowrap">${fmtShort(p.created_at)}</td><td>${p.ad_title}</td>
       <td>${p.days} days${p.top_slots ? html`<div class="small muted">TOP: ${slotLabels(p.top_slots).join(', ')}</div>` : ''}</td><td>${rupees(p.amount_paise)}</td>
       <td>${p.method === 'razorpay' ? 'Online' : `UPI ${p.utr || ''}`}</td>
       <td>${pill(p.status)}${p.admin_note && (p.status === 'rejected' || p.status === 'failed') ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
@@ -595,6 +595,8 @@ function register(app) {
     if (b.password !== b.password2) return fail('Passwords do not match.');
     const id = checkId(v.id_type, v.id_number); if (id.error) return fail(id.error);
     if (!req.files.id_file?.[0]) return fail('Please upload a photo of your ID document.');
+    { const sd = sides(v.id_type);
+      if (sd.needBack && !req.files.id_back_file?.[0]) return fail(`Please also upload the ${sd.back.toLowerCase()} of the ${ID_TYPES[v.id_type].short}.`); }
     if (v.pincode && !V.isValidPincode(v.pincode)) return fail('The PIN code should be 6 digits (or leave it empty).');
     if (!b.live_photo_data) return fail('Please capture your live photo using the camera.');
     if (!b.consent) return fail('Please accept the declaration to continue.');

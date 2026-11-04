@@ -27,6 +27,7 @@ const CATEGORY_RULES = [
   [/business|industr|office/i, 'office-room'],
   [/health|fitness|gym|sport/i, 'people-runner'],
   [/event|catering|wedding|party/i, 'event-table'],
+  [/toy|kid|baby|school/i, 'pottery-class'],
   [/pet|animal|dog|cat\b/i, 'people-woman-dress'],
   [/book|hobb|music/i, 'pottery-class'],
 ];

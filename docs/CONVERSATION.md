@@ -224,5 +224,19 @@ Commit: `a92c2cb`
 
 ---
 
+## 15. Lists not fitting the screen, instant upload checks, both sides of the ID, recheck everything — 4 Nov 16:50
+
+> (screenshot: Payments → Paid, dates wrapped on five lines, the Payment failed button cut off) again page not optimized … at the time of image upload itself tell if large … aadhaar needs 2 sides photo, PAN is ok, for passport you know … still all app is not up to the mark, re-create with all my requirements
+
+**What was done:**
+- **Lists:** fixed the cause (lists were clipped instead of scrolling). Short one-line dates, one main button plus a More menu, and rows become labelled cards on tablets, phones and zoomed browsers. Checked at 7 sizes plus a zoomed browser.
+- **Uploads:** every photo box checks the file at once; big photos are shrunk in the browser (19.8 MB → 616 KB in the test); wrong type or too many photos are flagged at once; previews are shown.
+- **ID:** Aadhaar front + back, Passport first + last page, PAN front only — on the form and on the server.
+- **Requirements:** all 57 requirements listed and checked (`docs/REQUIREMENTS.md`). Added the missing **Toys & Kids** category. A bug where the More menu closed while typing on a phone was found and fixed, and the phone payment page was fixed.
+- **Not rebuilt from zero:** a full rewrite would have thrown away tested, working parts. Every page was brought up to the same standard instead.
+- **Guide:** Part 24.
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

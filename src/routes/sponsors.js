@@ -57,7 +57,7 @@ function adminView(req, rows, enquiries) {
       ${field('Small text (optional)', html`<input name="body" maxlength="140" value="${sp.body}">`)}
       ${field('Link (their website or app)', html`<input name="link" required maxlength="300" value="${sp.link}" placeholder="https://…">`)}
       <div class="row2">${field('Start (India time)', html`<input type="datetime-local" name="starts_at" value="${toInput(sp.starts_at)}">`, 'Empty = now')}${field('End (India time)', html`<input type="datetime-local" name="ends_at" value="${toInput(sp.ends_at)}">`, 'Empty = no end')}</div>
-      ${field('Picture (optional)', html`<input type="file" name="image" accept="image/jpeg,image/png,image/webp">`, 'Square or wide, max 3 MB')}
+      ${field('Picture (optional)', html`<input type="file" name="image" accept="image/jpeg,image/png,image/webp" data-max-mb="3">`, 'Square or wide, max 3 MB')}
       <label class="check switch-line"><input type="checkbox" class="switch" name="is_active" value="1" ${sp.id ? (sp.is_active ? 'checked' : '') : 'checked'}><span>Show on site</span></label>
       <button class="btn btn-primary">${sp.id ? 'Save' : 'Add sponsored ad'}</button>
     </form>`;

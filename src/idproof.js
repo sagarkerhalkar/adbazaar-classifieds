@@ -9,14 +9,17 @@ const ID_TYPES = {
   aadhaar: {
     label: 'Aadhaar card', short: 'Aadhaar', placeholder: 'XXXX XXXX XXXX', inputmode: 'numeric', maxlength: 14,
     hint: '12 digits. We check it is valid but store only the last 4 digits. A masked Aadhaar photo is fine.',
+    front: 'Front side (photo, name, date of birth)', back: 'Back side (address)', needBack: true,
   },
   pan: {
     label: 'PAN card', short: 'PAN', placeholder: 'ABCDE1234F', inputmode: 'text', maxlength: 10,
     hint: '10 characters, like ABCDE1234F. Your date of birth is printed on the card.',
+    front: 'Front side of the PAN card', back: '', needBack: false,
   },
   passport: {
     label: 'Passport', short: 'Passport', placeholder: 'A1234567', inputmode: 'text', maxlength: 9,
-    hint: '1 letter + 7 digits, like A1234567 (Indian passport). Upload the photo page.',
+    hint: '1 letter + 7 digits, like A1234567 (Indian passport).',
+    front: 'First page (photo, name, date of birth)', back: 'Last page (address)', needBack: true,
   },
 };
 
@@ -54,4 +57,7 @@ function describeId(c) {
   return parts.join(' · ') || '—';
 }
 
-module.exports = { ID_TYPES, checkId, describeId, isValidPassport };
+/** What to upload for this ID: Aadhaar → front + back, Passport → first + last page, PAN → front only. */
+const sides = (type) => { const t = ID_TYPES[type] || ID_TYPES.aadhaar; return { front: t.front, back: t.back, needBack: t.needBack }; };
+
+module.exports = { ID_TYPES, checkId, describeId, isValidPassport, sides };

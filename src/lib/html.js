@@ -24,6 +24,15 @@ function html(strings, ...vals) {
 const TZ = 'Asia/Kolkata';
 const rupees = (paise) => '₹' + (Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const fmtDate = (ms) => (ms ? new Date(Number(ms)).toLocaleString('en-IN', { timeZone: TZ, day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+// Short date for lists: "1 Nov, 9:33 pm" (the year only when it is not this year)
+function fmtShort(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  const sameYear = d.toLocaleDateString('en-IN', { timeZone: TZ, year: 'numeric' }) === new Date().toLocaleDateString('en-IN', { timeZone: TZ, year: 'numeric' });
+  const day = d.toLocaleDateString('en-IN', { timeZone: TZ, day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
+  const time = d.toLocaleTimeString('en-IN', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true }).replace(' ', '\u00a0');
+  return `${day}, ${time}`;
+}
 const fmtDay = (ms) => (ms ? new Date(Number(ms)).toLocaleDateString('en-IN', { timeZone: TZ, day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 function timeAgo(ms) {
@@ -49,4 +58,4 @@ const PAYMENT_TIME_TEXT = '5 minutes to 24 hours';
 
 const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'ad';
 
-module.exports = { html, raw, esc, Raw, rupees, fmtDate, fmtDay, timeAgo, timeLeft, slugify, approveTimeText, PAYMENT_TIME_TEXT };
+module.exports = { html, raw, esc, Raw, rupees, fmtDate, fmtShort, fmtDay, timeAgo, timeLeft, slugify, approveTimeText, PAYMENT_TIME_TEXT };

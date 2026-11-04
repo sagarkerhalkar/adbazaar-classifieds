@@ -219,7 +219,8 @@
   });
 
   // Selects that submit their form when changed (sort menu)
-  $$('select[data-autosubmit], input[type=file][data-autosubmit]').forEach((el) => el.addEventListener('change', () => { if (el.type !== 'file' || el.files.length) el.form.submit(); }));
+  // (file inputs with data-autosubmit are submitted by upload.js after the photo is checked)
+  $$('select[data-autosubmit]').forEach((el) => el.addEventListener('change', () => el.form.submit()));
 
   // Gentle 3D tilt on ad cards (mouse only, off when motion is reduced)
   function bindTilt() {
@@ -289,11 +290,7 @@
     const t = b.textContent; b.textContent = 'Copied!'; setTimeout(() => { b.textContent = t; }, 1500);
   }));
 
-  // Limit number of selected files
-  $$('input[type=file][data-max-files]').forEach((inp) => inp.addEventListener('change', () => {
-    const max = Number(inp.dataset.maxFiles);
-    if (inp.files.length > max) { alert('You can select up to ' + max + ' photos.'); inp.value = ''; }
-  }));
+  // Photo / PDF checks (count, size, type, automatic shrinking) live in public/js/upload.js
 
   // Auto-refresh status pages
   $$('[data-autorefresh]').forEach((el) => {
@@ -347,6 +344,14 @@
     num.value = '';
     $$('[data-id-label]', form).forEach((el) => { el.textContent = radio.dataset.short; });
     const hint = form.querySelector('[data-id-hint]'); if (hint) hint.textContent = radio.dataset.hint;
+    // Aadhaar: front + back · Passport: first + last page · PAN: front only
+    const front = form.querySelector('[data-id-front]'); if (front) front.textContent = radio.dataset.front;
+    const wrap = form.querySelector('[data-id-back-wrap]'); const backIn = form.querySelector('[data-id-back-input]');
+    if (wrap && backIn) {
+      const need = radio.dataset.needBack === '1';
+      wrap.hidden = !need; backIn.required = need; if (!need) backIn.value = '';
+      const lbl = form.querySelector('[data-id-back]'); if (lbl) lbl.textContent = radio.dataset.back || 'Back side';
+    }
   }));
 
   // "Confirm password" must match
@@ -368,10 +373,11 @@
   load('live.js');
   if (!document.body.classList.contains('portal-admin')) load('ring.js');
   if (document.querySelector('.hsearch input[name="q"]')) load('suggest.js');
+  if (document.querySelector('input[type=file]')) load('upload.js');
 })();
 
 // "More" menus in admin tables: float above the table (tables scroll sideways, so the menu is placed on screen),
-// open upwards near the bottom of the window, and close on outside click, Esc or scroll.
+// open upwards near the bottom of the window, follow scrolling, and close on outside click or Esc.
 (function () {
   const menus = () => Array.from(document.querySelectorAll('details.more-menu[open]'));
   function place(d) {
@@ -389,5 +395,19 @@
   }, true);
   document.addEventListener('click', (e) => { menus().forEach((m) => { if (!m.contains(e.target)) m.open = false; }); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus().forEach((m) => { m.open = false; m.querySelector('summary').focus(); }); });
-  window.addEventListener('scroll', () => menus().forEach((m) => { m.open = false; }), { passive: true, capture: true });
+  // Follow the page when it scrolls (a phone keyboard scrolls the page while typing a reason) instead of closing.
+  const follow = () => menus().forEach(place);
+  window.addEventListener('scroll', follow, { passive: true, capture: true });
+  window.addEventListener('resize', follow, { passive: true });
+})();
+
+// Lists: give every cell the name of its column, so narrow screens can show each row as a labelled card.
+(function () {
+  document.querySelectorAll('table.table').forEach((t) => {
+    const heads = Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+    if (!heads.length) return;
+    t.querySelectorAll('tbody tr').forEach((tr) => {
+      Array.from(tr.children).forEach((td, i) => { if (heads[i] && !td.hasAttribute('data-label')) td.setAttribute('data-label', heads[i]); });
+    });
+  });
 })();
