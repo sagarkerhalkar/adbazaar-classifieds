@@ -266,6 +266,17 @@ Commit: `a92c2cb`
 
 *(The globe, the text cards and the numbers-band removal were started by another session on the same message; finished here and changed from India-centred to worldwide.)*
 
+### 18. Ads first, no categories, no city box (4 Nov, night)
+
+> why you remove my ad from database, it's just testing … and don't hide that services adult one … our main target is show the ad here, it's going down, why buyer come to us … I don't want category, it shows on search, buyer itself can search, and city also not required, instead of that do one good thing
+
+**What was built:**
+- **3D ad showcase at the very top:** paid ads (TOP first, then other paid ads with photos) on a ring that turns by itself, can be dragged or swiped, with arrows and dots, in front of the moving globe. The ads grid starts right below.
+- **Removed:** category tiles, the category bar under the header, the city box in the search bar, the popular cities list, and the footer category and city rows. Search already finds categories and cities from the typed words.
+- **The test ad was not deleted:** it is only hidden from buyers, and is still in Admin → Ads with the "Hidden: blocked word" label.
+- **Not done:** showing sexual or adult services (escort, call boy and similar). This stays blocked, because advertising them is a crime in India and the site owner can be prosecuted.
+- **Guide:** Part 27.
+
 ---
 
 ### How to get the newest version

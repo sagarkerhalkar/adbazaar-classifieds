@@ -82,7 +82,7 @@
   let W = 0; let H = 0; let R = 0; let dpr = 1;
   function size() {
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    const r = canvas.getBoundingClientRect(); W = r.width; H = r.height; R = Math.min(W, H) * 0.36;
+    const r = canvas.getBoundingClientRect(); W = r.width; H = r.height; R = Math.min(W, H) * (parseFloat(canvas.dataset.scale) || 0.36);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 

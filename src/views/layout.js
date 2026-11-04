@@ -3,8 +3,7 @@ const Brand = require('../brand');
 const { html, raw } = require('../lib/html');
 const { assetUrl } = require('../lib/files');
 const { icon } = require('./icons');
-const Cat = require('../categories');
-const { getHome, cityList } = require('../homeconfig');
+const { getHome } = require('../homeconfig');
 
 // The brand mark: the owner's uploaded logo, or the tag symbol (Admin → Settings → Staff & brand).
 const logoMark = (s, size = '') => (s.brand_logo
@@ -28,8 +27,6 @@ function publicHeader(req, s) {
       <a class="logo" href="/" aria-label="${s.site_name} home">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
       <form class="hsearch" method="get" action="/" role="search">
         <input type="search" name="q" value="${req.path === '/' ? q.q : ''}" placeholder="Search phones, cars, tuition, repairs…" aria-label="Search">
-        <input name="city" value="${req.path === '/' ? q.city : ''}" list="cities-h" placeholder="All cities" aria-label="City" class="hsearch-city">
-        <datalist id="cities-h">${['Mumbai', 'Pune', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Kolkata', 'Ahmedabad', 'Jaipur', 'Nagpur', 'Nashik', 'Surat'].map((c) => html`<option value="${c}">`)}</datalist>
         ${req.path === '/' && q.cat ? html`<input type="hidden" name="cat" value="${q.cat}">` : ''}
         <button class="hsearch-go" aria-label="Search">${icon('search', { size: 20 })}</button>
       </form>
@@ -41,23 +38,7 @@ function publicHeader(req, s) {
         <a href="${req.seller ? '/client/ads/new' : '/post'}" class="btn btn-sell">${icon('plus', { size: 18 })}<span>Post ad</span></a>
       </nav>
     </div>
-  </header>
-  ${catBar(req)}`;
-}
-
-// ---- Category bar under the public header (OLX style) ----
-function catBar(req) {
-  let cats = [];
-  try { cats = Cat.tree(); } catch { return ''; }
-  const cur = req.path === '/' ? String((req.query || {}).cat || '') : '';
-  const isActive = (c) => cur === c.slug || c.subs.some((sc) => sc.slug === cur);
-  return html`<nav class="catbar" aria-label="Categories"><div class="wrap catbar-inner">
-    <details class="catbar-all">
-      <summary>${icon('grid', { size: 18 })}All categories ${icon('down', { size: 16 })}</summary>
-      <div class="megamenu">${cats.map((c) => html`<div class="mm-col"><a class="mm-main" href="/?cat=${c.slug}">${c.name}</a>${c.subs.map((sc) => html`<a href="/?cat=${sc.slug}">${sc.name}</a>`)}</div>`)}</div>
-    </details>
-    ${cats.slice(0, 8).map((c) => html`<a class="catbar-link ${isActive(c) ? 'active' : ''}" href="/?cat=${c.slug}">${c.name}</a>`)}
-  </div></nav>`;
+  </header>`;
 }
 
 // ---- Seller (client) header ----
@@ -185,9 +166,7 @@ ${scriptsHtml(scripts)}
 }
 
 function bigFooter(req, s, home) {
-  let cats = [];
-  try { cats = Cat.tree().slice(0, 8); } catch { /* ignore */ }
-  // Compact footer: brand row + three short link rows + one line of legal text.
+  // Compact footer: brand row, one row of help links and one line of legal text.
   return html`<footer class="bigfooter compact">
   <div class="wrap bf-top">
     <div class="bf-brand">
@@ -198,8 +177,6 @@ function bigFooter(req, s, home) {
     <a class="btn btn-sell bf-sell" href="${req.seller ? '/client/ads/new' : '/post'}">${icon('plus', { size: 16 })} Post your ad</a>
   </div>
   <div class="wrap bf-rows">
-    <nav class="bf-row" aria-label="Categories"><strong>Categories</strong>${cats.slice(0, 6).map((c) => html`<a href="/?cat=${c.slug}">${c.name}</a>`)}</nav>
-    <nav class="bf-row" aria-label="Cities"><strong>Cities</strong>${cityList(home).slice(0, 8).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${c}</a>`)}</nav>
     <nav class="bf-row" aria-label="Help"><strong>Help</strong><a href="/about">About</a><a href="/contact">Contact</a><a href="/pricing">Pricing</a><a href="/safety">Safety tips</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refund-policy">Refunds</a><a href="/advertise">Advertise with us</a></nav>
   </div>
   <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. Ads are published by advertisers under their sole responsibility; ${s.site_name} only provides publication and browsing and is not responsible for any deal, payment or fraud between users. Using this site means you accept the <a href="/terms">Terms</a>.</div></div>

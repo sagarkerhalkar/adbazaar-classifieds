@@ -416,6 +416,7 @@
   if (document.querySelector('input[type=file]')) load('upload.js');
   load('motion.js');
   if (document.querySelector('[data-globe]')) load('globe.js');
+  if (document.querySelector('[data-stage]')) load('stage.js');
 })();
 
 // "More" menus in admin tables: float above the table (tables scroll sideways, so the menu is placed on screen),

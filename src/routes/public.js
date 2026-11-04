@@ -101,8 +101,6 @@ function bannerSlider(slides) {
   </section>`;
 }
 
-/** Photo for a category tile: the admin's own upload, or a built-in photo that fits the name. */
-const catPic = (c) => (c.image ? imgUrl(c.image) : Ph.photoUrl(Ph.categoryPhotoName(c)));
 
 function loadMore(filters, data) {
   if (filters.page >= data.totalPages) return '';
@@ -112,55 +110,47 @@ function loadMore(filters, data) {
   return html`<div class="loadmore" data-loadmore><a class="btn btn-lg" href="/?${p}" data-load-more>Load more ads</a><span class="muted small">Showing ${Math.min(filters.page * PAGE_SIZE, data.total)} of ${data.total}</span></div>`;
 }
 
-// The moving 3D globe band at the top of the home page (public/js/globe.js). Shows places only — never numbers.
-function globeBand(req, cities, popular, home) {
-  const names = [...new Set([...cities.map((c) => c.city), ...popular])].slice(0, 30);
-  return html`<section class="globeband" data-reveal>
-    <div class="gb-text">
-      <h2>${home.globe_title}</h2>
-      ${home.globe_text ? html`<p>${home.globe_text}</p>` : ''}
-      <form class="gb-search" method="get" action="/" role="search">${icon('search', { size: 18 })}<input type="search" name="q" placeholder="What are you looking for?" aria-label="Search ads"><button class="btn btn-sell">Search</button></form>
-      <div class="gb-cities">${popular.slice(0, 6).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${icon('pin', { size: 14 })}${c}</a>`)}</div>
-      <div class="btn-row"><a class="btn btn-sell btn-lg" href="${req.seller ? '/client/ads/new' : '/post'}">${icon('plus', { size: 18 })} Post your ad</a><a class="btn btn-lg gb-ghost" href="/?sort=new">Browse ads</a></div>
+// The first screen: a 3D ring of paid ads (TOP first) turning in front of the moving globe (public/js/stage.js).
+function stageCard(ad) {
+  const images = publicImages(ad);
+  const pic = images[0] ? imgUrl(images[0]) : Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name || ad.cat_name, slug: ad.main_slug }));
+  return html`<a class="as-card" href="${adUrl(ad)}" data-stage-card>
+    <img src="${pic}" alt="" loading="lazy" draggable="false">
+    ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
+    <span class="as-info"><strong>${priceText(ad)}</strong><span class="as-title">${ad.title}</span><span class="as-place">${icon('pin', { size: 13 })} ${ad.locality ? `${ad.locality}, ` : ''}${ad.city}</span></span>
+  </a>`;
+}
+
+function adStage(req, items, cities, home) {
+  const names = [...new Set([...cities.map((c) => c.city), ...cityList(home)])].slice(0, 30);
+  return html`<section class="adstage ${items.length ? '' : 'as-empty'}" data-stage>
+    <canvas class="as-globe" data-globe data-scale="0.5" data-cities="${JSON.stringify(names)}" aria-hidden="true"></canvas>
+    <div class="as-head">
+      <h1>${home.globe_title}</h1>
+      <a class="btn btn-sell" href="${req.seller ? '/client/ads/new' : '/post'}">${icon('plus', { size: 18 })} Post your ad</a>
     </div>
-    <div class="gb-stage"><canvas data-globe data-cities="${JSON.stringify(names)}" aria-hidden="true"></canvas><div class="gb-glow" aria-hidden="true"></div></div>
+    ${items.length ? html`<div class="as-ring" data-stage-ring aria-roledescription="carousel" aria-label="Featured ads">${items.map(stageCard)}</div>
+    <button type="button" class="round-btn as-prev" data-stage-prev aria-label="Previous ad">${icon('chevronLeft', { size: 20 })}</button>
+    <button type="button" class="round-btn as-next" data-stage-next aria-label="Next ad">${icon('chevron', { size: 20 })}</button>
+    <div class="as-dots" data-stage-dots></div>`
+    : html`<p class="as-sub">${home.globe_text || 'Post an ad in a minute. Paid ads appear here, in front of every visitor.'}</p>`}
   </section>`;
 }
 
-function homeLanding(req, { cats, data, filters, cities, tops, home }) {
-  const site = req.settings.site_name;
-  const popular = cityList(home);
-  const counts = Object.fromEntries(cities.map((c) => [c.city.toLowerCase(), c.n]));
-
+function homeLanding(req, { data, filters, cities, stage, home }) {
+  // Ads first: the turning 3D showcase of paid ads, then every other ad straight below.
+  // No category tiles and no city list — buyers just type what they want in the search box.
   return html`
-  ${home.show.globe ? globeBand(req, cities, popular, home) : bannerSlider(home.slides)}
-
-  ${home.show.categories ? html`<section class="section">
-    <div class="section-head"><h2>Browse categories</h2></div>
-    <div class="cattiles">${cats.map((c) => html`<a class="cattile" href="/?cat=${c.slug}"><img src="${catPic(c)}" alt="" loading="lazy"><span>${c.name}</span></a>`)}</div>
-  </section>` : ''}
-
-  ${home.show.globe ? bannerSlider(home.slides) : ''}
-
-  ${home.show.top && tops.length ? html`<section class="section topstrip" data-scroller data-coverflow>
-    <div class="section-head"><h2><span class="star">★</span> ${home.top_title}</h2>
-      <div class="btn-row" style="margin:0;align-items:center"><span class="muted small">Hand-picked for you</span>
-      <button type="button" class="round-btn" data-scroll-prev aria-label="Scroll left">${icon('chevronLeft', { size: 18 })}</button><button type="button" class="round-btn" data-scroll-next aria-label="Scroll right">${icon('chevron', { size: 18 })}</button></div></div>
-    <div class="hscroll" data-scroll-track>${tops.map(adCard)}</div>
-  </section>` : ''}
-
-  ${home.show.cities && popular.length ? html`<section class="section">
-    <div class="section-head"><h2>Popular cities</h2></div>
-    <div class="citychips">${popular.map((c) => html`<a class="citychip" href="/?city=${encodeURIComponent(c)}">${icon('pin', { size: 15 })}${c}</a>`)}</div>
-  </section>` : ''}
+  ${home.show.globe ? adStage(req, stage, cities, home) : ''}
 
   <section class="section" data-results>
     <div class="section-head"><h2>${home.fresh_title}</h2><a class="small" href="/?sort=new">See all</a></div>
     ${data.rows.length ? html`<div class="grid">${Sp.weave(data.rows.map(adCard))}</div>` : html`
-      <div class="empty card center"><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/post">Post your ad</a></div>`}
+      <div class="empty card center"><h3>No ads yet</h3><p class="muted">Be the first to post.</p><a class="btn btn-sell" href="/post">Post your ad</a></div>`}
     ${loadMore(filters, data)}
   </section>
 
+  ${bannerSlider(home.slides)}
   ${Sp.card(Sp.pick('home'), 'wide')}
   ${home.show.sell ? html`<section class="sellband">
     <img class="sell-photo" src="${Ph.photoUrl('people-man-cafe')}" alt="" loading="lazy">
@@ -393,10 +383,16 @@ function register(app) {
     if (landing) {
       const home = getHome(req.settings);
       const slot = currentSlot();
+      // Showcase: TOP ads first, topped up with other paid ads that have photos (free ads never appear here).
       const tops = home.show.top ? db.prepare(`SELECT a.*, ${CAT_COLS}, 1 AS is_top FROM ads a ${CAT_JOIN}
         WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND ${TOP_NOW(slot)} ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT 16`).all(Date.now()) : [];
+      const need = Math.max(0, 9 - tops.length);
+      const paid = need ? db.prepare(`SELECT a.*, ${CAT_COLS}, 0 AS is_top FROM ads a ${CAT_JOIN}
+        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.is_free = 0 AND a.images NOT IN ('', '[]')
+          AND a.id NOT IN (${tops.map((t) => Number(t.id) | 0).join(',') || 0})
+        ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT ${need}`).all(Date.now()) : [];
       const fresh = tops.length ? listAds({ ...filters, excludeTop: true }) : data;
-      body = homeLanding(req, { cats, data: fresh, filters, cities, tops, home });
+      body = homeLanding(req, { data: fresh, filters, cities, stage: [...tops, ...paid], home });
     } else body = homeResults(req, { cats, data, filters, cities });
     res.html(renderPage(req, { title: activeCat || (filters.q ? `Search: ${filters.q}` : ''), body }));
   });

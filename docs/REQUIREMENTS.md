@@ -88,3 +88,5 @@ Built from every request in [CONVERSATION.md](CONVERSATION.md), 2–4 Nov 2026. 
 | 55 | Hosting in Switzerland, run from India | ✅ | GUIDE Part 20 |
 | 56 | How to open to the public in India | ✅ | GUIDE Part 21 |
 | 57 | Everything saved on GitHub, with this conversation history | ✅ | `docs/CONVERSATION.md` |
+| 58 | Ads on the first screen: a turning 3D ring of paid ads (TOP first) in front of the globe | ✅ | home page, `public/js/stage.js`, GUIDE Part 27 |
+| 59 | No category tiles or category bar, no city box or city list — buyers just search | ✅ | header, home page, footer |

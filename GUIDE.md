@@ -787,3 +787,21 @@ The legal pages still say the site is run under Indian law, and prices are in In
 - Edit the list at any time (one word or phrase per line). Matching is by whole words, so "unisex salon" is not blocked by "sex".
 
 Advertising sexual services is a crime in India (and in many other countries), and the website owner can be prosecuted too. These words protect you.
+
+## Part 27 — Ads on the first screen, no category tiles, no city box (4 Nov, night)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5**.
+
+**The top of the home page is now the ads themselves.** Paid ads stand on a 3D ring that turns every few seconds, in front of the glowing globe. TOP ads come first; if there are fewer than 9 TOP ads, other paid ads with photos fill the ring. Free ads never appear here. Buyers can:
+- drag or swipe to turn the ring, or use the arrows and dots;
+- click a side card to bring it to the front, and click the front card to open the ad.
+It stops while a buyer's mouse is over it, and when the page is not on screen. Right below it, all other ads start (TOP, then paid, then free).
+
+**Removed, so ads come first:**
+- the category tiles and the category bar under the header;
+- the city box in the search bar, the popular cities list, and the category and city rows in the footer.
+Buyers just type what they want. The search understands categories and cities by itself: "flat pune", "massage nashik" or "iphone mumbai" work. The suggestions under the search box still show matching categories while typing. After a search, the filter panel on the left still lets buyers narrow by category.
+
+**Admin → Home page → Sections & texts:** "3D ad showcase with the moving globe" switches the ring on or off, "Put TOP ads first in the showcase" decides whether TOP ads lead it, "Showcase heading" is the line at the top, and "Globe cities" are the city lights on the globe.
+
+**Your test ad was not deleted.** Ads in a hidden category or with a blocked word stay in the database. You see them in Admin → Ads with the red **Hidden: blocked word** label, and the seller sees them under My ads.
