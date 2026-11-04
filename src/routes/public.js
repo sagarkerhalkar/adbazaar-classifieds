@@ -12,7 +12,7 @@ const { getHome, cityList } = require('../homeconfig');
 const Ph = require('../photos');
 const Search = require('../search');
 const { renderPage } = require('../views/layout');
-const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist } = require('../views/components');
+const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist, publicImages, publicVideos } = require('../views/components');
 const { DIRS, sendFile, safeName } = require('../lib/files');
 const { str, normalizePhone } = require('../validators');
 const { rateLimit } = require('../lib/security');
@@ -115,15 +115,27 @@ function homeLanding(req, { cats, data, filters, cities, tops, home }) {
   const site = req.settings.site_name;
   const popular = cityList(home);
   const counts = Object.fromEntries(cities.map((c) => [c.city.toLowerCase(), c.n]));
+  const now = Date.now();
+  const stats = {
+    ads: db.prepare(`SELECT COUNT(*) n FROM ads a WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK}`).get(now).n,
+    cities: db.prepare(`SELECT COUNT(DISTINCT LOWER(city)) n FROM ads a WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK}`).get(now).n,
+    sellers: db.prepare("SELECT COUNT(*) n FROM clients WHERE status = 'approved'").get().n,
+    cats: cats.length,
+  };
   return html`
   ${bannerSlider(home.slides)}
+
+  <section class="statband" aria-label="${site} in numbers">
+    ${[['ads', stats.ads, 'ads live now', 'layers'], ['sellers', stats.sellers, 'verified sellers', 'shield'], ['cities', stats.cities, stats.cities === 1 ? 'city' : 'cities', 'pin'], ['cats', stats.cats, 'categories', 'grid']]
+    .map(([k, n, l, ic]) => html`<div class="stat3d" data-reveal><span class="s3-ic">${icon(ic, { size: 18 })}</span><strong data-count="${n}">${n.toLocaleString('en-IN')}</strong><span>${l}</span></div>`)}
+  </section>
 
   ${home.show.categories ? html`<section class="section">
     <div class="section-head"><h2>Browse categories</h2></div>
     <div class="cattiles">${cats.map((c) => html`<a class="cattile" href="/?cat=${c.slug}"><img src="${catPic(c)}" alt="" loading="lazy"><span>${c.name}</span></a>`)}</div>
   </section>` : ''}
 
-  ${home.show.top && tops.length ? html`<section class="section topstrip" data-scroller>
+  ${home.show.top && tops.length ? html`<section class="section topstrip" data-scroller data-coverflow>
     <div class="section-head"><h2><span class="star">★</span> ${home.top_title}</h2>
       <div class="btn-row" style="margin:0;align-items:center"><span class="muted small">Featured now · ${SLOTS[data.slot].label}</span>
       <button type="button" class="round-btn" data-scroll-prev aria-label="Scroll left">${icon('chevronLeft', { size: 18 })}</button><button type="button" class="round-btn" data-scroll-next aria-label="Scroll right">${icon('chevron', { size: 18 })}</button></div></div>
@@ -238,9 +250,16 @@ function adView(req, { ad, images, videos = [], related }) {
     <div class="ad-main">
       <div class="gallery" data-gallery>
         ${images.length ? html`
-          <div class="gallery-main"><img src="${imgUrl(images[0])}" alt="${ad.title}" data-gallery-main></div>
+          <div class="gallery-main" data-gallery-stage style="--bg:url('${imgUrl(images[0])}')">
+            <img src="${imgUrl(images[0])}" alt="${ad.title}" data-gallery-main>
+            ${images.length > 1 ? html`<button type="button" class="g-nav prev" data-gallery-prev aria-label="Previous photo">${icon('chevronLeft')}</button>
+            <button type="button" class="g-nav next" data-gallery-next aria-label="Next photo">${icon('chevron')}</button>
+            <span class="g-count" data-gallery-count>1 / ${images.length}</span>` : ''}
+            <button type="button" class="g-full" data-gallery-full aria-label="See full size">${icon('eye', { size: 16 })} Full size</button>
+          </div>
           ${images.length > 1 ? html`<div class="gallery-thumbs">${images.map((f, i) => html`<button type="button" class="${i === 0 ? 'active' : ''}" data-gallery-thumb="${imgUrl(f)}" aria-label="Photo ${i + 1}"><img src="${imgUrl(f)}" alt=""></button>`)}</div>` : ''}`
-        : html`<div class="gallery-main ph"><img src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name, slug: ad.main_slug }))}" alt=""><span class="ph-note">The seller has not added photos yet</span></div>`}
+        : ad.is_free ? html`<div class="gallery-main ph free-ph"><span class="thumb-free big"><span class="tf-cat">${ad.sub_name || ad.main_name}</span><strong class="tf-title">${ad.title}</strong><span class="tf-tag">Free ad · text only</span></span></div>`
+          : html`<div class="gallery-main ph"><img src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name, slug: ad.main_slug }))}" alt=""><span class="ph-note">The seller has not added photos yet</span></div>`}
       </div>
       <section class="card" data-tab-scope>
         <div class="tabs" data-tabs role="tablist">
@@ -413,7 +432,9 @@ function register(app) {
     const slot = currentSlot();
     ad.is_top = ((ad.top_slots >> slot) & 1) || (ad.admin_top_until > Date.now() && ((ad.admin_top_slots >> slot) & 1)) ? 1 : 0;
     const related = relatedAds(ad, slot, req.session.shuffle || 0);
-    let body = adView(req, { ad, images: parseImages(ad), videos: parseVideos(ad), related });
+    // Free ads are text-only for buyers (the owner is told in their preview).
+    let body = adView(req, { ad, images: publicImages(ad), videos: publicVideos(ad), related });
+    if (ad.is_free && isOwner && parseImages(ad).length) body = html`<div class="flash flash-info">This is a <strong>free ad</strong>: buyers do not see its photos or videos. <a href="/client/ads/${ad.id}/pay">Upgrade to a paid plan</a> to show them and be placed above free ads.</div>${body}`;
     if (!visible) body = html`<div class="flash flash-warn">Preview only — this ad is not live (${ad.status.replace('_', ' ')}). Visitors cannot see it.</div>${body}`;
     res.html(renderPage(req, { title: ad.title, body, description: String(ad.description).slice(0, 150) }));
   });

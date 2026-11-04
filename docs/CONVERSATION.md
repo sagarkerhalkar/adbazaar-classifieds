@@ -238,5 +238,20 @@ Commit: `a92c2cb`
 
 ---
 
+## 16. Free ads text-only, photo tools, cut-off photos, slow refresh, small footer, 3D — 4 Nov 17:35
+
+> (screenshots: ad page with a photo showing only the top part; tall footer) for free ad photo and video not allowed, that shown to client, and free ad don't guarantee to come on top, only paid, like that marketing … what new features you gave … I can change the cover photo, change the photo, delete the photo … auto refresh in background taking time … uploaded photo showing only 10% why … footer can be small … still animation and 3D were not in web, do something
+
+**What was built:**
+- **Free ads text-only** for buyers (photos and videos kept for the upgrade), plus a **Free or paid?** comparison on the payment screen.
+- **Photo tools:** make cover, move, replace, delete (each saves at once).
+- **Cut-off photo fixed** (a tall photo was drawn taller than its frame). Whole photo with a blurred fill, arrows, counter, swipe, keyboard, full-size view.
+- **Live refresh in place** (no reload, scroll kept), paused while the tab is hidden. Confirm pop-ups and dialogs now work on refreshed content.
+- **Compact footer.**
+- **Motion & 3D:** a TOP ads 3D carousel, scroll reveal, 3D category tiles with shine, banner depth, and count-up numbers (home band and dashboard).
+- **Guide:** Part 25.
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

@@ -1,6 +1,7 @@
 // Live updates without pressing refresh.
 //  Admin: sidebar counters update every 10 s; a new payment or seller shows a toast with a soft chime,
-//         and list pages (dashboard, payments, clients) reload themselves when nothing is being typed.
+//         and list pages (dashboard, payments, clients) update in place — no page reload, scroll kept.
+//  Nothing runs while the tab is in the background; it checks at once when you come back.
 //  Seller: the messages bell updates; a new message (payment confirmed / rejected …) shows a toast.
 (function () {
   'use strict';
@@ -31,7 +32,27 @@
     f.append(a, x); box.appendChild(f);
     setTimeout(() => { f.classList.add('leaving'); setTimeout(() => f.remove(), 300); }, 12000);
   }
-  const busy = () => { const a = document.activeElement; return (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) || document.querySelector('dialog[open]'); };
+  const busy = () => { const a = document.activeElement; return (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) || document.querySelector('dialog[open], details.more-menu[open]'); };
+
+  // Update the page content in place (fetch the same page, swap <main>), keeping the scroll position.
+  let refreshing = false;
+  async function softRefresh() {
+    if (refreshing || busy()) return;
+    refreshing = true;
+    try {
+      const r = await fetch(location.href, { cache: 'no-store', headers: { Accept: 'text/html' } });
+      if (!r.ok || r.redirected) return;
+      const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+      const fresh = doc.querySelector('main'); const cur = document.querySelector('main');
+      if (!fresh || !cur || busy()) return;
+      const y = window.scrollY;
+      fresh.querySelectorAll('[data-flashes]').forEach((f) => f.remove());
+      cur.innerHTML = fresh.innerHTML;
+      if (window.ADB && window.ADB.labelTables) window.ADB.labelTables(cur);
+      window.scrollTo(0, y);
+      cur.classList.remove('flash-live-in'); void cur.offsetWidth; cur.classList.add('flash-live-in');
+    } catch { /* offline: try again next time */ } finally { refreshing = false; }
+  }
 
   async function tick() {
     let d; try { d = await (await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } })).json(); } catch { return; }
@@ -45,14 +66,18 @@
         if (d.sellerKey !== prev.sellerKey && d.kyc >= prev.kyc && d.sellerText) { toast('🆕 ' + d.sellerText, '/admin/clients', 'info'); chime(); changed = true; }
         if (d.reports > prev.reports) { toast('⚑ New complaint about an ad', '/admin/reports#ad-reports', 'warn'); changed = true; }
         const listPage = /^\/admin(\/payments|\/clients)?$/.test(location.pathname);
-        if (changed && listPage && !busy()) setTimeout(() => { if (!busy()) location.reload(); }, 2500);
+        if (changed && listPage) setTimeout(softRefresh, 800);
       }
     } else if (prev && d.lastId > prev.lastId) {
       toast(d.lastTitle, '/client/messages', d.lastTone === 'error' ? 'error' : d.lastTone === 'success' ? 'success' : 'info'); chime();
-      if (/^\/client(\/payments|\/wallet)?$/.test(location.pathname) && !busy()) setTimeout(() => { if (!busy()) location.reload(); }, 3000);
+      if (/^\/client(\/payments|\/wallet)?$/.test(location.pathname)) setTimeout(softRefresh, 800);
     }
     prev = d; try { sessionStorage.setItem(KEY, JSON.stringify(d)); } catch { /* ignore */ }
   }
-  tick();
-  setInterval(tick, admin ? 10000 : 15000);
+  // Only while the tab is visible: no work in the background, an immediate check when you come back.
+  const every = admin ? 10000 : 15000;
+  let timer = null;
+  const start = () => { if (!timer) timer = setInterval(() => { if (!document.hidden) tick(); }, every); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  tick(); start();
 })();

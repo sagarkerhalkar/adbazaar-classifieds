@@ -32,9 +32,9 @@ Built from every request in [CONVERSATION.md](CONVERSATION.md), 2–4 Nov 2026. 
 | 17 | TOP by 3-hour time slots (8 a day), priced by the admin | ✅ | Settings → TOP slots |
 | 18 | Ranking: TOP → admin boost → money paid (more = higher); equal payments shuffled on every visit | ✅ | Home, search |
 | 19 | The ad ends when the paid time ends | ✅ | Automatic |
-| 20 | 5 photos and 2 videos (1 minute each), changeable at any time, including after payment | ✅ | My ads → Edit |
+| 20 | 5 photos and 2 videos (1 minute each), changeable at any time, including after payment; make cover, move, replace, delete | ✅ | My ads → Edit → Photos |
 | 21 | An oversized or wrong file is flagged the moment it is chosen; big photos are shrunk by themselves | ✅ | Every upload box |
-| 22 | Free ads: shown after all paid ads, in random order, never in TOP, with no approval needed | 🔁 | Payment page → Post it free; Settings → Approvals |
+| 22 | Free ads: shown after all paid ads, in random order, never in TOP, with no approval needed; **text only** (no photos or videos for buyers) | 🔁 | Payment page → Free or paid?; Settings → Approvals |
 | 23 | Deleting a paid ad keeps the unused days as balance; the new-ad form shows the balance | ✅ | My ads, Balance |
 | 24 | Sellers can add money for later | ✅ | Balance → Add money (the admin confirms) |
 | 25 | Messages to the seller: payment confirmed (with receipt), rejected, failed; ad ended or removed | ✅ | Seller → Messages (bell) |
@@ -58,13 +58,15 @@ Built from every request in [CONVERSATION.md](CONVERSATION.md), 2–4 Nov 2026. 
 | 38 | Payment alerts by WhatsApp (personal or Business), Telegram, email and Google Chat | ✅ | Settings → Alerts |
 | 39 | Reports: money received, rejected sellers and payments, ad status, how to boost, CSV | ✅ | Admin → Reports |
 | 40 | Third-party websites and apps can run ads between listings or lower on the page | ✅ | Admin → Sponsors; `/advertise` |
+| 41a | Live updates without reloading the page; nothing runs while the tab is in the background | ✅ | Admin and seller lists |
 | 41 | Every admin list fits the screen (phone, tablet, laptop, Mac, zoomed browser) | ✅ | All lists; rows become cards on small screens |
 
 ## Buyers and the look
 
 | # | Requirement | Status | Where |
 |---|---|---|---|
-| 42 | International-level design, smooth, short pages | ✅ | Whole site |
+| 42 | International-level design, smooth, short pages, animation and 3D (TOP carousel, tilting tiles, scroll reveal), compact footer | ✅ | Whole site |
+| 42a | Uploaded photos show in full on the ad page (arrows, swipe, full-size view) | ✅ | Ad page |
 | 43 | Real photos (people, phones, laptops), not cartoons | ✅ | Banners, category tiles, test ads |
 | 44 | Government ID never shown to buyers | ✅ | — |
 | 45 | Search by any word: parts of words, typing mistakes, Hinglish, categories, cities; suggestions while typing | ✅ | Search box |

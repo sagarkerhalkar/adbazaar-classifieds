@@ -40,7 +40,9 @@
     });
   }
   const isDanger = (el) => !!(el.querySelector && el.querySelector('.btn-danger')) || (el.classList && el.classList.contains('btn-danger'));
-  $$('form[data-confirm]').forEach((f) => f.addEventListener('submit', (e) => {
+  // Delegated (works for content swapped in by the live refresh too)
+  document.addEventListener('submit', (e) => {
+    const f = e.target; if (!(f instanceof HTMLFormElement) || !f.dataset.confirm) return;
     if (f.dataset.confirmed) return;
     e.preventDefault();
     const sub = e.submitter;
@@ -49,15 +51,17 @@
       f.dataset.confirmed = '1';
       if (f.requestSubmit) f.requestSubmit(sub && sub.form === f ? sub : undefined); else f.submit();
     });
-  }));
-  $$('button[data-confirm]').forEach((b) => b.addEventListener('click', (e) => {
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('button[data-confirm]'); if (!b) return;
     if (b.dataset.confirmed) { delete b.dataset.confirmed; return; }
     e.preventDefault();
     askConfirm(b.dataset.confirm, isDanger(b)).then((ok) => { if (ok) { b.dataset.confirmed = '1'; b.click(); } });
-  }));
+  });
 
   // Pop-up panels: <button data-dialog-open="id"> opens <dialog id="id">; fill fields from data-fill-*
-  $$('[data-dialog-open]').forEach((b) => b.addEventListener('click', () => {
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest && ev.target.closest('[data-dialog-open]'); if (!b) return;
     const d = document.getElementById(b.dataset.dialogOpen); if (!d) return;
     Object.keys(b.dataset).filter((k) => k.startsWith('fill')).forEach((k) => {
       const name = k.slice(4).replace(/^./, (c) => c.toLowerCase());
@@ -75,7 +79,7 @@
     $$('select', d).forEach((sel) => { if (sel.selectedOptions[0] && sel.selectedOptions[0].disabled) sel.value = ''; });
     d.showModal();
     const f = d.querySelector('input:not([type=hidden]),select'); if (f) f.focus();
-  }));
+  });
   $$('dialog [data-dialog-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
   $$('dialog.modal').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) d.close(); }));
 
@@ -225,7 +229,7 @@
   // Gentle 3D tilt on ad cards (mouse only, off when motion is reduced)
   function bindTilt() {
     if (reduced || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
-    $$('.ad-card:not([data-tilt])').forEach((card) => {
+    $$('.ad-card:not([data-tilt])').filter((c) => !c.closest('[data-coverflow]')).forEach((card) => {
       card.dataset.tilt = '1';
       card.addEventListener('pointermove', (e) => {
         const r = card.getBoundingClientRect();
@@ -273,14 +277,49 @@
     if (!a.dataset.revealed) { e.preventDefault(); a.dataset.revealed = '1'; const svg = a.querySelector('svg'); a.textContent = ' ' + a.dataset.revealPhone; if (svg) a.prepend(svg); else a.prepend('📞'); }
   }));
 
-  // Ad gallery
+  // Ad gallery: whole photo always visible, arrows, counter, swipe, keyboard, full-size view
   $$('[data-gallery]').forEach((g) => {
-    const main = g.querySelector('[data-gallery-main]');
-    $$('[data-gallery-thumb]', g).forEach((t) => t.addEventListener('click', () => {
-      main.src = t.dataset.galleryThumb;
-      $$('[data-gallery-thumb]', g).forEach((x) => x.classList.remove('active'));
-      t.classList.add('active');
-    }));
+    const main = g.querySelector('[data-gallery-main]'); const stage = g.querySelector('[data-gallery-stage]');
+    if (!main) return; // free ad or no photos: nothing to page through
+    const thumbs = $$('[data-gallery-thumb]', g); const urls = thumbs.length ? thumbs.map((t) => t.dataset.galleryThumb) : [main.src];
+    const count = g.querySelector('[data-gallery-count]');
+    let i = 0;
+    const show = (n) => {
+      i = (n + urls.length) % urls.length;
+      main.style.animation = 'none'; void main.offsetWidth; main.style.animation = '';
+      main.src = urls[i]; if (stage) stage.style.setProperty('--bg', `url('${urls[i]}')`);
+      thumbs.forEach((x, k) => x.classList.toggle('active', k === i));
+      if (count) count.textContent = (i + 1) + ' / ' + urls.length;
+      if (lb) lbImg.src = urls[i];
+    };
+    thumbs.forEach((t, k) => t.addEventListener('click', () => show(k)));
+    const prev = g.querySelector('[data-gallery-prev]'); const next = g.querySelector('[data-gallery-next]');
+    if (prev) prev.addEventListener('click', (e) => { e.stopPropagation(); show(i - 1); });
+    if (next) next.addEventListener('click', (e) => { e.stopPropagation(); show(i + 1); });
+    // swipe on phones
+    let x0 = null;
+    stage && stage.addEventListener('pointerdown', (e) => { x0 = e.clientX; });
+    stage && stage.addEventListener('pointerup', (e) => { if (x0 === null) return; const dx = e.clientX - x0; x0 = null; if (Math.abs(dx) > 40 && urls.length > 1) show(i + (dx < 0 ? 1 : -1)); });
+    // full-size view
+    let lb = null; let lbImg = null;
+    const openFull = () => {
+      if (!lb) {
+        lb = document.createElement('dialog'); lb.className = 'lightbox';
+        lb.innerHTML = '<img alt=""><button type="button" class="lb-close" aria-label="Close">×</button>' + (urls.length > 1 ? '<button type="button" class="lb-nav prev" aria-label="Previous photo">‹</button><button type="button" class="lb-nav next" aria-label="Next photo">›</button>' : '');
+        document.body.appendChild(lb); lbImg = lb.querySelector('img');
+        lb.querySelector('.lb-close').onclick = () => lb.close();
+        const p2 = lb.querySelector('.lb-nav.prev'); const n2 = lb.querySelector('.lb-nav.next');
+        if (p2) p2.onclick = () => show(i - 1); if (n2) n2.onclick = () => show(i + 1);
+        lb.addEventListener('click', (e) => { if (e.target === lb) lb.close(); });
+      }
+      lbImg.src = urls[i]; lb.showModal();
+    };
+    const full = g.querySelector('[data-gallery-full]'); if (full) full.addEventListener('click', (e) => { e.stopPropagation(); openFull(); });
+    main.addEventListener('click', openFull);
+    document.addEventListener('keydown', (e) => {
+      if (/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '') || urls.length < 2) return;
+      if (e.key === 'ArrowRight') show(i + 1); else if (e.key === 'ArrowLeft') show(i - 1);
+    });
   });
 
   // Copy-to-clipboard
@@ -374,6 +413,7 @@
   if (!document.body.classList.contains('portal-admin')) load('ring.js');
   if (document.querySelector('.hsearch input[name="q"]')) load('suggest.js');
   if (document.querySelector('input[type=file]')) load('upload.js');
+  load('motion.js');
 })();
 
 // "More" menus in admin tables: float above the table (tables scroll sideways, so the menu is placed on screen),
@@ -403,11 +443,13 @@
 
 // Lists: give every cell the name of its column, so narrow screens can show each row as a labelled card.
 (function () {
-  document.querySelectorAll('table.table').forEach((t) => {
+  const label = (root) => root.querySelectorAll('table.table').forEach((t) => {
     const heads = Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
     if (!heads.length) return;
     t.querySelectorAll('tbody tr').forEach((tr) => {
       Array.from(tr.children).forEach((td, i) => { if (heads[i] && !td.hasAttribute('data-label')) td.setAttribute('data-label', heads[i]); });
     });
   });
+  label(document);
+  window.ADB = Object.assign(window.ADB || {}, { labelTables: label });
 })();

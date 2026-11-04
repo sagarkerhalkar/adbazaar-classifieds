@@ -26,16 +26,20 @@ function priceText(ad) {
   return ad.price_note || (ad.kind === 'service' ? 'Contact for price' : 'Price on request');
 }
 
-const hasVideo = (ad) => { try { return JSON.parse(ad.videos || '[]').length > 0; } catch { return false; } };
+// Free ads are text-only for buyers: their photos and videos are kept and appear when the seller upgrades to a paid plan.
+const publicImages = (ad) => { if (ad.is_free) return []; try { return JSON.parse(ad.images || '[]'); } catch { return []; } };
+const publicVideos = (ad) => { if (ad.is_free) return []; try { return JSON.parse(ad.videos || '[]'); } catch { return []; } };
+const hasVideo = (ad) => publicVideos(ad).length > 0;
 
 function adCard(ad) {
-  let images = [];
-  try { images = JSON.parse(ad.images || '[]'); } catch { /* ignore */ }
+  const images = publicImages(ad);
   const place = `${ad.locality ? `${ad.locality}, ` : ''}${ad.city}`;
   return html`
-  <article class="ad-card ${ad.is_top ? 'is-top' : ''}">
+  <article class="ad-card ${ad.is_top ? 'is-top' : ''} ${ad.is_free ? 'is-free' : ''}">
     <a href="${adUrl(ad)}" class="ad-thumb" tabindex="-1" aria-hidden="true">
-      ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" loading="lazy">` : html`<img class="thumb-stock" src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name || ad.cat_name, slug: ad.main_slug }))}" alt="" loading="lazy"><span class="thumb-note">No photo yet</span>`}
+      ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" loading="lazy">`
+    : ad.is_free ? html`<span class="thumb-free"><span class="tf-cat">${ad.sub_name || ad.main_name || ad.cat_name || ''}</span><strong class="tf-title">${ad.title}</strong><span class="tf-tag">Free ad</span></span>`
+      : html`<img class="thumb-stock" src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name || ad.cat_name, slug: ad.main_slug }))}" alt="" loading="lazy"><span class="thumb-note">No photo yet</span>`}
       ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
       ${images.length > 1 || hasVideo(ad) ? html`<span class="img-count">${images.length > 1 ? html`${icon('camera', { size: 12 })} ${images.length}` : ''}${hasVideo(ad) ? html` ${icon('video', { size: 12 })}` : ''}</span>` : ''}
     </a>
@@ -101,4 +105,4 @@ function addressFields(v = {}) {
     </div>`;
 }
 
-module.exports = { csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, idFields, addressFields, CITIES };
+module.exports = { publicImages, publicVideos, csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, idFields, addressFields, CITIES };

@@ -187,18 +187,22 @@ ${scriptsHtml(scripts)}
 function bigFooter(req, s, home) {
   let cats = [];
   try { cats = Cat.tree().slice(0, 8); } catch { /* ignore */ }
-  return html`<footer class="bigfooter">
-  <div class="wrap bigfooter-grid">
+  // Compact footer: brand row + three short link rows + one line of legal text.
+  return html`<footer class="bigfooter compact">
+  <div class="wrap bf-top">
     <div class="bf-brand">
       <a class="logo" href="/">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
-      <p>${home.footer_about}</p>
-      ${s.support_phone || s.support_email ? html`<p class="bf-contact">${s.support_phone ? html`<span>${icon('phone', { size: 15 })} ${s.support_phone}</span>` : ''}${s.support_email ? html`<span>${icon('mail', { size: 15 })} ${s.support_email}</span>` : ''}</p>` : ''}
+      <span class="bf-about">${home.footer_about}</span>
+      ${s.support_phone || s.support_email ? html`<span class="bf-contact">${s.support_phone ? html`<a href="tel:${s.support_phone}">${icon('phone', { size: 14 })} ${s.support_phone}</a>` : ''}${s.support_email ? html`<a href="mailto:${s.support_email}">${icon('mail', { size: 14 })} ${s.support_email}</a>` : ''}</span>` : ''}
     </div>
-    <div><h4>Popular categories</h4>${cats.map((c) => html`<a href="/?cat=${c.slug}">${c.name}</a>`)}</div>
-    <div><h4>Popular cities</h4>${cityList(home).slice(0, 8).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${c}</a>`)}</div>
-    <div><h4>Help & policies</h4><a href="/about">About us</a><a href="/contact">Contact & grievances</a><a href="/pricing">Pricing</a><a href="/safety">Safety tips</a><a href="/terms">Terms of use</a><a href="/privacy">Privacy policy</a><a href="/refund-policy">Refund & cancellation</a><a href="/client/register">Sell on ${s.site_name}</a><a href="/client/login">Seller login</a><a href="/saved">Saved ads</a></div>
+    <a class="btn btn-sell bf-sell" href="${req.seller ? '/client/ads/new' : '/post'}">${icon('plus', { size: 16 })} Post your ad</a>
   </div>
-  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. All rights reserved. By using this website you accept our <a href="/terms">Terms of use</a>. Ads are published by advertisers on their own initiative and under their sole responsibility; ${s.site_name} only provides publication and browsing services, does not mediate between users and is not responsible for any deal, payment or fraud between them. <a href="/advertise">Advertise with us</a></div></div>
+  <div class="wrap bf-rows">
+    <nav class="bf-row" aria-label="Categories"><strong>Categories</strong>${cats.slice(0, 6).map((c) => html`<a href="/?cat=${c.slug}">${c.name}</a>`)}</nav>
+    <nav class="bf-row" aria-label="Cities"><strong>Cities</strong>${cityList(home).slice(0, 8).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${c}</a>`)}</nav>
+    <nav class="bf-row" aria-label="Help"><strong>Help</strong><a href="/about">About</a><a href="/contact">Contact</a><a href="/pricing">Pricing</a><a href="/safety">Safety tips</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refund-policy">Refunds</a><a href="/advertise">Advertise with us</a></nav>
+  </div>
+  <div class="bf-bottom"><div class="wrap">© ${new Date().getFullYear()} ${s.site_name}. Ads are published by advertisers under their sole responsibility; ${s.site_name} only provides publication and browsing and is not responsible for any deal, payment or fraud between users. Using this site means you accept the <a href="/terms">Terms</a>.</div></div>
 </footer>`;
 }
 

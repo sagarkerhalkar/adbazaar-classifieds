@@ -330,13 +330,13 @@ function adFormView(req, { ad = {}, cats, error }) {
         ${field('Contact phone *', html`<input name="contact_phone" required inputmode="numeric" maxlength="13" value="${ad.contact_phone || req.seller.phone}">`)}
         ${field('WhatsApp number', html`<input name="whatsapp" inputmode="numeric" maxlength="13" value="${ad.whatsapp ?? req.seller.phone}">`)}
       </div>
-      ${images.length ? html`<div class="field"><span class="label">Current photos (tick to remove)</span><div class="img-edit">${images.map((f) => html`<label><img src="${imgUrl(f)}" alt=""><input type="checkbox" name="remove_images[]" value="${f}"> Remove</label>`)}</div></div>` : ''}
-      ${field(`Photos (up to ${MAX_IMAGES})`, html`<input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" data-max-mb="5" multiple data-max-files="${MAX_IMAGES - images.length}">`, `JPG, PNG or WEBP, max 5 MB each. The first photo is the cover.${isEdit ? '' : ' You can add up to 2 videos (1 minute each) on the next screens — go to My ads → Edit.'}`)}
+      ${images.length < MAX_IMAGES ? field(isEdit ? `Add photos (${images.length} of ${MAX_IMAGES} used)` : `Photos (up to ${MAX_IMAGES})`, html`<input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" data-max-mb="5" multiple data-max-files="${MAX_IMAGES - images.length}">`, `JPG, PNG or WEBP. Big photos are made smaller by themselves. The first photo is the cover.${isEdit ? ' Change the order, the cover or a single photo below.' : ' Photos and videos are shown with a paid plan (free ads are text only). Add up to 2 videos later in My ads → Edit.'}`) : html`<p class="small muted">All ${MAX_IMAGES} photo places are used. Replace or delete a photo below.</p>`}
       <div class="form-actions">
         <button class="btn btn-accent btn-lg">${isEdit ? 'Save changes' : 'Next: post free or paid'}</button>
         <a class="btn btn-ghost" href="/client">Cancel</a>
       </div>
     </form>
+    ${isEdit ? photosSection(req, ad, images) : ''}
     ${isEdit ? videosSection(req, ad) : ''}
     ${isEdit && ad.status !== 'blocked' ? (() => { const v = W.unusedValue(ad); return html`<form method="post" action="/client/ads/${ad.id}/delete" class="danger-zone" data-confirm="${v ? `Delete this ad? ${rupees(v)} for the unused days goes to your balance for your next ad.` : 'Delete this ad permanently?'}">${csrf(req)}<button class="btn btn-danger btn-sm">${icon('trash', { size: 15 })} Delete ad</button>${v ? html` <span class="small muted">The unused days (${rupees(v)}) are kept as balance.</span>` : ''}</form>`; })() : ''}
   </section>`;
@@ -352,6 +352,30 @@ function categorySelect(cats, selected) {
     ? html`<optgroup label="${m.name}">${m.subs.map((sc) => html`<option value="${sc.id}" ${sel(sc.id)}>${sc.name}</option>`)}</optgroup>`
     : html`<option value="${m.id}" ${sel(m.id)}>${m.name}</option>`))}
   </select>`;
+}
+
+// Photos of an ad: make cover, move left / right, replace one photo, delete — each saves at once.
+function photosSection(req, ad, images) {
+  const base = `/client/ads/${ad.id}/photos`;
+  return html`
+  <section class="photos-edit" id="photos">
+    <h2>Photos <small class="muted">(${images.length}/${MAX_IMAGES})</small></h2>
+    ${ad.is_free ? html`<div class="flash flash-info">${icon('image', { size: 16 })}<span>This is a <strong>free ad</strong>: buyers see text only. Your photos and videos appear as soon as you <a href="/client/ads/${ad.id}/pay">choose a paid plan</a>.</span></div>` : ''}
+    ${images.length ? html`<div class="pgrid">${images.map((f, i) => html`
+      <figure class="pcard ${i === 0 ? 'is-cover' : ''}">
+        <img src="${imgUrl(f)}" alt="Photo ${i + 1}" loading="lazy">
+        ${i === 0 ? html`<span class="pcover">Cover</span>` : ''}
+        <figcaption class="pactions">
+          ${i > 0 ? html`<form method="post" action="${base}/${i}/cover">${csrf(req)}<button class="btn btn-sm btn-primary" title="Show this photo first">${icon('star', { size: 14 })} Make cover</button></form>` : ''}
+          <div class="pmove">
+            ${i > 0 ? html`<form method="post" action="${base}/${i}/left">${csrf(req)}<button class="icon-btn" aria-label="Move photo ${i + 1} left">${icon('chevronLeft', { size: 16 })}</button></form>` : ''}
+            ${i < images.length - 1 ? html`<form method="post" action="${base}/${i}/right">${csrf(req)}<button class="icon-btn" aria-label="Move photo ${i + 1} right">${icon('chevron', { size: 16 })}</button></form>` : ''}
+          </div>
+          <form method="post" action="${base}/${i}/replace" enctype="multipart/form-data"><label class="btn btn-sm">${icon('upload', { size: 14 })} Replace<input type="file" name="image" accept="image/jpeg,image/png,image/webp" data-max-mb="5" hidden data-autosubmit>${csrf(req)}</label></form>
+          <form method="post" action="${base}/${i}/delete" data-confirm="Delete photo ${i + 1}?">${csrf(req)}<button class="btn btn-sm btn-ghost bad" aria-label="Delete photo ${i + 1}">${icon('trash', { size: 14 })} Delete</button></form>
+        </figcaption>
+      </figure>`)}</div>` : html`<p class="muted small">No photos yet. Add some in the form above — ads with photos get many more calls.</p>`}
+  </section>`;
 }
 
 function videosSection(req, ad) {
@@ -376,16 +400,25 @@ function videosSection(req, ad) {
 
 function freeCard(req, ad, free) {
   if (!free.cfg.enabled || ad.is_free || !['awaiting_payment', 'expired'].includes(ad.status)) return '';
+  const row = (label, f, p) => html`<tr><th scope="row">${label}</th><td>${f}</td><td>${p}</td></tr>`;
+  const no = html`<span class="cmp-no">${icon('x', { size: 14 })}</span>`; const yes = html`<span class="cmp-yes">${icon('check', { size: 14 })}</span>`;
   return html`<div class="freecard">
-    <div><h2>${icon('tag', { size: 18 })} Post it free</h2>
-      <p class="muted small">Your ad runs <strong>${free.cfg.days} days</strong> free. Free ads are shown <strong>after all paid ads</strong>, in random order, and never in TOP — there is no guarantee of a high place.
-      ${free.cfg.review ? 'We check free ads before they go live.' : ''} You can upgrade to a paid plan any time.</p>
-      ${free.why ? html`<p class="small bad">${free.why}</p>` : ''}</div>
-    ${free.why ? '' : html`<form method="post" action="/client/ads/${ad.id}/free">${csrf(req)}
-      <label class="check small"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms" target="_blank">Terms of use</a>. My ad is my own responsibility.</span></label>
-      <button class="btn btn-lg">Post free</button></form>`}
+    <div class="freecard-head"><h2>${icon('tag', { size: 18 })} Free or paid?</h2>
+      <p class="muted small">You can post this ad free — or pay a little and be seen first.</p></div>
+    <table class="cmp">
+      <thead><tr><th></th><th>Free ad</th><th class="cmp-paid">Paid ad</th></tr></thead>
+      <tbody>
+        ${row('Photos and videos shown to buyers', html`${no} Text only`, html`${yes} Up to 5 photos + 2 videos`)}
+        ${row('Place in the list', html`${no} After every paid ad, random order`, html`${yes} Above all free ads — more paid, higher place`)}
+        ${row('TOP ads (top of the page)', html`${no} Never`, html`${yes} Choose your time slots`)}
+        ${row('Runs for', html`${free.cfg.days} days`, html`1 day to 1 year`)}
+      </tbody>
+    </table>
+    ${free.why ? html`<p class="small bad">${free.why}</p>` : html`<form method="post" action="/client/ads/${ad.id}/free" class="freecard-form">${csrf(req)}
+      <label class="check small"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms#free-ads" target="_blank">Terms of use</a>. A free ad shows no photos or videos and has no guaranteed place.</span></label>
+      <button class="btn btn-lg">Post free (text only)</button></form>`}
   </div>
-  <div class="or"><span>or pay to be seen first</span></div>`;
+  <div class="or"><span>or choose a paid plan</span></div>`;
 }
 
 function payView(req, { ad, plans, pending, settings, wallet = 0, free = null }) {
@@ -891,6 +924,30 @@ function register(app) {
         ad.contact_phone, ad.whatsapp, JSON.stringify([...keep, ...added]), Date.now(), current.id);
     req.flash('success', 'Ad updated.');
     res.redirect('/client');
+  });
+
+  // Photo tools (edit page): cover, move, replace, delete — each saves at once.
+  app.post('/client/ads/:id/photos/:i/:action', requireClient, (req, res) => {
+    const ad = ownAd(req, res); if (!ad) return;
+    const back = `/client/ads/${ad.id}/edit#photos`;
+    if (ad.status === 'blocked') { req.flash('error', 'This ad was blocked by the admin and cannot be edited.'); res.redirect('/client'); return; }
+    const imgs = parseImages(ad); const i = parseInt(req.params.i, 10);
+    if (!(i >= 0 && i < imgs.length)) { res.redirect(back); return; }
+    const act = req.params.action;
+    const save = (list, msg) => { db.prepare('UPDATE ads SET images = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(list), Date.now(), ad.id); req.flash('success', msg); res.redirect(back); };
+    if (act === 'cover') { const [f] = imgs.splice(i, 1); imgs.unshift(f); return save(imgs, 'Cover photo changed.'); }
+    if (act === 'left' && i > 0) { [imgs[i - 1], imgs[i]] = [imgs[i], imgs[i - 1]]; return save(imgs, `Photo moved${i - 1 === 0 ? ' — it is now the cover' : ''}.`); }
+    if (act === 'right' && i < imgs.length - 1) { [imgs[i + 1], imgs[i]] = [imgs[i], imgs[i + 1]]; return save(imgs, 'Photo moved.'); }
+    if (act === 'delete') { const [f] = imgs.splice(i, 1); removeFile('ads', f); return save(imgs, 'Photo deleted.'); }
+    if (act === 'replace') {
+      const file = req.files && req.files.image && req.files.image[0];
+      if (!file || !file.data || !file.data.length) { req.flash('error', 'Choose a photo to put in its place.'); res.redirect(back); return; }
+      let saved;
+      try { saved = saveUpload(file, 'ads', { maxMb: 5 }); } catch (e) { if (e instanceof UploadError) { req.flash('error', e.message); res.redirect(back); return; } throw e; }
+      const old = imgs[i]; imgs[i] = saved; removeFile('ads', old);
+      return save(imgs, 'Photo replaced.');
+    }
+    res.redirect(back);
   });
 
   app.post('/client/ads/:id/delete', requireClient, (req, res) => {

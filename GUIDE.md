@@ -727,3 +727,35 @@ The form changes by itself when the seller picks the ID, and the server refuses 
 Phone fixes in this round:
 - the payment page no longer goes wider than a small phone (long button text now wraps);
 - the **More** menu stays open while you type a reason on a phone.
+
+---
+
+## Part 25 — Free ads text-only, photo tools, full photos, smooth live updates, small footer, 3D (4 Nov, evening)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5**.
+
+**Free ads are text only.** Buyers see a clean text card (category, title, "Free ad") instead of photos, and no videos.
+- The seller's photos and videos are kept and appear as soon as the ad is upgraded to a paid plan.
+- The payment screen shows a **Free or paid?** table: text only vs photos and videos, after all paid ads vs above them, never TOP vs TOP time slots.
+- When a seller opens their own free ad, a note tells them buyers don't see the photos, with an **Upgrade** link.
+
+**Photo tools for sellers** (My ads → Edit → Photos). Each photo has **Make cover**, **move left / right**, **Replace** (choose a new photo; big ones are made smaller by themselves) and **Delete**. Every button saves at once.
+
+**Photos on the ad page show in full.** Before, an upright phone photo was cut off and only its top part showed. Now:
+- the whole photo always shows, with a soft blurred copy of it filling the sides;
+- **arrows** and a **"2 / 5" counter**;
+- **swipe** on phones, ← → keys on a computer;
+- **Full size** (or a click on the photo) opens it full screen.
+
+**Live updates are smoother.** When a new payment, seller or message arrives, the list updates **in place**: no page reload, and the scroll position is kept. Nothing runs while the tab is in the background; it checks at once when you come back to it.
+
+**Smaller footer.** One line for the brand and the **Post your ad** button, three short rows of links (Categories, Cities, Help), and one line of legal text. On phones each row slides sideways.
+
+**Motion and 3D** (switched off for people who turn off animations on their device):
+- **TOP ads** are a 3D carousel: cards turn as they move, the middle one comes forward, and it moves slowly by itself (it stops when you touch it).
+- Sections, category tiles and ads **float up into place** as you scroll.
+- **Category tiles tilt in 3D** with a light shine under the mouse.
+- The **banner** has depth: text and photo move apart with the mouse.
+- A **numbers band** under the banner (ads live, verified sellers, cities, categories) counts up. The admin dashboard numbers count up too.
+
+**A note on category names.** The category name *Adult Services* says "sexual services" to buyers, to the police and to payment companies, even when the ads are genuine massage. Rename it in Admin → Categories, for example to *Spa & Wellness*, which already exists.

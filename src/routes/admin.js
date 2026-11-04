@@ -68,7 +68,7 @@ function dashboardView(req, d) {
   const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long' });
   const kpi = (href, ic, tone, value, label, sub = '') => html`<a class="kpi kpi-${tone}" href="${href}">
-    <span class="kpi-ic">${icon(ic, { size: 20 })}</span><span class="kpi-v">${value}</span><span class="kpi-l">${label}</span>${sub ? html`<span class="kpi-sub">${sub}</span>` : ''}</a>`;
+    <span class="kpi-ic">${icon(ic, { size: 20 })}</span><span class="kpi-v" data-count="${typeof value === 'number' ? value : ''}">${value}</span><span class="kpi-l">${label}</span>${sub ? html`<span class="kpi-sub">${sub}</span>` : ''}</a>`;
   const first = String(req.admin.name || '').split(' ')[0];
   return html`
   <div class="dash-hero">
