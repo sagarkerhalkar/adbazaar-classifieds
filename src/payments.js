@@ -104,7 +104,35 @@ function rejectPayment(paymentId, adminId, note) {
   });
 }
 
+/**
+ * Take an ad off the site and back to "awaiting payment" (Admin → Ads → Move to unpaid, or a payment that failed later).
+ * Paid days, TOP and admin TOP are cleared; after the seller pays again and the admin confirms, it goes live and is ranked as usual.
+ */
+function moveAdToUnpaid(adId) {
+  const ad = db.prepare('SELECT * FROM ads WHERE id = ?').get(adId);
+  if (!ad || ['deleted', 'awaiting_payment'].includes(ad.status)) return null;
+  db.prepare(`UPDATE ads SET status = 'awaiting_payment', is_free = 0, paid_total_paise = 0, top_slots = 0, is_top = 0,
+    admin_top_until = NULL, starts_at = NULL, expires_at = NULL, paused_by = NULL, paused_remaining_ms = NULL, rank_score = -1, updated_at = ? WHERE id = ?`).run(Date.now(), ad.id);
+  return ad;
+}
+
+/**
+ * A payment that was confirmed turned out to have failed (bounced, reversed, charge-back, fake UTR).
+ * The payment is marked "failed" (it no longer counts as money received), money taken from the seller's
+ * balance goes back to the balance, and the ad goes back to unpaid.
+ */
+function failPayment(paymentId, adminId, note) {
+  return tx(() => {
+    const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+    if (!pay || pay.status !== 'paid') return null;
+    db.prepare("UPDATE payments SET status = 'failed', confirmed_by = ?, admin_note = ? WHERE id = ?").run(adminId, note || null, pay.id);
+    if (pay.wallet_paise > 0) require('./wallet').credit(pay.client_id, pay.wallet_paise, 'refund', `Payment #${pay.id} failed — balance returned`, { adId: pay.ad_id, paymentId: pay.id });
+    moveAdToUnpaid(pay.ad_id);
+    return pay;
+  });
+}
+
 module.exports = {
   RZP_KEY_ID, razorpayEnabled, quote, listPrice, createRazorpayOrder,
-  verifyCheckoutSignature, verifyWebhookSignature, confirmPayment, rejectPayment,
+  verifyCheckoutSignature, verifyWebhookSignature, confirmPayment, rejectPayment, failPayment, moveAdToUnpaid,
 };

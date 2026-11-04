@@ -605,21 +605,11 @@ Things to know:
 
 **Free ads.** Sellers can now post without paying. On the payment screen they see **Post it free**:
 - Free ads show **after every paid ad**, in random order, and never in TOP. There is no guarantee of a high place.
-- You set the rules in Admin → Settings → **Approvals → Free ads**: on or off, how many days a free ad runs (default 15), how many free ads one seller may have at a time (default 2), and whether you check each free ad first (default on).
-- Free ads to check are in Admin → **Ads → Free ads to check**: **Approve** or **Turn down** (the seller sees your reason).
+- You set the rules in Admin → Settings → **Approvals → Free ads**: on or off, how many days a free ad runs (default 15), how many free ads one seller may have at a time (default 2), and whether you check each free ad first (default **off**: free ads go live at once; only payments need your approval).
+- If you switch the check on, free ads wait in Admin → **Ads → Free ads to check**: **Approve** or **Turn down** (the seller sees your reason).
 - A seller can **Upgrade to paid** any time; the ad then moves above every free ad.
 
-**Staff roles.** Admin → Settings → **Staff & brand**. Your first login is the **Owner**.
-
-| Role | What they can do |
-|---|---|
-| **Owner** (you) | Everything, including the site name and the staff list |
-| **Admin** | Runs the site (sellers, ads, payments, reports, settings), but cannot change the site name or add or remove staff |
-| **Payment checker** | Sees only the payments waiting to be confirmed, and confirms or rejects them. No totals, no reports, no sellers, no settings |
-
-To add someone, fill in **Add a staff login**, choose what they can do, and give them the email and password. **Remove** stops their login at once.
-
-**Your brand name (owner only).** In **Staff & brand → Brand** you can change the site name and tagline at any time, for example if "AdBazaar" is already taken. The new name shows everywhere: header, emails, receipts and legal pages. Admins and payment checkers cannot change it.
+**Staff roles and brand.** See Part 23: you now make your own roles, and you can change the name, logo and colours.
 
 **Smarter search.** People can type the way they talk:
 
@@ -644,3 +634,61 @@ To add someone, fill in **Add a staff login**, choose what they can do, and give
 The arbitration clause was changed to "an arbitrator chosen by both sides". Since a 2024 Supreme Court judgment, an arbitrator chosen by one side alone can make the clause fail.
 
 **What the site does not allow.** Adult or sexual services, escort or "companion" ads are not allowed. In India, advertising them is a crime under the Immoral Traffic (Prevention) Act and the IT Act, and the site owner can be held responsible too. Massage and spa ads are welcome only for genuine wellness and therapy; there is a **Spa & Wellness** category for them. Toys, beauty, salons and every normal product or service are fine.
+
+---
+
+## Part 23 — Your own staff roles, logo and colours, failed payments, ads near you (4 Nov)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5**.
+
+**Free ads go live at once.** Nothing to approve; only payments need you. Free ads that were waiting went live by themselves. To check free ads again, switch it on in Settings → **Approvals → Free ads**.
+
+**Make your own roles (Admin → Settings → Staff & brand → Roles).**
+1. Click **New role**, type a name (for example *Ad checker* or *Accountant*), tick what it may do, and click **Create role**.
+
+   | Tick | Opens |
+   |---|---|
+   | Confirm payments | Payments and balance top-ups waiting to be confirmed |
+   | See money totals | Money on the dashboard, payment history, money reports, CSV |
+   | Sellers | Verify, approve, block, video call, balance |
+   | Ads | Block, boost, TOP, extend, delete, move to unpaid |
+   | Categories / Home page / Sponsors | Those pages |
+   | Reports & complaints | Charts, rejected lists, complaints |
+   | Messages log | Every email, SMS and alert sent |
+   | Settings | Plans, prices, TOP slots, approvals, email, alerts, legal |
+
+2. Under **Add a staff login**, type their name, email and a password, choose the role, and give them the login.
+
+Two roles are ready: **Admin** (everything) and **Payment checker** (only confirm payments, no totals). Each person sees only their pages; anything else sends them back. Change a role at any time and it applies at once. **Remove** stops a login immediately.
+
+Only **you, the owner**, can change staff, roles and the brand.
+
+**Your name, logo and colours (owner only).** In **Staff & brand → Brand**:
+- **Site name and tagline:** for example change *AdBazaar* to *BazaarNova*. The name shows everywhere: header, footer, emails, receipts, legal pages.
+- **Logo:** upload a square PNG, JPG or WEBP (max 2 MB). Tick **Remove my logo** to go back to the tag symbol.
+- **Colours:** pick one of 6 colour sets (Peacock & marigold, Indigo & saffron, Emerald & lime, Maroon & gold, Midnight & coral, Ocean & sunshine). The whole site changes colour.
+
+**A payment failed after you confirmed it** (bounced, reversed, charge-back, fake UTR):
+- **Admin → Payments → Paid**, type why, and click **Payment failed**.
+- **Or Admin → Ads → More → Move to unpaid**, for any live ad.
+
+What happens next:
+1. The ad leaves the site at once, its paid days and TOP are cleared, and the payment stops counting as money received. Any part paid from balance goes back to the seller's balance.
+2. The seller gets a message with a **Try again** button.
+3. When they pay again and you confirm, the ad goes live and is ranked by the new amount, as usual.
+
+Failed payments are listed under **Payments → Failed later**.
+
+**Ads near you, under every ad.** Under each ad, visitors now see:
+- **Similar ads near {area, city}:** the same category in the same city, same area first. Then TOP ads, paid ads (more paid = higher) and free ads last. If the category has nothing in that city, they see other ads from the same city.
+- **More {category} in other cities**, in the same order.
+
+**Cleaner admin.**
+- The **Dashboard** greets you, shows what needs you today, and has coloured cards (each staff member only sees the cards their role allows).
+- The **Ads** list shows a photo, and one **Boost & TOP** button plus a **More** menu (deactivate, move to unpaid, block, delete) instead of a long row of buttons.
+
+**Checked on every screen size.** Every page was tested at seven sizes: Android phone (360), iPhone (390), iPad portrait and landscape, laptop (1366), MacBook (1512) and a big monitor (1920). The fixes:
+- the ad page no longer goes wider than a phone screen;
+- links and buttons are bigger on touch screens;
+- the phone footer is shorter;
+- the settings tabs wrap instead of being cut off.

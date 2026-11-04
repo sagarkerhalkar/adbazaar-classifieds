@@ -45,7 +45,8 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 - **Money:** seller messages (bell) for confirmed, rejected and failed payments, receipts, a seller **balance** (`src/wallet.js`: unused days of deleted ads, UPI top-ups confirmed by the admin, admin credits; pay fully or partly from balance), 1-day, monthly and yearly plans with an admin-set discount %, admin **Boost & TOP** (days or until a date, chosen slots), automatic blocking after complaints from N different people, and **instant alerts** (WhatsApp via CallMeBot or the Cloud API, Telegram, Google Chat) plus live admin and seller counters (`public/js/live.js`).
 - **Smart search** (`src/search.js`): part words, typo correction, same-meaning and Hinglish words, brands, category and city names, with suggestions while typing (`public/js/suggest.js`). Results: TOP → best match → amount paid.
 - **Free ads** (`src/freeads.js`): shown after all paid ads, never in TOP; days, per-seller limit and admin check set by the admin.
-- **Staff roles:** Owner (everything, incl. site name), Admin (runs the site), Payment checker (only confirms waiting payments, no totals).
+- **Staff roles** (`src/staff.js`): the owner makes roles from 10 permissions (payments, money, sellers, ads, categories, home, sponsors, reports, messages, settings); pages, menu and figures follow the role. Brand name, logo and 6 colour themes are owner-only (`src/brand.js`).
+- **Payment failed later:** mark a confirmed payment failed or move an ad to unpaid; the seller is told and it goes live again after the next confirmed payment.
 - **Real photos** in `public/photos` (Unsplash License, see `CREDITS.md`) for banners, category tiles and test ads.
 - **Sponsors** (`src/routes/sponsors.js`): third-party ads between listings, under ad pages and on the home page, with view and click counts and an `/advertise` enquiry form.
 

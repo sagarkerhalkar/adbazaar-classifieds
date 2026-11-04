@@ -298,7 +298,12 @@ function adView(req, { ad, images, videos = [], related }) {
     </aside>
   </div>
   ${Sp.card(Sp.pick('ad_page'), 'wide')}
-  ${related.length ? html`<section class="section"><div class="section-head"><h2>Similar ads</h2><a class="small" href="/?cat=${ad.cat_slug}">See all</a></div><div class="grid">${related.map(adCard)}</div></section>` : ''}`;
+  ${related.near.length ? html`<section class="section related"><div class="section-head"><div><h2>${related.nearKind === 'cat' ? `Similar ads near ${ad.locality ? `${ad.locality}, ${ad.city}` : ad.city}` : `More ads in ${ad.city}`}</h2>
+      <p class="muted small">TOP ads first, then paid ads, then free ads.</p></div>
+      <a class="small" href="/?${new URLSearchParams(related.nearKind === 'cat' ? { cat: ad.main_slug, city: ad.city } : { city: ad.city })}">See all</a></div>
+    <div class="grid">${related.near.map(adCard)}</div></section>` : ''}
+  ${related.other.length ? html`<section class="section related"><div class="section-head"><h2>More ${ad.main_name} in other cities</h2><a class="small" href="/?cat=${ad.main_slug}">See all</a></div>
+    <div class="grid">${related.other.map(adCard)}</div></section>` : ''}`;
 }
 
 // Too many complaints about one ad from different people → the ad is removed and the seller is blocked from posting.
@@ -318,6 +323,30 @@ function complaintCheck(adId, reason) {
     notify.suspended(c, why);
     notify.adminAlert('complaint', `⛔ ${ad.seller_name} was blocked automatically — "${ad.title}" got complaints from ${people} different people.`);
   }
+}
+
+/**
+ * Ads to show under an ad page.
+ * near:  same category in the same city — same area first, then TOP now, then paid (more paid = higher), then free.
+ *        If there are none, other ads in the same city.
+ * other: the same category in other cities, in the same TOP → paid → free order.
+ */
+function relatedAds(ad, slot = currentSlot(), seed = 0) {
+  const ids = Cat.idsForSlug(ad.main_slug);
+  const inCat = ids.length ? `a.category_id IN (${ids.map((n) => Number(n) | 0).join(',')})` : '0';
+  const base = `SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS top_now FROM ads a ${CAT_JOIN}
+    WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.id != ?`;
+  const order = `ORDER BY top_now DESC, a.is_free ASC, a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(seed)}`;
+  const now = Date.now();
+  let near = db.prepare(`${base} AND ${inCat} AND a.city = ? COLLATE NOCASE
+    ORDER BY (COALESCE(a.locality, '') != '' AND a.locality = ? COLLATE NOCASE) DESC, ${order.slice('ORDER BY '.length)} LIMIT 8`)
+    .all(now, ad.id, ad.city, ad.locality || '');
+  let nearKind = 'cat';
+  if (!near.length) { near = db.prepare(`${base} AND a.city = ? COLLATE NOCASE ${order} LIMIT 8`).all(now, ad.id, ad.city); nearKind = 'city'; }
+  const other = db.prepare(`${base} AND ${inCat} AND a.city != ? COLLATE NOCASE AND a.id NOT IN (${near.map((x) => Number(x.id) | 0).join(',') || 0}) ${order} LIMIT 4`)
+    .all(now, ad.id, ad.city);
+  for (const r of [...near, ...other]) r.is_top = r.top_now;
+  return { near, nearKind, other };
 }
 
 function register(app) {
@@ -383,9 +412,7 @@ function register(app) {
     }
     const slot = currentSlot();
     ad.is_top = ((ad.top_slots >> slot) & 1) || (ad.admin_top_until > Date.now() && ((ad.admin_top_slots >> slot) & 1)) ? 1 : 0;
-    const related = db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS is_top_now FROM ads a ${CAT_JOIN}
-      WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.category_id = ? AND a.id != ? ORDER BY is_top_now DESC, a.rank_score DESC LIMIT 4`).all(Date.now(), ad.category_id, ad.id);
-    related.forEach((r) => { r.is_top = r.is_top_now; });
+    const related = relatedAds(ad, slot, req.session.shuffle || 0);
     let body = adView(req, { ad, images: parseImages(ad), videos: parseVideos(ad), related });
     if (!visible) body = html`<div class="flash flash-warn">Preview only — this ad is not live (${ad.status.replace('_', ' ')}). Visitors cannot see it.</div>${body}`;
     res.html(renderPage(req, { title: ad.title, body, description: String(ad.description).slice(0, 150) }));

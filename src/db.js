@@ -213,6 +213,19 @@ addColumn('categories', 'image', 'TEXT');
 addColumn('admins', 'role', "TEXT NOT NULL DEFAULT 'admin'", "UPDATE admins SET role = 'owner' WHERE id = (SELECT MIN(id) FROM admins)");
 addColumn('admins', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
 if (!db.prepare("SELECT 1 FROM admins WHERE role = 'owner' LIMIT 1").get()) db.exec("UPDATE admins SET role = 'owner' WHERE id = (SELECT MIN(id) FROM admins)");
+// Custom staff roles (Admin → Settings → Staff & roles): a name plus the permissions the owner ticks (see src/staff.js).
+// admins.role is 'owner' or 'staff'; staff have role_id. Old 'admin' / 'payments' logins move to the two starting roles.
+db.exec(`CREATE TABLE IF NOT EXISTS roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, perms TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
+addColumn('admins', 'role_id', 'INTEGER');
+if (!db.prepare('SELECT 1 FROM roles LIMIT 1').get()) {
+  const t = Date.now();
+  const adminRole = Number(db.prepare('INSERT INTO roles (name, perms, created_at) VALUES (?, ?, ?)')
+    .run('Admin', 'payments,money,sellers,ads,categories,home,sponsors,reports,messages,settings', t).lastInsertRowid);
+  const payRole = Number(db.prepare('INSERT INTO roles (name, perms, created_at) VALUES (?, ?, ?)').run('Payment checker', 'payments', t).lastInsertRowid);
+  db.prepare("UPDATE admins SET role = 'staff', role_id = ? WHERE role = 'admin'").run(adminRole);
+  db.prepare("UPDATE admins SET role = 'staff', role_id = ? WHERE role = 'payments'").run(payRole);
+}
+db.prepare("UPDATE admins SET role = 'staff', role_id = COALESCE(role_id, (SELECT MIN(id) FROM roles)) WHERE role NOT IN ('owner','staff')").run();
 db.exec(`
 CREATE TABLE IF NOT EXISTS wallet_tx (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -336,7 +349,7 @@ const DEFAULT_SETTINGS = {
   free_ads: '1',                      // sellers may post ads without paying (shown after paid ads)
   free_ad_days: '15',                 // how long a free ad stays live
   free_ads_per_seller: '2',           // free ads one seller may have live or waiting at the same time
-  free_ads_review: '1',               // admin checks each free ad before it goes live (1) or it goes live at once (0)
+  free_ads_review: '0',               // free ads go live at once (0); 1 = admin checks each one first (only payments need approval by default)
   require_mobile_otp: '1',            // mobile must be verified by SMS code when SMS is set up
   notify_email: process.env.ADMIN_EMAIL || '',
   // Business & legal details (Admin → Settings → Business & legal) — shown on receipts, Terms, Contact page
@@ -350,6 +363,14 @@ for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, v);
 if (!db.prepare("SELECT 1 FROM settings WHERE key = 'approve_1min_migrated'").get()) {
   db.prepare("UPDATE settings SET value = '1' WHERE key = 'auto_approve_minutes' AND value = '5'").run();
   db.prepare("INSERT INTO settings (key, value) VALUES ('approve_1min_migrated', '1')").run();
+}
+// One-time change: free ads no longer wait for the admin — they go live at once. Free ads already waiting go live now.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'free_live_migrated'").get()) {
+  const t = Date.now();
+  const days = parseInt((db.prepare("SELECT value FROM settings WHERE key = 'free_ad_days'").get() || {}).value, 10) || 15;
+  db.prepare("UPDATE settings SET value = '0' WHERE key = 'free_ads_review'").run();
+  db.prepare("UPDATE ads SET status = 'active', is_free = 1, rank_score = 0, starts_at = ?, expires_at = ?, updated_at = ? WHERE status = 'free_review'").run(t, t + days * 86400_000, t);
+  db.prepare("INSERT INTO settings (key, value) VALUES ('free_live_migrated', '1')").run();
 }
 // Payments are confirmed only by an admin (an older version had an auto-confirm option).
 db.prepare("DELETE FROM settings WHERE key = 'auto_confirm_payment_minutes'").run();

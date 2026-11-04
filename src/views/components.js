@@ -10,7 +10,7 @@ const STATUS_LABELS = {
   rejected: ['Rejected', 'bad'], suspended: ['Blocked', 'bad'], deactivated: ['Deactivated', 'muted'], deleted: ['Deleted', 'bad'],
   paused: ['Deactivated', 'muted'],
   awaiting_payment: ['Awaiting payment', 'warn'], payment_review: ['Payment under review', 'info'], free_review: ['Free ad — being checked', 'info'],
-  active: ['Live', 'ok'], expired: ['Expired', 'muted'], blocked: ['Blocked', 'bad'],
+  active: ['Live', 'ok'], expired: ['Expired', 'muted'], blocked: ['Blocked', 'bad'], failed: ['Payment failed', 'bad'],
   created: ['Started', 'muted'], paid: ['Paid', 'ok'], failed: ['Failed', 'bad'],
 };
 function pill(status) {

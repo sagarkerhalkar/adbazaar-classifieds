@@ -1,4 +1,5 @@
 'use strict';
+const Staff = require('../staff');
 // Admin → Reports: KPIs, charts, rejected sellers, rejected payments, ad reports, all sellers. Every list exports to CSV.
 
 const { db } = require('../db');
@@ -127,14 +128,16 @@ function view(req, d) {
   const exp = (kind) => html`<a class="btn btn-sm" href="/admin/reports/export/${kind}?days=${d.days}">${icon('download', { size: 15 })} Download CSV</a>`;
   const empty = (t) => html`<div class="empty center"><div class="empty-icon">${icon('chart', { size: 26 })}</div><p class="muted">${t}</p></div>`;
   const k = d.kpi;
+  const money = Staff.can(req, 'money'); // amounts are hidden from staff without "See money totals"
+  const M = money ? rupees : () => '—';
   return html`
   <div class="page-head">
     <div><h1>Reports</h1><p class="muted">Sellers, payments and complaints for the selected period.</p></div>
     <div class="seg" role="group" aria-label="Period">${RANGES.map((n) => html`<a class="${n === d.days ? 'active' : ''}" href="/admin/reports?days=${n}">${`Last ${n} days`}</a>`)}</div>
   </div>
   <div class="stats">
-    <a class="stat stat-link" href="#money"><span data-count="${Math.round(k.revenue / 100)}" data-prefix="₹">${rupees(k.revenue)}</span>Money received</a>
-    <a class="stat stat-link" href="/admin/payments"><span>${rupees(k.waitingMoney)}</span>${k.waitingCount} payment(s) waiting for you</a>
+    ${money ? html`<a class="stat stat-link" href="#money"><span data-count="${Math.round(k.revenue / 100)}" data-prefix="₹">${M(k.revenue)}</span>Money received</a>
+    <a class="stat stat-link" href="/admin/payments"><span>${M(k.waitingMoney)}</span>${k.waitingCount} payment(s) waiting for you</a>` : ''}
     <a class="stat stat-link" href="#live"><span data-count="${k.live}">${k.live}</span>Ads running now</a>
     <div class="stat"><span data-count="${k.sellers}">${k.sellers}</span>New sellers</div>
     <a class="stat stat-link" href="#rejected-sellers"><span data-count="${k.rejectedSellers}">${k.rejectedSellers}</span>Rejected sellers</a>
@@ -145,7 +148,7 @@ function view(req, d) {
   <div data-tab-scope>
     <div class="tabs" data-tabs data-tabs-hash role="tablist">
       <button type="button" class="tab active" data-tab="overview">${icon('chart', { size: 16 })} Overview</button>
-      <button type="button" class="tab" data-tab="money">${icon('card', { size: 16 })} Money</button>
+      ${money ? html`<button type="button" class="tab" data-tab="money">${icon('card', { size: 16 })} Money</button>` : ''}
       <button type="button" class="tab" data-tab="live">${icon('bolt', { size: 16 })} Live ads <span class="pill pill-muted">${k.live}</span></button>
       <button type="button" class="tab" data-tab="rejected-sellers">${icon('users', { size: 16 })} Rejected sellers <span class="pill pill-muted">${d.rejectedSellers.length}</span></button>
       <button type="button" class="tab" data-tab="rejected-payments">${icon('card', { size: 16 })} Rejected payments <span class="pill pill-muted">${d.rejectedPayments.length}</span></button>
@@ -155,10 +158,10 @@ function view(req, d) {
 
     <div class="tab-panel" data-panel="overview">
       <div class="chartgrid">
-        <section class="chartcard wide">
-          <h3>Money received</h3><p class="chart-sub">Per day, last ${d.days} days · total ${rupees(k.revenue)}</p>
-          ${lineChart(d.series, 'rev', (v) => rupees(v))}
-        </section>
+        ${money ? html`<section class="chartcard wide">
+          <h3>Money received</h3><p class="chart-sub">Per day, last ${d.days} days · total ${M(k.revenue)}</p>
+          ${lineChart(d.series, 'rev', (v) => M(v))}
+        </section>` : ''}
         <section class="chartcard">
           <h3>New sellers</h3><p class="chart-sub">Registrations per day · ${k.sellers} in total</p>
           ${barChart(d.series, 'sellers', 'new')}
@@ -172,20 +175,20 @@ function view(req, d) {
       </div>
     </div>
 
-    <div class="tab-panel" data-panel="money" hidden>
+    ${money ? html`<div class="tab-panel" data-panel="money" hidden>
       <div class="chartgrid">
         <section class="chartcard">
           <h3>Where the money came from</h3><p class="chart-sub">Last ${d.days} days</p>
-          <ul class="list">${d.byMethod.map((m) => html`<li><span>${({ upi_manual: 'UPI (checked by you)', razorpay: 'Online (Razorpay)', wallet: 'Paid from balance' })[m.method] || m.method} <span class="muted small">· ${m.n} payment(s)</span></span><strong>${rupees(m.cash)}${m.bal ? html` <span class="muted small">+ ${rupees(m.bal)} balance</span>` : ''}</strong></li>`)}
-            <li><span>Balance top-ups <span class="muted small">· ${d.topupsPaid.n}</span></span><strong>${rupees(d.topupsPaid.s)}</strong></li>
-            <li><span><strong>Total received</strong></span><strong>${rupees(k.revenue)}</strong></li>
-            <li><span class="muted">Balance held for sellers (to be used on ads)</span><span>${rupees(k.walletHeld)}</span></li></ul>
+          <ul class="list">${d.byMethod.map((m) => html`<li><span>${({ upi_manual: 'UPI (checked by you)', razorpay: 'Online (Razorpay)', wallet: 'Paid from balance' })[m.method] || m.method} <span class="muted small">· ${m.n} payment(s)</span></span><strong>${M(m.cash)}${m.bal ? html` <span class="muted small">+ ${M(m.bal)} balance</span>` : ''}</strong></li>`)}
+            <li><span>Balance top-ups <span class="muted small">· ${d.topupsPaid.n}</span></span><strong>${M(d.topupsPaid.s)}</strong></li>
+            <li><span><strong>Total received</strong></span><strong>${M(k.revenue)}</strong></li>
+            <li><span class="muted">Balance held for sellers (to be used on ads)</span><span>${M(k.walletHeld)}</span></li></ul>
         </section>
         <section class="chartcard">
           <h3>Plans sold</h3><p class="chart-sub">Number sold and total value</p>
-          ${d.byPlan.length ? html`<ul class="list">${d.byPlan.map((x) => html`<li><span>${x.plan} <span class="muted small">× ${x.n}</span></span><strong>${rupees(x.total)}</strong></li>`)}</ul>` : html`<p class="muted small">No plans sold in this period.</p>`}
+          ${d.byPlan.length ? html`<ul class="list">${d.byPlan.map((x) => html`<li><span>${x.plan} <span class="muted small">× ${x.n}</span></span><strong>${M(x.total)}</strong></li>`)}</ul>` : html`<p class="muted small">No plans sold in this period.</p>`}
           <h3 style="margin-top:18px">Top paying sellers</h3>
-          ${d.topSellers.length ? html`<ul class="list">${d.topSellers.map((x) => html`<li><a href="/admin/clients/${x.id}">${x.business_name || x.name}</a><strong>${rupees(x.total)} <span class="muted small">· ${x.n}</span></strong></li>`)}</ul>` : html`<p class="muted small">—</p>`}
+          ${d.topSellers.length ? html`<ul class="list">${d.topSellers.map((x) => html`<li><a href="/admin/clients/${x.id}">${x.business_name || x.name}</a><strong>${M(x.total)} <span class="muted small">· ${x.n}</span></strong></li>`)}</ul>` : html`<p class="muted small">—</p>`}
         </section>
       </div>
       <div class="section-head" style="margin-top:18px"><span class="muted small">Every confirmed payment in the last ${d.days} days.</span>${exp('payments')}</div>
@@ -193,9 +196,9 @@ function view(req, d) {
         <thead><tr><th>Receipt</th><th>Confirmed</th><th>Seller</th><th>Ad</th><th>Plan</th><th>Amount</th><th>How</th></tr></thead>
         <tbody>${d.paidList.map((p) => html`<tr><td><a href="/admin/payments/${p.id}/receipt" target="_blank">#${p.id}</a></td><td>${fmtDate(p.confirmed_at)}</td>
           <td><a href="/admin/clients/${p.client_id}">${p.client_name}</a></td><td>${p.ad_title}</td><td>${p.days} days</td>
-          <td><strong>${rupees(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${rupees(p.wallet_paise)} from balance</div>` : ''}</td>
+          <td><strong>${M(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${M(p.wallet_paise)} from balance</div>` : ''}</td>
           <td>${({ upi_manual: 'UPI (checked by you)', razorpay: 'Online (Razorpay)', wallet: 'Paid from balance' })[p.method] || p.method}${p.utr ? html`<div class="small muted mono">${p.utr}</div>` : ''}</td></tr>`)}</tbody></table></div>` : html`<div class="card">${empty('No payments in this period yet.')}</div>`}
-    </div>
+    </div>` : ''}
 
     <div class="tab-panel" data-panel="live" hidden>
       <section class="card tipcard">
@@ -213,7 +216,7 @@ function view(req, d) {
         <thead><tr><th>Ad</th><th>Seller</th><th>Plan</th><th>Paid</th><th>Ends</th><th>Views</th><th>Place</th><th></th></tr></thead>
         <tbody>${d.liveAds.map((a) => { const left = a.expires_at - Date.now(); return html`<tr>
           <td><a href="/ad/${a.id}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.city}</div></td>
-          <td>${a.client_name}</td><td>${a.plan}</td><td>${rupees(a.paid_total_paise)}</td>
+          <td>${a.client_name}</td><td>${a.plan}</td><td>${M(a.paid_total_paise)}</td>
           <td>${fmtDate(a.expires_at)}<div class="small ${left < DAY ? 'bad' : 'muted'}">${left < DAY ? 'ends within 24 h' : `${Math.ceil(left / DAY)} days left`}</div></td>
           <td>${a.views}</td>
           <td>${a.top_slots ? html`<span class="pill pill-top">TOP (paid)</span> ` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top">★ Admin TOP</span> ` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}${!a.top_slots && !(a.admin_top_until > Date.now()) && !a.admin_boost ? html`<span class="muted small">by payment</span>` : ''}</td>
@@ -240,7 +243,7 @@ function view(req, d) {
           <td>${p.id}</td><td>${fmtDate(p.created_at)}</td>
           <td><a href="/admin/clients/${p.cid}">${p.client_name}</a><div class="small muted">${p.client_phone}</div></td>
           <td><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></td>
-          <td>${rupees(p.amount_paise)}</td><td class="mono">${p.utr || '—'}</td>
+          <td>${M(p.amount_paise)}</td><td class="mono">${p.utr || '—'}</td>
           <td>${p.admin_note || html`<span class="muted">—</span>`}${p.reviewer ? html`<div class="small muted">by ${p.reviewer}</div>` : ''}</td></tr>`)}</tbody></table></div>` : html`<div class="card">${empty('No rejected payments in this period.')}</div>`}
     </div>
 
@@ -258,13 +261,13 @@ function view(req, d) {
     </div>
 
     <div class="tab-panel" data-panel="sellers" hidden>
-      <div class="section-head"><span class="muted small">Every seller with ads and money paid (all time).</span>${exp('sellers')}</div>
+      <div class="section-head"><span class="muted small">Every seller with ads and money paid (all time).</span>${money ? exp('sellers') : ''}</div>
       <div class="table-wrap card"><table class="table">
         <thead><tr><th>#</th><th>Seller</th><th>Contact</th><th>City</th><th>Status</th><th>Ads</th><th>Paid</th><th>Balance</th><th>Joined</th><th>Last login</th></tr></thead>
         <tbody>${d.sellers.map((c) => html`<tr>
           <td>${c.id}</td><td><a href="/admin/clients/${c.id}"><strong>${c.name}</strong></a>${c.business_name ? html`<div class="small muted">${c.business_name}</div>` : ''}</td>
           <td>${c.phone}<div class="small muted">${c.email}</div></td><td>${c.city || '—'}</td><td>${pill(c.status)}</td>
-          <td>${c.ads}</td><td>${rupees(c.paid)}</td><td>${rupees(c.wallet)}</td><td>${fmtDate(c.created_at)}</td><td>${fmtDate(c.last_login_at)}</td></tr>`)}</tbody></table></div>
+          <td>${c.ads}</td><td>${M(c.paid)}</td><td>${M(c.wallet)}</td><td>${fmtDate(c.created_at)}</td><td>${fmtDate(c.last_login_at)}</td></tr>`)}</tbody></table></div>
     </div>
   </div>`;
 }

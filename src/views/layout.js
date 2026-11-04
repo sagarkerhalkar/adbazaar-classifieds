@@ -1,9 +1,15 @@
 'use strict';
+const Brand = require('../brand');
 const { html, raw } = require('../lib/html');
 const { assetUrl } = require('../lib/files');
 const { icon } = require('./icons');
 const Cat = require('../categories');
 const { getHome, cityList } = require('../homeconfig');
+
+// The brand mark: the owner's uploaded logo, or the tag symbol (Admin → Settings → Staff & brand).
+const logoMark = (s, size = '') => (s.brand_logo
+  ? html`<img class="logo-img ${size}" src="/media/ads/${s.brand_logo}" alt="">`
+  : html`<span class="logo-mark ${size}">${icon('tag', { size: size === 'sm' ? 14 : 18 })}</span>`);
 
 function flashes(req) {
   const list = req.takeFlash ? req.takeFlash() : [];
@@ -19,7 +25,7 @@ function publicHeader(req, s) {
   return html`
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <a class="logo" href="/" aria-label="${s.site_name} home"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span></a>
+      <a class="logo" href="/" aria-label="${s.site_name} home">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
       <form class="hsearch" method="get" action="/" role="search">
         <input type="search" name="q" value="${req.path === '/' ? q.q : ''}" placeholder="Search phones, cars, tuition, repairs…" aria-label="Search">
         <input name="city" value="${req.path === '/' ? q.city : ''}" list="cities-h" placeholder="All India" aria-label="City" class="hsearch-city">
@@ -60,7 +66,7 @@ function clientHeader(req, s) {
   return html`
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <a class="logo" href="/"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span><span class="logo-tag">Seller</span></a>
+      <a class="logo" href="/">${logoMark(s)}<span class="logo-text">${s.site_name}</span><span class="logo-tag">Seller</span></a>
       <button class="nav-toggle" aria-label="Menu" data-toggle-nav>${icon('menu')}</button>
       <nav class="nav">
         <a href="/client" class="nav-link ${on('/client')}">${icon('list')}My ads</a>
@@ -78,6 +84,8 @@ function clientHeader(req, s) {
 
 // ---- Admin: side menu ----
 function adminSidebar(req, s, counts = {}) {
+  // Only the pages this login may open (owner: all; staff: what their role allows — see src/staff.js)
+  const can = (perm) => !!(req.admin && (req.admin.owner || perm === 'any' || (perm !== 'owner' && req.admin.perms && req.admin.perms.has(perm))));
   const badge = (n, key) => (key ? html`<span class="badge-count" data-live="${key}" ${n ? '' : 'hidden'}>${n || 0}</span>` : n ? html`<span class="badge-count">${n}</span>` : '');
   const item = (href, ic, label, n, key) => {
     const active = href === '/admin' ? req.path === '/admin' : req.path.startsWith(href);
@@ -85,21 +93,20 @@ function adminSidebar(req, s, counts = {}) {
   };
   return html`
   <aside class="sidebar" data-sidebar>
-    <a class="logo" href="/admin"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span></a>
+    <a class="logo" href="/admin">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
+    ${req.admin ? html`<div class="side-me"><span class="avatar sm">${String(req.admin.name || '?').slice(0, 1)}</span><span><strong>${req.admin.name}</strong><span class="small">${req.admin.roleName || ''}</span></span></div>` : ''}
     <nav class="side-nav">
-      ${req.admin && req.admin.role === 'payments' ? html`
-      ${item('/admin/payments', 'card', 'Payments to confirm', counts.pay, 'pay')}
-      ${item('/admin/account', 'user', 'My login')}` : html`
-      ${item('/admin', 'grid', 'Dashboard')}
-      ${item('/admin/clients', 'users', 'Clients', counts.kyc, 'kyc')}
-      ${item('/admin/payments', 'card', 'Payments', counts.pay, 'pay')}
-      ${item('/admin/ads', 'layers', 'Ads', counts.free, 'free')}
-      ${item('/admin/categories', 'tag', 'Categories')}
-      ${item('/admin/home', 'home', 'Home page')}
-      ${item('/admin/sponsors', 'bolt', 'Sponsors')}
-      ${item('/admin/reports', 'chart', 'Reports', counts.reports, 'reports')}
-      ${item('/admin/messages', 'mail', 'Messages')}
-      ${item('/admin/settings', 'settings', 'Settings')}`}
+      ${can('any') ? item('/admin', 'grid', 'Dashboard') : ''}
+      ${can('sellers') ? item('/admin/clients', 'users', 'Clients', counts.kyc, 'kyc') : ''}
+      ${can('payments') ? item('/admin/payments', 'card', can('money') ? 'Payments' : 'Payments to confirm', counts.pay, 'pay') : ''}
+      ${can('ads') ? item('/admin/ads', 'layers', 'Ads', counts.free, 'free') : ''}
+      ${can('categories') ? item('/admin/categories', 'tag', 'Categories') : ''}
+      ${can('home') ? item('/admin/home', 'home', 'Home page') : ''}
+      ${can('sponsors') ? item('/admin/sponsors', 'bolt', 'Sponsors') : ''}
+      ${can('reports') ? item('/admin/reports', 'chart', 'Reports', counts.reports, 'reports') : ''}
+      ${can('messages') ? item('/admin/messages', 'mail', 'Messages') : ''}
+      ${can('settings') || can('owner') ? item('/admin/settings', 'settings', 'Settings') : ''}
+      ${item('/admin/account', 'user', 'My login')}
     </nav>
     <div class="side-foot">
       <a href="/" class="side-link" target="_blank">${icon('eye')}<span>View site</span></a>
@@ -114,12 +121,13 @@ function head(req, s, title, description) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0a4d68">
+<meta name="theme-color" content="${Brand.theme(s).main}">
 <title>${title ? `${title} · ` : ''}${s.site_name}</title>
 <meta name="description" content="${description || s.tagline || ''}">
 <meta name="csrf-token" content="${req.csrfToken || ''}">
 <link rel="icon" href="/public/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="${assetUrl('/public/css/style.css')}">
+${Brand.themeCss(s) ? html`<style>${raw(Brand.themeCss(s))}</style>` : ''}
 </head>`;
 }
 
@@ -153,7 +161,7 @@ ${scriptsHtml(scripts)}
   }
 
   const header = portal === 'client' ? clientHeader(req, s) : portal === 'admin'
-    ? html`<header class="topbar"><div class="wrap topbar-inner"><a class="logo" href="/"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span><span class="logo-tag">Admin</span></a></div></header>`
+    ? html`<header class="topbar"><div class="wrap topbar-inner"><a class="logo" href="/">${logoMark(s)}<span class="logo-text">${s.site_name}</span><span class="logo-tag">Admin</span></a></div></header>`
     : publicHeader(req, s);
 
   const home = getHome(s);
@@ -167,7 +175,7 @@ ${body}
 </main>
 ${portal === 'public' ? bigFooter(req, s, home) : html`<footer class="footer">
   <div class="wrap footer-inner">
-    <div class="footer-brand"><span class="logo-mark sm">${icon('tag', { size: 14 })}</span> ${s.site_name}<span class="muted">Happy buying, happy selling.</span></div>
+    <div class="footer-brand">${logoMark(s, 'sm')} ${s.site_name}<span class="muted">Happy buying, happy selling.</span></div>
     <div class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refund-policy">Refunds</a><a href="/contact">Contact</a><a href="/">View site</a></div>
   </div>
 </footer>`}
@@ -182,7 +190,7 @@ function bigFooter(req, s, home) {
   return html`<footer class="bigfooter">
   <div class="wrap bigfooter-grid">
     <div class="bf-brand">
-      <a class="logo" href="/"><span class="logo-mark">${icon('tag', { size: 18 })}</span><span class="logo-text">${s.site_name}</span></a>
+      <a class="logo" href="/">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
       <p>${home.footer_about}</p>
       ${s.support_phone || s.support_email ? html`<p class="bf-contact">${s.support_phone ? html`<span>${icon('phone', { size: 15 })} ${s.support_phone}</span>` : ''}${s.support_email ? html`<span>${icon('mail', { size: 15 })} ${s.support_email}</span>` : ''}</p>` : ''}
     </div>

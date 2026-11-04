@@ -369,3 +369,25 @@
   if (!document.body.classList.contains('portal-admin')) load('ring.js');
   if (document.querySelector('.hsearch input[name="q"]')) load('suggest.js');
 })();
+
+// "More" menus in admin tables: float above the table (tables scroll sideways, so the menu is placed on screen),
+// open upwards near the bottom of the window, and close on outside click, Esc or scroll.
+(function () {
+  const menus = () => Array.from(document.querySelectorAll('details.more-menu[open]'));
+  function place(d) {
+    const pop = d.querySelector('.more-pop'); const r = d.querySelector('summary').getBoundingClientRect();
+    pop.style.position = 'fixed';
+    const w = pop.offsetWidth || 260; const h = pop.offsetHeight || 200;
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    pop.style.top = (r.bottom + h + 8 > window.innerHeight && r.top - h - 6 > 0 ? r.top - h - 6 : r.bottom + 6) + 'px';
+    pop.style.right = 'auto';
+  }
+  document.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!(d instanceof HTMLDetailsElement) || !d.classList.contains('more-menu')) return;
+    if (d.open) { menus().forEach((m) => { if (m !== d) m.open = false; }); place(d); }
+  }, true);
+  document.addEventListener('click', (e) => { menus().forEach((m) => { if (!m.contains(e.target)) m.open = false; }); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus().forEach((m) => { m.open = false; m.querySelector('summary').focus(); }); });
+  window.addEventListener('scroll', () => menus().forEach((m) => { m.open = false; }), { passive: true, capture: true });
+})();

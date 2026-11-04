@@ -19,7 +19,10 @@ if (existing) {
   console.log(`Password updated for ${email}`);
 } else {
   // The first account (or the first one when no owner exists) is the owner; later ones are normal admins.
-  const role = db.prepare("SELECT 1 FROM admins WHERE role = 'owner' AND is_active = 1").get() ? 'admin' : 'owner';
-  db.prepare('INSERT INTO admins (name, email, password_hash, created_at, role) VALUES (?, ?, ?, ?, ?)').run(name, email.toLowerCase(), hashPassword(password), Date.now(), role);
+  // The first account (or the first one when no owner exists) is the owner; later ones get the "Admin" role.
+  const role = db.prepare("SELECT 1 FROM admins WHERE role = 'owner' AND is_active = 1").get() ? 'staff' : 'owner';
+  const adminRole = db.prepare("SELECT id FROM roles WHERE name = 'Admin' ORDER BY id LIMIT 1").get() || db.prepare('SELECT MIN(id) id FROM roles').get();
+  db.prepare('INSERT INTO admins (name, email, password_hash, created_at, role, role_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, email.toLowerCase(), hashPassword(password), Date.now(), role, role === 'owner' ? null : adminRole.id);
   console.log(`${role === 'owner' ? 'Owner' : 'Admin'} created: ${email}`);
 }

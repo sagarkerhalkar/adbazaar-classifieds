@@ -953,7 +953,10 @@ function register(app) {
       notify.adminAlert('free_ad', `🆓 Free ad to check: "${ad.title}" by ${req.seller.name} (#${ad.id}). Admin → Ads → Free ads to check.`);
       notify.inbox(req.seller.id, { kind: 'free_review', tone: 'info', title: `Free ad sent for checking — ${ad.title}`, body: 'We check free ads before they go live, usually within a few hours. Want it live now and above free ads? Choose a paid plan.', link: back, linkText: 'See paid plans' });
       req.flash('success', 'Thank you! Your free ad is being checked and goes live once approved.');
-    } else req.flash('success', `Your free ad is live for ${Free.config().days} days. Free ads show after paid ads — upgrade any time to be seen first.`);
+    } else {
+      notify.inbox(req.seller.id, { kind: 'free_live', tone: 'success', title: `Your free ad is live — ${ad.title}`, body: `It runs for ${Free.config().days} days and is shown after paid ads. Upgrade any time to be seen first.`, link: back, linkText: 'Upgrade to paid' });
+      req.flash('success', `Your free ad is live for ${Free.config().days} days. Free ads show after paid ads — upgrade any time to be seen first.`);
+    }
     res.redirect('/client');
   });
 

@@ -3,7 +3,7 @@
 
 const path = require('node:path');
 const { db, tx, getSettings, setSetting, parseImages } = require('../db');
-const { html, rupees, fmtDate, fmtDay, timeLeft, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
+const { html, rupees, fmtDate, fmtDay, timeLeft, timeAgo, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { icon } = require('../views/icons');
 const { renderPage } = require('../views/layout');
 const { csrf, pill, adUrl, imgUrl, field, cityDatalist, stateSelect, idFields, addressFields } = require('../views/components');
@@ -19,6 +19,8 @@ const { callView } = require('./client');
 const Cat = require('../categories');
 const Ph = require('../photos');
 const Free = require('../freeads');
+const Staff = require('../staff');
+const Brand = require('../brand');
 const life = require('../lifecycle');
 const notify = require('../notify');
 const { SLOTS, ALL_SLOTS, slotLabels, slotPrices, maskFrom } = require('../slots');
@@ -31,24 +33,24 @@ const back = (req, fallback) => {
   return fallback;
 };
 
-// Staff roles. owner: everything. admin: runs the site (not the site name / brand, not staff accounts).
-// payments: only the list of payments waiting to be confirmed — no totals, reports, sellers or settings.
-const ROLES = { owner: 'Owner', admin: 'Admin', payments: 'Payment checker' };
-const PAYMENTS_ROLE_PATHS = [/^\/admin\/payments$/, /^\/admin\/payments\/\d+\/(confirm|reject)$/, /^\/admin\/topups\/\d+\/(confirm|reject)$/,
-  /^\/admin\/payment-file\/[\w.-]+$/, /^\/admin\/account$/, /^\/admin\/password$/];
-const isOwner = (req) => req.admin && req.admin.role === 'owner';
+// Staff roles (src/staff.js): the OWNER can do everything; every other login has one role made by the owner
+// (a name + ticked permissions, Admin → Settings → Staff & roles). Each admin page needs one permission.
+const isOwner = (req) => !!(req.admin && req.admin.owner);
+const can = (req, perm) => Staff.can(req, perm);
 
 function requireAdmin(req, res) {
   if (!req.admin) { res.redirect('/admin/login'); return; }
-  if (req.admin.role === 'payments' && !PAYMENTS_ROLE_PATHS.some((re) => re.test(req.path))) {
-    if (req.method !== 'GET') req.flash('error', 'Your account can only confirm payments.');
-    res.redirect('/admin/payments'); return;
+  const need = Staff.needFor(req.path);
+  if (!Staff.can(req, need)) {
+    req.flash('error', need === 'owner' ? 'Only the owner can do this.' : 'Your login does not have access to that page.');
+    const home = Staff.homeFor(req.admin);
+    res.redirect(home === req.path ? '/admin/account' : home); return;
   }
   req.adminCounts = {
-    kyc: db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
-    pay: db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n,
-    reports: db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
-    free: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'free_review'").get().n,
+    kyc: can(req, 'sellers') ? db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n : 0,
+    pay: can(req, 'payments') ? db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n : 0,
+    reports: can(req, 'reports') ? db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n : 0,
+    free: can(req, 'ads') ? db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'free_review'").get().n : 0,
   };
 }
 
@@ -62,30 +64,44 @@ function docLink(file, label) {
 
 // ---------- views ----------
 function dashboardView(req, d) {
+  const hour = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
+  const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long' });
+  const kpi = (href, ic, tone, value, label, sub = '') => html`<a class="kpi kpi-${tone}" href="${href}">
+    <span class="kpi-ic">${icon(ic, { size: 20 })}</span><span class="kpi-v">${value}</span><span class="kpi-l">${label}</span>${sub ? html`<span class="kpi-sub">${sub}</span>` : ''}</a>`;
+  const first = String(req.admin.name || '').split(' ')[0];
   return html`
-  <div class="page-head"><h1>Dashboard</h1><a class="btn btn-accent" href="/admin/clients/new">+ Add client</a></div>
-  <div class="stats">
-    <a class="stat stat-link" href="/admin/clients?status=pending"><span>${d.pendingKyc}</span>Clients to verify</a>
-    <a class="stat stat-link" href="/admin/payments"><span>${d.pendingPay}</span>Payments to confirm</a>
-    <a class="stat stat-link" href="/admin/ads?status=active"><span>${d.liveAds}</span>Live ads</a>
-    <div class="stat"><span>${rupees(d.revMonth)}</span>Revenue this month</div>
-    <div class="stat"><span>${rupees(d.revTotal)}</span>Total revenue</div>
-    <a class="stat stat-link" href="/admin/clients?status=approved"><span>${d.approved}</span>Verified clients</a>
+  <div class="dash-hero">
+    <div><p class="dash-date">${today}</p><h1>${hello}${first ? `, ${first}` : ''}</h1>
+      <p class="muted">${d.pendingPay || d.pendingKyc ? html`You have ${can(req, 'payments') && d.pendingPay ? html`<strong>${d.pendingPay} payment${d.pendingPay === 1 ? '' : 's'}</strong> to confirm` : ''}${can(req, 'payments') && d.pendingPay && can(req, 'sellers') && d.pendingKyc ? ' and ' : ''}${can(req, 'sellers') && d.pendingKyc ? html`<strong>${d.pendingKyc} seller${d.pendingKyc === 1 ? '' : 's'}</strong> to verify` : ''}.` : 'Everything is up to date.'}</p></div>
+    <div class="dash-actions">
+      ${can(req, 'payments') ? html`<a class="btn btn-accent" href="/admin/payments">${icon('card', { size: 16 })} Confirm payments</a>` : ''}
+      ${can(req, 'sellers') ? html`<a class="btn" href="/admin/clients/new">${icon('plus', { size: 16 })} Add client</a>` : ''}
+      <a class="btn btn-ghost" href="/" target="_blank">${icon('eye', { size: 16 })} View site</a>
+    </div>
+  </div>
+  <div class="kpis">
+    ${can(req, 'payments') ? kpi('/admin/payments', 'card', 'warn', d.pendingPay, 'Payments to confirm', 'Only you can make them live') : ''}
+    ${can(req, 'sellers') ? kpi('/admin/clients?status=pending', 'users', 'info', d.pendingKyc, 'Sellers to verify') : ''}
+    ${can(req, 'ads') ? kpi('/admin/ads?status=active', 'layers', 'ok', d.liveAds, 'Ads live now', `${d.paidLive} paid · ${d.freeLive} free`) : ''}
+    ${can(req, 'money') ? kpi('/admin/reports#money', 'chart', 'main', rupees(d.revMonth), 'Received this month', `${rupees(d.revToday)} today`) : ''}
+    ${can(req, 'money') ? kpi('/admin/reports#money', 'receipt', 'main', rupees(d.revTotal), 'Received in total') : ''}
+    ${can(req, 'sellers') ? kpi('/admin/clients?status=approved', 'shield', 'ok', d.approved, 'Verified sellers', `${d.newSellers} new this week`) : ''}
   </div>
   <div class="cols2">
-    <section class="card">
-      <div class="section-head"><h2>Waiting for verification</h2><a href="/admin/clients?status=pending" class="small">View all</a></div>
-      ${d.kycList.length ? html`<ul class="list">${d.kycList.map((c) => html`<li><a href="/admin/clients/${c.id}"><strong>${c.name}</strong> <span class="muted small">${c.city} · ${fmtDate(c.created_at)}</span></a>${pill(c.status)}</li>`)}</ul>` : html`<p class="muted">All caught up 🎉</p>`}
-    </section>
-    <section class="card">
+    ${can(req, 'payments') ? html`<section class="card">
       <div class="section-head"><h2>Payments to confirm</h2><a href="/admin/payments" class="small">View all</a></div>
-      ${d.payList.length ? html`<ul class="list">${d.payList.map((p) => html`<li><a href="/admin/payments"><strong>${rupees(p.amount_paise)}</strong> <span class="muted small">${p.client_name} · UTR ${p.utr}</span></a>${pill(p.status)}</li>`)}</ul>` : html`<p class="muted">No pending payments.</p>`}
-    </section>
+      ${d.payList.length ? html`<ul class="list">${d.payList.map((p) => html`<li><a href="/admin/payments"><strong>${rupees(p.amount_paise - (p.wallet_paise || 0))}</strong> <span class="muted small">${p.client_name} · UTR ${p.utr || '—'} · ${timeAgo(p.created_at)}</span></a>${pill(p.status)}</li>`)}</ul>` : html`<div class="empty-mini">${icon('check', { size: 18 })} No payments waiting.</div>`}
+    </section>` : ''}
+    ${can(req, 'sellers') ? html`<section class="card">
+      <div class="section-head"><h2>Sellers waiting for you</h2><a href="/admin/clients?status=pending" class="small">View all</a></div>
+      ${d.kycList.length ? html`<ul class="list">${d.kycList.map((c) => html`<li><a href="/admin/clients/${c.id}"><strong>${c.name}</strong> <span class="muted small">${c.city || ''} · ${timeAgo(c.created_at)}</span></a>${pill(c.status)}</li>`)}</ul>` : html`<div class="empty-mini">${icon('check', { size: 18 })} All sellers checked.</div>`}
+    </section>` : ''}
   </div>
-  <section class="card">
-    <h2>Revenue — last 14 days</h2>
+  ${can(req, 'money') ? html`<section class="card">
+    <div class="section-head"><h2>Money received — last 14 days</h2><a href="/admin/reports#money" class="small">Full report</a></div>
     <div class="bars">${d.daily.map((x) => html`<div class="bar" title="${x.day}: ${rupees(x.total)}"><div style="height:${d.maxDaily ? Math.max(2, (x.total / d.maxDaily) * 100) : 2}%"></div><span>${x.day.slice(8)}</span></div>`)}</div>
-  </section>`;
+  </section>` : ''}`;
 }
 
 function clientsView(req, rows, filter) {
@@ -283,9 +299,9 @@ function topupsTable(req, rows) {
 }
 
 function paymentsView(req, rows, status, topups = []) {
-  const tabs = req.admin.role === 'payments' ? [] : [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['all', 'All']];
+  const tabs = !can(req, 'money') ? [] : [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['failed', 'Failed later'], ['all', 'All']];
   return html`
-  <div class="page-head"><div><h1>Payments</h1>${req.admin.role === 'payments' ? html`<p class="muted">Check each payment in the bank / UPI app, then confirm or reject it. You see only payments that are waiting.</p>` : ''}</div></div>
+  <div class="page-head"><div><h1>Payments</h1>${!can(req, 'money') ? html`<p class="muted">Check each payment in the bank / UPI app, then confirm or reject it. You see only payments that are waiting.</p>` : ''}</div></div>
   ${topups.length ? html`<h2>Balance top-ups ${status === 'pending' ? 'to confirm' : ''}</h2>${topupsTable(req, topups)}<h2>Ad payments</h2>` : ''}
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${status === k ? 'active' : ''}" href="/admin/payments?status=${k}">${l}</a>`)}</div>
   ${rows.length ? html`<div class="table-wrap card"><table class="table">
@@ -300,8 +316,9 @@ function paymentsView(req, rows, status, topups = []) {
       <td>${pill(p.status)}${p.admin_note ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
       <td class="actions">${p.status === 'pending' ? html`
         <form method="post" action="/admin/payments/${p.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">✔ Confirm & go live</button></form>
-        <form method="post" action="/admin/payments/${p.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>` : p.status === 'paid' ? html`<a class="btn btn-sm" href="/admin/payments/${p.id}/receipt" target="_blank">${icon('receipt', { size: 15 })} Receipt</a>` : ''}</td>
-    </tr>`)}</tbody></table><datalist id="reject-reasons"><option value="UTR not found in our bank account"><option value="Amount received is less than the total"><option value="Payment sent to a wrong UPI ID"><option value="Same UTR already used"></datalist></div>` : html`<div class="card empty center"><p class="muted">Nothing here.</p></div>`}`;
+        <form method="post" action="/admin/payments/${p.id}/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200" list="reject-reasons"><button class="btn btn-danger btn-sm">Reject</button></form>` : p.status === 'paid' ? html`<a class="btn btn-sm" href="/admin/payments/${p.id}/receipt" target="_blank">${icon('receipt', { size: 15 })} Receipt</a>
+        <form method="post" action="/admin/payments/${p.id}/failed" class="inline reject-form" data-confirm="Mark payment #${p.id} as failed? The ad goes back to unpaid and is removed from the site until the seller pays again.">${csrf(req)}<input name="note" placeholder="Why (seller sees it)" maxlength="200" list="fail-reasons"><button class="btn btn-danger btn-sm">Payment failed</button></form>` : ''}</td>
+    </tr>`)}</tbody></table><datalist id="reject-reasons"><option value="UTR not found in our bank account"><option value="Amount received is less than the total"><option value="Payment sent to a wrong UPI ID"><option value="Same UTR already used"></datalist><datalist id="fail-reasons"><option value="Payment bounced / reversed by the bank"><option value="Charge-back from the card or UPI app"><option value="Money never reached our account"></datalist></div>` : html`<div class="card empty center"><p class="muted">Nothing here.</p></div>`}`;
 }
 
 
@@ -312,28 +329,30 @@ function adsView(req, rows, f) {
   <div class="tabs">${tabs.map(([k, l]) => html`<a class="tab ${f.status === k ? 'active' : ''}" href="/admin/ads?status=${k}">${l}</a>`)}</div>
   <form class="search-inline" method="get"><input type="hidden" name="status" value="${f.status}"><input type="search" name="q" value="${f.q}" placeholder="Search title or ad ID"><button class="btn">Search</button></form>
   ${rows.length ? html`<div class="table-wrap card"><table class="table">
-    <thead><tr><th>Rank</th><th>Ad</th><th>Client</th><th>Status</th><th>Plan / paid</th><th>Expires</th><th>Views</th><th>Admin tools</th></tr></thead>
-    <tbody>${rows.map((a) => html`<tr>
-      <td class="mono">${a.status === 'active' ? a.rank_score.toFixed(1) : '—'}</td>
-      <td><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></td>
+    <thead><tr><th>Ad</th><th>Seller</th><th>Status</th><th>Plan / paid</th><th>Ends</th><th>Views</th><th></th></tr></thead>
+    <tbody>${rows.map((a) => { const im = parseImages(a)[0]; return html`<tr>
+      <td><div class="cell-ad">${im ? html`<img src="${imgUrl(im)}" alt="" loading="lazy">` : html`<div class="avatar">${icon('image', { size: 16 })}</div>`}
+        <div><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></div></div></td>
       <td><a href="/admin/clients/${a.client_id}">${a.client_name}</a></td>
-      <td>${pill(a.status)}${a.top_slots ? html` <span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html` <span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html` <span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}</td>
-      <td>${a.is_free ? html`<span class="pill pill-muted">Free ad</span>` : html`${a.plan_name || '—'}<div class="small muted">${rupees(a.paid_total_paise)}</div>`}</td>
+      <td><div class="pills">${pill(a.status)}${a.top_slots ? html`<span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}</div>${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}${a.status === 'paused' ? html`<div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}</td>
+      <td>${a.is_free ? html`<span class="pill pill-muted">Free ad</span>` : html`${a.plan_name || '—'}<div class="small muted">${a.paid_total_paise ? `${rupees(a.paid_total_paise)} paid` : ''}</div>`}</td>
       <td>${a.expires_at ? html`${fmtDay(a.expires_at)}<div class="small muted">${a.status === 'active' ? timeLeft(a.expires_at) : ''}</div>` : '—'}</td>
       <td>${a.views}</td>
-      <td class="actions">
-        ${a.status === 'free_review' ? html`<form method="post" action="/admin/ads/${a.id}/free/approve" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Approve free ad</button></form>
-          <form method="post" action="/admin/ads/${a.id}/free/reject" class="inline reject-form">${csrf(req)}<input name="note" placeholder="Reason (seller sees it)" maxlength="200"><button class="btn btn-sm">Turn down</button></form>` : ''}
-        ${a.status === 'deleted' ? '' : a.status === 'blocked'
-          ? html`<form method="post" action="/admin/ads/${a.id}/unblock" class="inline">${csrf(req)}<button class="btn btn-sm">Unblock</button></form>`
-          : html`<form method="post" action="/admin/ads/${a.id}/block" class="inline reject-form">${csrf(req)}<input name="reason" placeholder="Reason" maxlength="200"><button class="btn btn-danger btn-sm">Block</button></form>`}
+      <td class="actions"><div class="act-row">
+        ${a.status === 'free_review' ? html`<form method="post" action="/admin/ads/${a.id}/free/approve" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Approve</button></form>` : ''}
         ${a.status === 'active' || a.status === 'expired' ? html`<button type="button" class="btn btn-primary btn-sm" data-dialog-open="ad-promote"
           data-fill-action="/admin/ads/${a.id}/promote" data-fill-title="${a.title}" data-fill-boost="${a.admin_boost}"
           data-fill-topdays="${a.admin_top_until > Date.now() ? Math.ceil((a.admin_top_until - Date.now()) / 86400_000) : ''}">${icon('bolt', { size: 14 })} Boost & TOP</button>` : ''}
-        ${a.status === 'active' ? html`<form method="post" action="/admin/ads/${a.id}/pause" class="inline">${csrf(req)}<button class="btn btn-sm" title="Hide the ad; remaining paid days are saved">Deactivate</button></form>` : ''}
-        ${a.status === 'paused' ? html`<form method="post" action="/admin/ads/${a.id}/resume" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">Reactivate</button></form><div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}
-        ${a.status !== 'deleted' ? html`<form method="post" action="/admin/ads/${a.id}/delete" class="inline" data-confirm="Delete ad #${a.id} permanently? Photos and videos are removed.">${csrf(req)}<button class="btn btn-danger btn-sm">Delete</button></form>` : ''}
-      </td></tr>`)}
+        ${a.status === 'paused' ? html`<form method="post" action="/admin/ads/${a.id}/resume" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">Reactivate</button></form>` : ''}
+        ${a.status === 'blocked' ? html`<form method="post" action="/admin/ads/${a.id}/unblock" class="inline">${csrf(req)}<button class="btn btn-sm">Unblock</button></form>` : ''}
+        ${a.status !== 'deleted' ? html`<details class="more-menu"><summary class="btn btn-sm btn-ghost" aria-label="More actions for ad ${a.id}">More ${icon('down', { size: 14 })}</summary><div class="more-pop">
+          ${a.status === 'free_review' ? html`<form method="post" action="/admin/ads/${a.id}/free/reject" class="more-form">${csrf(req)}<input name="note" placeholder="Why not (seller sees it)" maxlength="200"><button class="btn btn-sm">Turn down free ad</button></form>` : ''}
+          ${a.status === 'active' ? html`<form method="post" action="/admin/ads/${a.id}/pause">${csrf(req)}<button class="more-item" title="Hide the ad; remaining paid days are saved">${icon('eye', { size: 15 })} Deactivate (days saved)</button></form>` : ''}
+          ${['active', 'paused', 'expired', 'payment_review', 'free_review'].includes(a.status) ? html`<form method="post" action="/admin/ads/${a.id}/unpaid" data-confirm="Move ad #${a.id} to unpaid? It leaves the site until the seller pays again and you confirm.">${csrf(req)}<input type="hidden" name="note" value="Payment failed"><button class="more-item">${icon('card', { size: 15 })} Move to unpaid (payment failed)</button></form>` : ''}
+          ${a.status !== 'blocked' ? html`<form method="post" action="/admin/ads/${a.id}/block" class="more-form">${csrf(req)}<input name="reason" placeholder="Reason for blocking" maxlength="200"><button class="btn btn-danger btn-sm">Block</button></form>` : ''}
+          <form method="post" action="/admin/ads/${a.id}/delete" data-confirm="Delete ad #${a.id} permanently? Photos and videos are removed.">${csrf(req)}<button class="more-item bad">${icon('trash', { size: 15 })} Delete permanently</button></form>
+        </div></details>` : ''}
+      </div></td></tr>`; })}
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No ads.</p></div>`}
   <dialog class="modal" id="ad-promote" style="width:min(560px,calc(100vw - 32px))"><form method="post" data-fill="action">
     ${csrf(req)}
@@ -494,7 +513,7 @@ function settingsView(req, { s, plans, cats, admins }) {
     <button type="button" class="tab" data-tab="alerts">${icon('bell', { size: 16 })} Alerts ${alertChannels().length ? html`<span class="pill pill-ok">${alertChannels().length}</span>` : ''}</button>
     <button type="button" class="tab" data-tab="site">${icon('settings', { size: 16 })} Site & payments</button>
     <button type="button" class="tab" data-tab="legal">${icon('id', { size: 16 })} Business & legal ${!s.legal_name || !(s.grievance_email || s.support_email) ? html`<span class="badge-count">!</span>` : ''}</button>
-    <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} Staff & brand</button>
+    <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} ${isOwner(req) ? 'Staff & brand' : 'My password'}</button>
   </div>
   <div class="tab-panel" data-panel="email">${messagingSetupCard(req, s)}</div>
   <section class="card tab-panel" data-panel="alerts">
@@ -578,7 +597,7 @@ function settingsView(req, { s, plans, cats, admins }) {
         <div class="row3">
           ${field('Free ad runs for (days)', html`<input type="number" name="free_ad_days" min="1" max="365" value="${s.free_ad_days || 15}">`)}
           ${field('Free ads per seller at a time', html`<input type="number" name="free_ads_per_seller" min="1" max="50" value="${s.free_ads_per_seller || 2}">`)}
-          <label class="field"><span class="label">Check before live</span><span class="switch-row"><input type="checkbox" class="switch" name="free_ads_review" value="1" ${s.free_ads_review !== '0' ? 'checked' : ''}> Admin checks each free ad</span></label>
+          <label class="field"><span class="label">Check before live</span><span class="switch-row"><input type="checkbox" class="switch" name="free_ads_review" value="1" ${s.free_ads_review === '1' ? 'checked' : ''}> Admin checks each free ad (off = live at once)</span></label>
         </div>
         <button class="btn btn-accent">Save</button>
       </form>
@@ -620,33 +639,9 @@ function settingsView(req, { s, plans, cats, admins }) {
         <button class="btn btn-primary">Save business details</button>
       </form>
     </section>
-    <section class="tab-panel" data-panel="admins"><div class="cols2">
-     <div class="card">
-      <h2>Staff logins</h2>
-      <p class="small muted"><strong>Admin</strong> runs the site. <strong>Payment checker</strong> only sees payments waiting to be confirmed — no totals, reports, sellers or settings. Only the owner adds or removes staff.</p>
-      <ul class="list">${admins.map((a) => html`<li><span><strong>${a.name}</strong> <span class="pill ${a.role === 'owner' ? 'pill-top' : a.role === 'payments' ? 'pill-info' : 'pill-muted'}">${ROLES[a.role] || a.role}</span>${a.is_active ? '' : html` <span class="pill pill-bad">Removed</span>`}<span class="muted small" style="display:block">${a.email}</span></span>
-        ${isOwner(req) && a.role !== 'owner' ? html`<form method="post" action="/admin/admins/${a.id}" class="inline">${csrf(req)}
-          ${a.is_active ? html`<select name="role" data-autosubmit aria-label="Role of ${a.name}">${['admin', 'payments'].map((k) => html`<option value="${k}" ${a.role === k ? 'selected' : ''}>${ROLES[k]}</option>`)}</select>
-          <button class="btn btn-sm btn-danger" name="action" value="remove" data-confirm="Remove ${a.name}? They can no longer log in.">Remove</button>` : html`<button class="btn btn-sm" name="action" value="enable">Allow login again</button>`}</form>` : ''}</li>`)}</ul>
-      ${isOwner(req) ? html`<form method="post" action="/admin/admins" class="form">
-        ${csrf(req)}
-        <h3>Add a staff login</h3>
-        <div class="row2">${field('Name', html`<input name="name" required maxlength="60">`)}${field('Email', html`<input name="email" type="email" required>`)}</div>
-        <div class="row2">${field('Password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`, 'At least 6 characters')}
-          ${field('Can do', html`<select name="role"><option value="payments">Payment checker — only confirm payments</option><option value="admin">Admin — run the site</option></select>`)}</div>
-        <button class="btn btn-primary">Add staff login</button>
-      </form>` : ''}
-     </div>
-     ${isOwner(req) ? html`<div class="card">
-      <h2>Brand (owner only)</h2>
-      <p class="small muted">The site name shows in the header, emails, receipts and legal pages. Change it any time, for example when you pick your final brand name.</p>
-      <form method="post" action="/admin/brand" class="form">
-        ${csrf(req)}
-        ${field('Site name', html`<input name="site_name" required maxlength="40" value="${s.site_name}">`)}
-        ${field('Tagline', html`<input name="tagline" maxlength="120" value="${s.tagline}">`)}
-        <button class="btn btn-primary">Save brand</button>
-      </form>
-     </div>` : ''}
+    <section class="tab-panel" data-panel="admins">
+     ${isOwner(req) ? staffAndBrand(req, s, admins) : ''}
+     <div class="cols2">
      <div class="card">
       <h2>Change my password</h2>
       <form method="post" action="/admin/password" class="form">
@@ -657,6 +652,70 @@ function settingsView(req, { s, plans, cats, admins }) {
       </form>
      </div>
     </div></section>
+  </div>`;
+}
+
+// Owner only: staff logins, roles (name + ticked permissions) and brand (name, tagline, logo, colours).
+function staffAndBrand(req, s, admins) {
+  const roles = Staff.listRoles();
+  const roleOptions = (sel) => roles.map((r) => html`<option value="${r.id}" ${Number(sel) === r.id ? 'selected' : ''}>${r.name}</option>`);
+  const permBoxes = (set) => html`<div class="permgrid">${Staff.PERMS.map(([k, l, d]) => html`<label class="perm"><input type="checkbox" name="perms[]" value="${k}" ${set && set.has(k) ? 'checked' : ''}><span><strong>${l}</strong><span class="small muted">${d}</span></span></label>`)}</div>`;
+  const theme = s.brand_theme || 'peacock';
+  return html`
+  <div class="cols2">
+   <div class="card">
+    <h2>Staff logins</h2>
+    <p class="small muted">Give each person their own login and a role. They only see the pages their role allows. Only you (the owner) can change staff, roles and the brand.</p>
+    <ul class="list staff-list">${admins.map((a) => html`<li><span class="staff-who"><span class="avatar sm">${a.name.slice(0, 1)}</span><span><strong>${a.name}</strong> ${a.role === 'owner' ? html`<span class="pill pill-top">Owner</span>` : html`<span class="pill pill-info">${(roles.find((r) => r.id === a.role_id) || {}).name || 'No role'}</span>`}${a.is_active ? '' : html` <span class="pill pill-bad">Removed</span>`}<span class="muted small" style="display:block">${a.email}</span></span></span>
+      ${a.role !== 'owner' ? html`<form method="post" action="/admin/admins/${a.id}" class="inline staff-actions">${csrf(req)}
+        ${a.is_active ? html`<select name="role_id" data-autosubmit aria-label="Role of ${a.name}">${roleOptions(a.role_id)}</select>
+        <button class="btn btn-sm btn-danger" name="action" value="remove" data-confirm="Remove ${a.name}? They can no longer log in.">Remove</button>` : html`<button class="btn btn-sm" name="action" value="enable">Allow login again</button>`}</form>` : ''}</li>`)}</ul>
+    <form method="post" action="/admin/admins" class="form">
+      ${csrf(req)}
+      <h3>Add a staff login</h3>
+      <div class="row2">${field('Name', html`<input name="name" required maxlength="60">`)}${field('Email (their login)', html`<input name="email" type="email" required>`)}</div>
+      <div class="row2">${field('Password', html`<input name="password" type="password" minlength="6" required autocomplete="new-password">`, 'At least 6 characters. They can change it in "My login".')}
+        ${field('Role', html`<select name="role_id" required>${roleOptions(roles[roles.length - 1] && roles.find((r) => r.name === 'Payment checker') ? roles.find((r) => r.name === 'Payment checker').id : 0)}</select>`, 'Make new roles on the right.')}</div>
+      <button class="btn btn-primary">${icon('plus', { size: 16 })} Add staff login</button>
+    </form>
+   </div>
+   <div class="card">
+    <h2>Roles</h2>
+    <p class="small muted">A role is a name plus what it can do. Make as many as you like, for example "Ad checker" (only Ads) or "Accountant" (payments and money).</p>
+    ${roles.map((r) => html`<details class="role-card">
+      <summary><strong>${r.name}</strong><span class="muted small">${r.permSet.size} of ${Staff.PERMS.length} permissions · ${r.people} ${r.people === 1 ? 'person' : 'people'}</span></summary>
+      <form method="post" action="/admin/roles/${r.id}" class="form">${csrf(req)}
+        ${field('Role name', html`<input name="name" required maxlength="40" value="${r.name}">`)}
+        ${permBoxes(r.permSet)}
+        <div class="btn-row"><button class="btn btn-primary">Save role</button>
+        ${r.people ? html`<span class="small muted">Move its ${r.people} ${r.people === 1 ? 'person' : 'people'} to another role before deleting it.</span>` : html`<button class="btn btn-danger" name="action" value="delete" data-confirm="Delete the role ${r.name}?">Delete role</button>`}</div>
+      </form>
+    </details>`)}
+    <details class="role-card role-new">
+      <summary><strong>${icon('plus', { size: 16 })} New role</strong></summary>
+      <form method="post" action="/admin/roles" class="form">${csrf(req)}
+        ${field('Role name', html`<input name="name" required maxlength="40" placeholder="e.g. Ad checker">`)}
+        ${permBoxes(new Set())}
+        <button class="btn btn-primary">Create role</button>
+      </form>
+    </details>
+   </div>
+  </div>
+  <div class="card">
+    <h2>Brand</h2>
+    <p class="small muted">Your site name, logo and colours show everywhere: header, footer, emails, receipts and legal pages. Change them any time — for example when you choose your final brand name.</p>
+    <form method="post" action="/admin/brand" class="form" enctype="multipart/form-data">
+      ${csrf(req)}
+      <div class="row2">${field('Site name', html`<input name="site_name" required maxlength="40" value="${s.site_name}">`)}${field('Tagline', html`<input name="tagline" maxlength="120" value="${s.tagline}">`)}</div>
+      <div class="brand-logo-row">
+        <div class="brand-preview" aria-hidden="true">${s.brand_logo ? html`<img src="/media/ads/${s.brand_logo}" alt="">` : html`<span class="logo-mark">${icon('tag', { size: 22 })}</span>`}<strong>${s.site_name}</strong></div>
+        ${field('Logo (square, PNG/JPG/WEBP, max 2 MB)', html`<input type="file" name="logo" accept="image/png,image/jpeg,image/webp">`, s.brand_logo ? html`<label class="check small"><input type="checkbox" name="remove_logo" value="1"> Remove my logo</label>` : 'Without a logo, the tag symbol is used.')}
+      </div>
+      <fieldset class="theme-pick"><legend class="label">Colours</legend>
+        ${Object.entries(Brand.THEMES).map(([k, t]) => html`<label class="theme-opt"><input type="radio" name="brand_theme" value="${k}" ${theme === k ? 'checked' : ''}><span class="theme-sw" style="--a:${t.main};--b:${t.acc}"></span><span class="small">${t.label}</span></label>`)}
+      </fieldset>
+      <button class="btn btn-primary">Save brand</button>
+    </form>
   </div>`;
 }
 
@@ -680,7 +739,7 @@ function register(app) {
     if (!a || !verifyPassword(req.body.password, a.password_hash)) { res.status(401).html(page(req, 'Admin login', loginForm(req, 'Incorrect email or password.'))); return; }
     req.regenerateSession();
     req.session.adminId = a.id;
-    res.redirect(a.role === 'payments' ? '/admin/payments' : '/admin');
+    res.redirect(Staff.homeFor(Staff.load(a)));
   });
   app.post('/admin/logout', (req, res) => { req.regenerateSession(); res.redirect('/admin/login'); });
 
@@ -704,6 +763,13 @@ function register(app) {
         + db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM wallet_topups WHERE status='paid' AND confirmed_at >= ?").get(startMonth.getTime()).s,
       revTotal: db.prepare("SELECT COALESCE(SUM(amount_paise - wallet_paise),0) s FROM payments WHERE status='paid'").get().s
         + db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM wallet_topups WHERE status='paid'").get().s,
+      paidLive: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'active' AND is_free = 0").get().n,
+      freeLive: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'active' AND is_free = 1").get().n,
+      revToday: (() => { // since midnight India time
+        const IST = 19_800_000; const start = Math.floor((Date.now() + IST) / 86400_000) * 86400_000 - IST;
+        return db.prepare("SELECT COALESCE(SUM(amount_paise - wallet_paise),0) s FROM payments WHERE status='paid' AND confirmed_at >= ?").get(start).s
+          + db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM wallet_topups WHERE status='paid' AND confirmed_at >= ?").get(start).s; })(),
+      newSellers: db.prepare("SELECT COUNT(*) n FROM clients WHERE status = 'approved' AND created_at >= ?").get(Date.now() - 7 * 86400_000).n,
       kycList: db.prepare("SELECT * FROM clients WHERE status IN ('pending','video_call') ORDER BY created_at LIMIT 6").all(),
       payList: db.prepare("SELECT p.*, c.name AS client_name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.status = 'pending' ORDER BY p.id LIMIT 6").all(),
       daily, maxDaily: Math.max(0, ...daily.map((x) => x.total)),
@@ -942,7 +1008,7 @@ function register(app) {
 
   // ---- Payments ----
   app.get('/admin/payments', requireAdmin, (req, res) => {
-    const status = req.admin.role === 'payments' ? 'pending' : ['pending', 'paid', 'rejected', 'all'].includes(req.query.status) ? req.query.status : 'pending';
+    const status = !can(req, 'money') ? 'pending' : ['pending', 'paid', 'rejected', 'failed', 'all'].includes(req.query.status) ? req.query.status : 'pending';
     const rows = db.prepare(`SELECT p.*, c.name AS client_name, a.title AS ad_title FROM payments p
       JOIN clients c ON c.id = p.client_id JOIN ads a ON a.id = p.ad_id
       WHERE ${status === 'all' ? "p.status != 'created'" : 'p.status = ?'} ORDER BY p.id ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 300`)
@@ -996,7 +1062,30 @@ function register(app) {
     res.redirect(back(req, '/admin/payments'));
   });
 
+  // A confirmed payment failed later (bounced, reversed, fake UTR): ad back to unpaid, seller told.
+  app.post('/admin/payments/:id/failed', requireAdmin, (req, res) => {
+    if (!can(req, 'money')) { req.flash('error', 'Your role cannot change confirmed payments.'); res.redirect('/admin/payments'); return; }
+    const note = V.str(req.body.note, 200) || 'The payment failed after it was confirmed';
+    const pay = P.failPayment(parseInt(req.params.id, 10) || 0, req.admin.id, note);
+    if (pay) {
+      const ad = db.prepare('SELECT * FROM ads WHERE id = ?').get(pay.ad_id);
+      notify.paymentFailed(pay.client_id, ad, `Your payment of ${rupees(pay.amount_paise)} for this ad failed after we confirmed it (${note}), so the ad is off the site for now.`);
+      req.flash('success', `Payment #${pay.id} marked as failed. Ad #${pay.ad_id} is now unpaid; it goes live again after the seller pays and you confirm.`);
+    } else req.flash('error', 'Only a confirmed payment can be marked as failed.');
+    res.redirect(back(req, '/admin/payments?status=paid'));
+  });
+
   // ---- Ads ----
+  app.post('/admin/ads/:id/unpaid', requireAdmin, (req, res) => {
+    const note = V.str(req.body.note, 200) || 'Payment failed';
+    const ad = P.moveAdToUnpaid(parseInt(req.params.id, 10) || 0);
+    if (ad) {
+      notify.paymentFailed(ad.client_id, ad, `${note}. Your ad is off the site until the payment is made again.`);
+      req.flash('success', `Ad #${ad.id} moved to unpaid. It goes live again after the seller pays and you confirm.`);
+    }
+    res.redirect(back(req, '/admin/ads'));
+  });
+
   app.get('/admin/ads', requireAdmin, (req, res) => {
     const status = ['active', 'free_review', 'payment_review', 'awaiting_payment', 'paused', 'expired', 'blocked', 'deleted', 'all'].includes(req.query.status) ? req.query.status : 'active';
     const q = V.str(req.query.q, 80);
@@ -1133,19 +1222,19 @@ function register(app) {
   app.get('/admin/live', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (!req.admin) { res.status(401).json({ ok: false }); return; }
-    const payOnly = req.admin.role === 'payments';
+    const payOnly = !can(req, 'sellers');
     const last = db.prepare(`SELECT p.id, p.amount_paise, p.wallet_paise, c.name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.status = 'pending' ORDER BY p.id DESC LIMIT 1`).get();
     const lastTop = db.prepare(`SELECT t.id, t.amount_paise, c.name FROM wallet_topups t JOIN clients c ON c.id = t.client_id WHERE t.status = 'pending' ORDER BY t.id DESC LIMIT 1`).get();
     const lastSeller = db.prepare("SELECT id, name FROM clients WHERE status IN ('pending','video_call') ORDER BY id DESC LIMIT 1").get();
     res.json({
       ok: true,
-      kyc: payOnly ? 0 : db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
+      kyc: !can(req, 'sellers') ? 0 : db.prepare("SELECT COUNT(*) n FROM clients WHERE status IN ('pending','video_call')").get().n,
       pay: db.prepare("SELECT (SELECT COUNT(*) FROM payments WHERE status = 'pending') + (SELECT COUNT(*) FROM wallet_topups WHERE status = 'pending') n").get().n,
-      reports: payOnly ? 0 : db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
+      reports: !can(req, 'reports') ? 0 : db.prepare('SELECT COUNT(*) n FROM reports WHERE resolved = 0').get().n,
       payKey: `${last ? last.id : 0}-${lastTop ? lastTop.id : 0}`,
       payText: last ? `New payment ${rupees(last.amount_paise - (last.wallet_paise || 0))} from ${last.name}` : lastTop ? `Balance top-up ${rupees(lastTop.amount_paise)} from ${lastTop.name}` : '',
       sellerKey: payOnly ? 0 : lastSeller ? lastSeller.id : 0, sellerText: payOnly ? '' : lastSeller ? `New seller to verify: ${lastSeller.name}` : '',
-      free: payOnly ? 0 : db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'free_review'").get().n,
+      free: !can(req, 'ads') ? 0 : db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'free_review'").get().n,
     });
   });
   require('./reports').register(app, { requireAdmin, page });
@@ -1160,7 +1249,7 @@ function register(app) {
   app.get('/admin/settings', requireAdmin, (req, res) => {
     res.html(page(req, 'Settings', settingsView(req, {
       s: getSettings(), plans: db.prepare('SELECT * FROM plans ORDER BY sort, days').all(),
-      cats: db.prepare('SELECT * FROM categories ORDER BY sort, name').all(), admins: db.prepare('SELECT id, name, email, role, is_active FROM admins ORDER BY role = \'owner\' DESC, id').all(),
+      cats: db.prepare('SELECT * FROM categories ORDER BY sort, name').all(), admins: db.prepare('SELECT id, name, email, role, role_id, is_active FROM admins ORDER BY role = \'owner\' DESC, id').all(),
     })));
   });
   app.post('/admin/settings', requireAdmin, (req, res) => {
@@ -1400,46 +1489,86 @@ function register(app) {
 
   // Staff accounts — only the owner can add, change or remove them.
   const ownerOnly = (req, res) => { if (isOwner(req)) return true; req.flash('error', 'Only the owner can do this.'); res.redirect('/admin/settings#admins'); return false; };
+  const roleFrom = (v) => Staff.roleById(parseInt(v, 10) || 0);
   app.post('/admin/admins', requireAdmin, (req, res) => {
     if (!ownerOnly(req, res)) return;
     const email = V.str(req.body.email, 120).toLowerCase(); const name = V.str(req.body.name, 60);
-    const role = ['admin', 'payments'].includes(req.body.role) ? req.body.role : 'payments';
-    if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6) { req.flash('error', 'Enter name, valid email and a password of 6+ characters.'); res.redirect('/admin/settings#admins'); return; }
+    const role = roleFrom(req.body.role_id);
+    if (!V.isValidEmail(email) || !name || String(req.body.password || '').length < 6 || !role) { req.flash('error', 'Enter name, valid email, a password of 6+ characters, and choose a role.'); res.redirect('/admin/settings#admins'); return; }
     if (db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) { req.flash('error', 'Someone with this email already has a staff login.'); res.redirect('/admin/settings#admins'); return; }
-    db.prepare('INSERT INTO admins (name, email, password_hash, created_at, role) VALUES (?,?,?,?,?)').run(name, email, hashPassword(req.body.password), Date.now(), role);
-    req.flash('success', `${ROLES[role]} login added for ${name}.`);
+    db.prepare("INSERT INTO admins (name, email, password_hash, created_at, role, role_id) VALUES (?,?,?,?, 'staff', ?)").run(name, email, hashPassword(req.body.password), Date.now(), role.id);
+    req.flash('success', `Login added for ${name} (${role.name}). Give them the email and password.`);
     res.redirect('/admin/settings#admins');
   });
+  const endSessions = (adminId) => {
+    db.prepare('DELETE FROM sessions WHERE data LIKE ?').run(`%"adminId":${adminId},%`);
+    db.prepare('DELETE FROM sessions WHERE data LIKE ?').run(`%"adminId":${adminId}}%`);
+  };
   app.post('/admin/admins/:id', requireAdmin, (req, res) => {
     if (!ownerOnly(req, res)) return;
     const a = db.prepare('SELECT * FROM admins WHERE id = ?').get(parseInt(req.params.id, 10) || 0);
     if (!a || a.role === 'owner') { req.flash('error', 'The owner account cannot be changed here.'); res.redirect('/admin/settings#admins'); return; }
     if (req.body.action === 'remove') {
-      db.prepare('UPDATE admins SET is_active = 0 WHERE id = ?').run(a.id);
-      db.prepare("DELETE FROM sessions WHERE data LIKE ?").run(`%"adminId":${a.id},%`);
-      db.prepare("DELETE FROM sessions WHERE data LIKE ?").run(`%"adminId":${a.id}}%`);
+      db.prepare('UPDATE admins SET is_active = 0 WHERE id = ?').run(a.id); endSessions(a.id);
       req.flash('success', `${a.name} can no longer log in.`);
     } else if (req.body.action === 'enable') {
       db.prepare('UPDATE admins SET is_active = 1 WHERE id = ?').run(a.id);
       req.flash('success', `${a.name} can log in again.`);
-    } else if (['admin', 'payments'].includes(req.body.role)) {
-      db.prepare('UPDATE admins SET role = ? WHERE id = ?').run(req.body.role, a.id);
-      req.flash('success', `${a.name} is now: ${ROLES[req.body.role]}.`);
+    } else {
+      const role = roleFrom(req.body.role_id);
+      if (role) { db.prepare("UPDATE admins SET role = 'staff', role_id = ? WHERE id = ?").run(role.id, a.id); req.flash('success', `${a.name} is now: ${role.name}.`); }
     }
     res.redirect('/admin/settings#admins');
   });
-  // Brand: site name and tagline — owner only (the name can change later, e.g. if "AdBazaar" is taken).
+  // Roles: a name + the permissions the owner ticks (src/staff.js)
+  const perms = (b) => (Array.isArray(b['perms[]']) ? b['perms[]'] : Array.isArray(b.perms) ? b.perms : [b['perms[]'] || b.perms].filter(Boolean));
+  app.post('/admin/roles', requireAdmin, (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    const name = V.str(req.body.name, 40);
+    if (!name) { req.flash('error', 'Give the role a name.'); res.redirect('/admin/settings#admins'); return; }
+    if (db.prepare('SELECT 1 FROM roles WHERE name = ? COLLATE NOCASE').get(name)) { req.flash('error', `A role called "${name}" already exists.`); res.redirect('/admin/settings#admins'); return; }
+    Staff.saveRole({ name, perms: perms(req.body) });
+    req.flash('success', `Role "${name}" created. Choose it when you add a staff login.`);
+    res.redirect('/admin/settings#admins');
+  });
+  app.post('/admin/roles/:id', requireAdmin, (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    const r = Staff.roleById(req.params.id);
+    if (!r) { res.redirect('/admin/settings#admins'); return; }
+    if (req.body.action === 'delete') {
+      const n = db.prepare("SELECT COUNT(*) n FROM admins WHERE role_id = ? AND role != 'owner'").get(r.id).n;
+      if (n) req.flash('error', `Move the ${n} ${n === 1 ? 'person' : 'people'} with this role to another role first.`);
+      else { db.prepare('DELETE FROM roles WHERE id = ?').run(r.id); req.flash('success', `Role "${r.name}" deleted.`); }
+      res.redirect('/admin/settings#admins'); return;
+    }
+    const name = V.str(req.body.name, 40) || r.name;
+    Staff.saveRole({ id: r.id, name, perms: perms(req.body) });
+    req.flash('success', `Role "${name}" saved. It applies at once to everyone with this role.`);
+    res.redirect('/admin/settings#admins');
+  });
+  // Brand: name, tagline, logo and colours — owner only (the name can change later, e.g. if "AdBazaar" is taken).
   app.post('/admin/brand', requireAdmin, (req, res) => {
     if (!ownerOnly(req, res)) return;
     const name = V.str(req.body.site_name, 40);
     if (!name) { req.flash('error', 'Enter the site name.'); res.redirect('/admin/settings#admins'); return; }
     setSetting('site_name', name); setSetting('tagline', V.str(req.body.tagline, 120));
-    req.flash('success', `Site name is now "${name}". It shows everywhere: header, emails, receipts and legal pages.`);
+    if (Brand.THEMES[req.body.brand_theme]) setSetting('brand_theme', req.body.brand_theme);
+    const old = getSettings().brand_logo || '';
+    if (req.body.remove_logo === '1' && old) { removeFile('ads', old); setSetting('brand_logo', ''); }
+    const file = req.files && req.files.logo && req.files.logo[0];
+    if (file && file.data && file.data.length) {
+      try {
+        const saved = saveUpload(file, 'ads', { maxMb: 2 });
+        if (old) removeFile('ads', old);
+        setSetting('brand_logo', saved);
+      } catch (e) { if (e instanceof UploadError) { req.flash('error', e.message); res.redirect('/admin/settings#admins'); return; } throw e; }
+    }
+    req.flash('success', `Brand saved: "${name}". It shows everywhere — header, emails, receipts and legal pages.`);
     res.redirect('/admin/settings#admins');
   });
   // Own password (every staff member, including the payment checker)
   app.get('/admin/account', requireAdmin, (req, res) => res.html(page(req, 'My login', html`
-    <div class="page-head"><div><h1>My login</h1><p class="muted">${req.admin.name} · ${req.admin.email} · ${ROLES[req.admin.role] || 'Admin'}</p></div></div>
+    <div class="page-head"><div><h1>My login</h1><p class="muted">${req.admin.name} · ${req.admin.email} · ${req.admin.roleName}</p></div></div>
     <form method="post" action="/admin/password" class="card form narrow">${csrf(req)}
       <h2>Change my password</h2>
       ${field('Current password', html`<input type="password" name="current" required autocomplete="current-password">`)}
@@ -1447,7 +1576,7 @@ function register(app) {
       <button class="btn btn-primary">Save new password</button></form>`)));
   app.post('/admin/password', requireAdmin, (req, res) => {
     const a = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.admin.id);
-    const to = req.admin.role === 'payments' ? '/admin/account' : '/admin/settings#admins';
+    const to = isOwner(req) ? '/admin/settings#admins' : '/admin/account';
     if (!verifyPassword(req.body.current, a.password_hash)) { req.flash('error', 'Current password is incorrect.'); res.redirect(to); return; }
     if (String(req.body.password || '').length < 6) { req.flash('error', 'New password must be 6+ characters.'); res.redirect(to); return; }
     db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(req.body.password), a.id);

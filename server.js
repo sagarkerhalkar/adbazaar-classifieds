@@ -15,6 +15,7 @@ const { securityHeaders, csrfProtect, hashPassword, randomToken } = require('./s
 const { sessionMiddleware } = require('./src/lib/session');
 const { staticDir } = require('./src/lib/files');
 const { db, getSettings } = require('./src/db');
+const Staff = require('./src/staff');
 const { startScheduler } = require('./src/ranking');
 const { startJobs } = require('./src/jobs');
 const notify = require('./src/notify');
@@ -43,7 +44,7 @@ app.use((req) => {
   req.settings = getSettings();
   notify.rememberOrigin(req);   // so links in emails point to the address people use (your domain)
   if (req.session.adminId) {
-    req.admin = db.prepare('SELECT id, name, email, role FROM admins WHERE id = ? AND is_active = 1').get(req.session.adminId) || null;
+    req.admin = Staff.load(db.prepare('SELECT id, name, email, role, role_id FROM admins WHERE id = ? AND is_active = 1').get(req.session.adminId));
     if (!req.admin) delete req.session.adminId;
   }
   if (req.session.clientId) {

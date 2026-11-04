@@ -14,7 +14,7 @@ function config(s = getSettings()) {
     enabled: s.free_ads !== '0',
     days: Math.max(1, Math.min(365, parseInt(s.free_ad_days, 10) || 15)),
     perSeller: Math.max(1, Math.min(50, parseInt(s.free_ads_per_seller, 10) || 2)),
-    review: s.free_ads_review !== '0',
+    review: s.free_ads_review === '1',
   };
 }
 

@@ -207,5 +207,22 @@ Commit: `a92c2cb`
 
 ---
 
+## 14. Free ads without approval, custom staff roles, brand name/logo/colours, failed payments, related ads, all screen sizes — 3 Nov 22:06 (sent again 4 Nov 14:20)
+
+> for free ad approval not required, it's hectic — only payment needs approval … still not that attractive, even admin … I want customised users for different roles … I can change the name like BazaarNova … lots of bugs, optimise for web, tab, laptop, Mac, tablet … if payment fails admin can switch that ad to unpaid and after payment it goes to paid and ranking … when an ad opens, relevant ads for that location show below, TOP first then free
+
+**What was built:**
+- **Free ads go live at once** (the check is off by default; waiting free ads were made live).
+- **Custom roles:** the owner makes roles (name + 10 permissions) and gives each staff login a role. Pages, menu, dashboard cards and money figures follow the role. The Admin and Payment checker roles are ready-made.
+- **Brand (owner only):** site name, tagline, logo upload and 6 colour themes.
+- **Payment failed → unpaid:** a "Payment failed" button on confirmed payments and "Move to unpaid" on ads. The seller is told, balance is returned, and the ad is live and ranked again after the next confirmed payment.
+- **Related ads:** same category in the same city (same area first), TOP → paid → free; then the same category in other cities.
+- **Design:** a new admin dashboard and a tidier Ads table with a More menu. Every page was checked at 7 screen sizes (phone overflow, tap sizes, footer and tabs fixed).
+- **Guide:** Part 23.
+
+*(Roles, themes and free-ad changes were started by another session on the same message; finished and tested here, including closing a gap where the half-done change gave the payment checker full access.)*
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.
