@@ -262,7 +262,7 @@ function register(app) {
   app.get('/about', (req, res) => {
     const b = biz(req.settings);
     res.html(page(req, `About ${b.site}`, '/about', html`
-      <p><strong>${b.site}</strong> is an Indian online classifieds marketplace operated by <strong>${b.name}</strong>${b.address ? html`, ${b.address}` : ''}. People browse ads for free and contact sellers directly — no sign-up needed.</p>
+      <p><strong>${b.site}</strong> is an online classifieds marketplace operated by <strong>${b.name}</strong>${b.address ? html`, ${b.address}` : ''}. People browse ads for free and contact sellers directly — no sign-up needed.</p>
       <p>Every seller is checked before they can post: we confirm their email (and mobile), their age (18+) with one government ID, and a live photo. Sellers pay a small fee to show an ad for 7, 15 or 29 days, and can choose TOP time slots to be seen first.</p>
       <p>We do not sell products ourselves and are not a party to deals between buyers and sellers. Read our <a href="/terms">Terms of use</a> and <a href="/safety">Safety tips</a>.</p>
       ${b.gstin ? html`<p class="small muted">GSTIN: ${b.gstin}</p>` : ''}`));
@@ -287,8 +287,8 @@ function register(app) {
   });
   app.get('/sitemap.xml', (req, res) => {
     const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-    const ads = db.prepare("SELECT id, title, updated_at FROM ads WHERE status = 'active' AND expires_at > ? AND client_id IN (SELECT id FROM clients WHERE status = 'approved') ORDER BY id DESC LIMIT 5000").all(Date.now());
-    const cats = db.prepare('SELECT slug FROM categories WHERE is_active = 1').all();
+    const ads = db.prepare("SELECT id, title, updated_at FROM ads WHERE status = 'active' AND expires_at > ? AND flagged = 0 AND client_id IN (SELECT id FROM clients WHERE status = 'approved') ORDER BY id DESC LIMIT 5000").all(Date.now());
+    const cats = db.prepare('SELECT slug FROM categories WHERE is_active = 1 AND flagged = 0').all();
     const urls = ['/', '/pricing', '/about', '/contact', '/terms', '/privacy', '/refund-policy', ...cats.map((c) => `/?cat=${encodeURIComponent(c.slug)}`)]
       .map((u) => `<url><loc>${esc(req.origin + u)}</loc></url>`)
       .concat(ads.map((a) => `<url><loc>${esc(`${req.origin}/ad/${a.id}-${slugify(a.title)}`)}</loc><lastmod>${new Date(a.updated_at).toISOString().slice(0, 10)}</lastmod></url>`));

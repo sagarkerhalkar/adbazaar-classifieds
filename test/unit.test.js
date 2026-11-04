@@ -177,3 +177,14 @@ test('smart search: typos, plurals, same-meaning words, cities, whole words', ()
   assert.equal(score('flat rent', '2 BHK flat', 'available for rent'), 3);
   assert.equal(score('flat rent', '2 BHK flat'), 2);
 });
+
+test('blocked words: whole words, joined spellings, safe words', () => {
+  const S = require('../src/safety');
+  assert.equal(S.match('Call boy service in Pune'), 'call boy');
+  assert.ok(S.match('callboy available'));
+  assert.ok(S.match('call-boy'));
+  assert.equal(S.match('Unisex salon and spa'), null);
+  assert.equal(S.match('Sussex cottage for rent'), null);
+  assert.equal(S.match('Ayurvedic massage, certified therapists'), null);
+  assert.ok(S.match('Escort service'));
+});

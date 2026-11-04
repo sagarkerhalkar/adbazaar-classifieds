@@ -206,6 +206,9 @@ addColumn('ads', 'admin_top_until', 'INTEGER');
 addColumn('ads', 'admin_top_slots', 'INTEGER NOT NULL DEFAULT 255');
 // Free ads: posted without payment, shown after all paid ads (never in TOP unless the admin pins them).
 addColumn('ads', 'is_free', 'INTEGER NOT NULL DEFAULT 0');
+// Blocked words (src/safety.js): 1 = hidden from buyers because the ad or its category contains a blocked word.
+addColumn('ads', 'flagged', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('categories', 'flagged', 'INTEGER NOT NULL DEFAULT 0');
 // A photo the admin uploads for a category tile (empty = a built-in photo is used).
 addColumn('categories', 'image', 'TEXT');
 // Staff roles: owner (everything, incl. site name and staff) | admin (runs the site) | payments (only confirms payments).

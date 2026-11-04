@@ -12,7 +12,7 @@ const { getHome, cityList } = require('../homeconfig');
 const Ph = require('../photos');
 const Search = require('../search');
 const { renderPage } = require('../views/layout');
-const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist, publicImages, publicVideos } = require('../views/components');
+const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist, publicImages, publicVideos, textTile } = require('../views/components');
 const { DIRS, sendFile, safeName } = require('../lib/files');
 const { str, normalizePhone } = require('../validators');
 const { rateLimit } = require('../lib/security');
@@ -24,7 +24,8 @@ const CAT_COLS = `COALESCE(pc.name || ' › ' || c.name, c.name) AS cat_name, CO
   COALESCE(pc.slug, c.slug) AS main_slug, COALESCE(pc.name, c.name) AS main_name, c.slug AS cat_slug, c.name AS sub_name`;
 const CAT_JOIN = 'JOIN categories c ON c.id = a.category_id LEFT JOIN categories pc ON pc.id = c.parent_id';
 // Hide ads whose seller is no longer active (deactivated / blocked / deleted).
-const SELLER_OK = "a.client_id IN (SELECT id FROM clients WHERE status = 'approved')";
+// …and never ads hidden by a blocked word (src/safety.js).
+const SELLER_OK = "(a.client_id IN (SELECT id FROM clients WHERE status = 'approved') AND a.flagged = 0)";
 
 // An ad is TOP right now if the seller bought the current 3-hour slot, or the admin pinned it (until a date, in chosen slots).
 // Only integers are put into this SQL.
@@ -111,44 +112,50 @@ function loadMore(filters, data) {
   return html`<div class="loadmore" data-loadmore><a class="btn btn-lg" href="/?${p}" data-load-more>Load more ads</a><span class="muted small">Showing ${Math.min(filters.page * PAGE_SIZE, data.total)} of ${data.total}</span></div>`;
 }
 
+// The moving 3D globe band at the top of the home page (public/js/globe.js). Shows places only — never numbers.
+function globeBand(req, cities, popular, home) {
+  const names = [...new Set([...cities.map((c) => c.city), ...popular])].slice(0, 30);
+  return html`<section class="globeband" data-reveal>
+    <div class="gb-text">
+      <h2>${home.globe_title}</h2>
+      ${home.globe_text ? html`<p>${home.globe_text}</p>` : ''}
+      <form class="gb-search" method="get" action="/" role="search">${icon('search', { size: 18 })}<input type="search" name="q" placeholder="What are you looking for?" aria-label="Search ads"><button class="btn btn-sell">Search</button></form>
+      <div class="gb-cities">${popular.slice(0, 6).map((c) => html`<a href="/?city=${encodeURIComponent(c)}">${icon('pin', { size: 14 })}${c}</a>`)}</div>
+      <div class="btn-row"><a class="btn btn-sell btn-lg" href="${req.seller ? '/client/ads/new' : '/post'}">${icon('plus', { size: 18 })} Post your ad</a><a class="btn btn-lg gb-ghost" href="/?sort=new">Browse ads</a></div>
+    </div>
+    <div class="gb-stage"><canvas data-globe data-cities="${JSON.stringify(names)}" aria-hidden="true"></canvas><div class="gb-glow" aria-hidden="true"></div></div>
+  </section>`;
+}
+
 function homeLanding(req, { cats, data, filters, cities, tops, home }) {
   const site = req.settings.site_name;
   const popular = cityList(home);
   const counts = Object.fromEntries(cities.map((c) => [c.city.toLowerCase(), c.n]));
-  const now = Date.now();
-  const stats = {
-    ads: db.prepare(`SELECT COUNT(*) n FROM ads a WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK}`).get(now).n,
-    cities: db.prepare(`SELECT COUNT(DISTINCT LOWER(city)) n FROM ads a WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK}`).get(now).n,
-    sellers: db.prepare("SELECT COUNT(*) n FROM clients WHERE status = 'approved'").get().n,
-    cats: cats.length,
-  };
-  return html`
-  ${bannerSlider(home.slides)}
 
-  <section class="statband" aria-label="${site} in numbers">
-    ${[['ads', stats.ads, 'ads live now', 'layers'], ['sellers', stats.sellers, 'verified sellers', 'shield'], ['cities', stats.cities, stats.cities === 1 ? 'city' : 'cities', 'pin'], ['cats', stats.cats, 'categories', 'grid']]
-    .map(([k, n, l, ic]) => html`<div class="stat3d" data-reveal><span class="s3-ic">${icon(ic, { size: 18 })}</span><strong data-count="${n}">${n.toLocaleString('en-IN')}</strong><span>${l}</span></div>`)}
-  </section>
+  return html`
+  ${home.show.globe ? globeBand(req, cities, popular, home) : bannerSlider(home.slides)}
 
   ${home.show.categories ? html`<section class="section">
     <div class="section-head"><h2>Browse categories</h2></div>
     <div class="cattiles">${cats.map((c) => html`<a class="cattile" href="/?cat=${c.slug}"><img src="${catPic(c)}" alt="" loading="lazy"><span>${c.name}</span></a>`)}</div>
   </section>` : ''}
 
+  ${home.show.globe ? bannerSlider(home.slides) : ''}
+
   ${home.show.top && tops.length ? html`<section class="section topstrip" data-scroller data-coverflow>
     <div class="section-head"><h2><span class="star">★</span> ${home.top_title}</h2>
-      <div class="btn-row" style="margin:0;align-items:center"><span class="muted small">Featured now · ${SLOTS[data.slot].label}</span>
+      <div class="btn-row" style="margin:0;align-items:center"><span class="muted small">Hand-picked for you</span>
       <button type="button" class="round-btn" data-scroll-prev aria-label="Scroll left">${icon('chevronLeft', { size: 18 })}</button><button type="button" class="round-btn" data-scroll-next aria-label="Scroll right">${icon('chevron', { size: 18 })}</button></div></div>
     <div class="hscroll" data-scroll-track>${tops.map(adCard)}</div>
   </section>` : ''}
 
   ${home.show.cities && popular.length ? html`<section class="section">
     <div class="section-head"><h2>Popular cities</h2></div>
-    <div class="citychips">${popular.map((c) => html`<a class="citychip" href="/?city=${encodeURIComponent(c)}">${icon('pin', { size: 15 })}${c}${counts[c.toLowerCase()] ? html`<span>${counts[c.toLowerCase()]}</span>` : ''}</a>`)}</div>
+    <div class="citychips">${popular.map((c) => html`<a class="citychip" href="/?city=${encodeURIComponent(c)}">${icon('pin', { size: 15 })}${c}</a>`)}</div>
   </section>` : ''}
 
   <section class="section" data-results>
-    <div class="section-head"><h2>${home.fresh_title}</h2><span class="muted small">${data.total} ad${data.total === 1 ? '' : 's'}</span></div>
+    <div class="section-head"><h2>${home.fresh_title}</h2><a class="small" href="/?sort=new">See all</a></div>
     ${data.rows.length ? html`<div class="grid">${Sp.weave(data.rows.map(adCard))}</div>` : html`
       <div class="empty card center"><h3>No ads yet</h3><p class="muted">Be the first to post in your city.</p><a class="btn btn-sell" href="/post">Post your ad</a></div>`}
     ${loadMore(filters, data)}
@@ -203,7 +210,7 @@ function homeResults(req, { cats, data, filters, cities }) {
       </div>
       ${cities.length ? html`<div class="f-group"><h3>City</h3>
         <a class="f-opt ${!filters.city ? 'active' : ''}" href="${q({ city: '', page: '' })}">All cities</a>
-        ${cities.slice(0, 10).map((c) => html`<a class="f-opt ${c.city.toLowerCase() === filters.city.toLowerCase() ? 'active' : ''}" href="${q({ city: c.city, page: '' })}">${c.city} <span class="muted small" style="margin-left:auto">${c.n}</span></a>`)}
+        ${cities.slice(0, 10).map((c) => html`<a class="f-opt ${c.city.toLowerCase() === filters.city.toLowerCase() ? 'active' : ''}" href="${q({ city: c.city, page: '' })}">${c.city}</a>`)}
       </div>` : ''}
     </aside>
     <section data-results>
@@ -241,6 +248,7 @@ function savedView(ads) {
 }
 
 function adView(req, { ad, images, videos = [], related }) {
+  const isOwnerView = !!(req.seller && req.seller.id === ad.client_id); // view count is for the seller, not buyers
   const wa = ad.whatsapp ? normalizePhone(ad.whatsapp) : '';
   const waText = encodeURIComponent(`Hi, I saw your ad "${ad.title}" on ${req.settings.site_name}.`);
   const place = `${ad.locality ? `${ad.locality}, ` : ''}${ad.city}`;
@@ -258,7 +266,7 @@ function adView(req, { ad, images, videos = [], related }) {
             <button type="button" class="g-full" data-gallery-full aria-label="See full size">${icon('eye', { size: 16 })} Full size</button>
           </div>
           ${images.length > 1 ? html`<div class="gallery-thumbs">${images.map((f, i) => html`<button type="button" class="${i === 0 ? 'active' : ''}" data-gallery-thumb="${imgUrl(f)}" aria-label="Photo ${i + 1}"><img src="${imgUrl(f)}" alt=""></button>`)}</div>` : ''}`
-        : ad.is_free ? html`<div class="gallery-main ph free-ph"><span class="thumb-free big"><span class="tf-cat">${ad.sub_name || ad.main_name}</span><strong class="tf-title">${ad.title}</strong><span class="tf-tag">Free ad · text only</span></span></div>`
+        : ad.is_free ? html`<div class="gallery-main ph free-ph">${textTile(ad, true)}</div>`
           : html`<div class="gallery-main ph"><img src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name, slug: ad.main_slug }))}" alt=""><span class="ph-note">The seller has not added photos yet</span></div>`}
       </div>
       <section class="card" data-tab-scope>
@@ -276,13 +284,11 @@ function adView(req, { ad, images, videos = [], related }) {
             <div><dt>Category</dt><dd>${ad.cat_name}</dd></div>
             <div><dt>Location</dt><dd>${place}</dd></div>
             <div><dt>Posted</dt><dd>${fmtDate(ad.starts_at)}</dd></div>
-            <div><dt>Ad ID</dt><dd>#${ad.id}</dd></div>
-            <div><dt>Views</dt><dd>${ad.views}</dd></div>
           </dl>
         </div>
         <div class="tab-panel safety" data-panel="safety">
           <ul><li>Meet in a busy public place.</li><li>Check the item or service before you pay.</li><li>Never share an OTP or UPI PIN, and never pay strangers in advance.</li></ul>
-          <p class="small muted">This ad was posted by the advertiser under their own responsibility. ${req.settings.site_name} does not check, guarantee or take part in any deal and is not responsible for any loss or fraud. If you are cheated, call <strong>1930</strong> or report at cybercrime.gov.in. <a href="/terms#fraud">Terms</a></p>
+          <p class="small muted">This ad was posted by the advertiser under their own responsibility. ${req.settings.site_name} does not check, guarantee or take part in any deal and is not responsible for any loss or fraud. If you are cheated, report it to the police and to us. <a href="/terms#fraud">Terms</a></p>
           <details class="report">
             <summary>${icon('flag', { size: 14 })} Report this ad</summary>
             <form method="post" action="/ad/${ad.id}/report">
@@ -305,7 +311,7 @@ function adView(req, { ad, images, videos = [], related }) {
         <span class="kind kind-${ad.kind}">${ad.kind === 'service' ? 'Service' : 'Product'}</span>
         <h1 class="ad-h1">${ad.title}</h1>
         <div class="big-price">${priceText(ad)}</div>
-        <p class="muted small">${icon('pin', { size: 14 })} ${place} · ${timeAgo(ad.starts_at)} · ${icon('eye', { size: 14 })} ${ad.views}</p>
+        <p class="muted small">${icon('pin', { size: 14 })} ${place} · ${timeAgo(ad.starts_at)}${isOwnerView ? html` · ${icon('eye', { size: 14 })} ${ad.views} views (only you see this)` : ''}</p>
         <div class="seller">
           <div class="avatar">${(ad.business_name || ad.seller_name || '?').slice(0, 1).toUpperCase()}</div>
           <div><strong>${ad.business_name || ad.seller_name}</strong><div class="verified small">${icon('star', { size: 14 })} Trusted seller</div></div>
@@ -416,7 +422,7 @@ function register(app) {
     const ad = id && db.prepare(`SELECT a.*, ${CAT_COLS}, cl.name AS seller_name, cl.business_name, cl.status AS seller_status
       FROM ads a ${CAT_JOIN} JOIN clients cl ON cl.id = a.client_id WHERE a.id = ? AND a.status != 'deleted'`).get(id);
     const isOwner = ad && req.seller && req.seller.id === ad.client_id;
-    const visible = ad && ad.status === 'active' && ad.expires_at > Date.now() && ad.seller_status === 'approved';
+    const visible = ad && ad.status === 'active' && ad.expires_at > Date.now() && ad.seller_status === 'approved' && !ad.flagged;
     if (!ad || (!visible && !isOwner && !req.admin)) {
       res.status(410).html(renderPage(req, { title: 'Ad not available', body: html`<section class="card narrow center"><div class="empty-icon">${icon('clock', { size: 26 })}</div><h1>This ad is no longer available</h1><p class="muted">Its paid period may have ended or it was removed.</p><a class="btn btn-accent" href="/">Browse other ads</a></section>` }));
       return;

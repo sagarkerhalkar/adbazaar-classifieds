@@ -72,12 +72,17 @@ function view(req, cfg) {
         ${csrf(req)}
         <h2>Sections</h2>
         <div class="switch-list">
+          ${sw('show_globe', 'Moving 3D globe (top of the page)', cfg.show.globe)}
           ${sw('show_categories', 'Category tiles', cfg.show.categories)}
           ${sw('show_top', 'TOP ads strip', cfg.show.top)}
           ${sw('show_cities', 'Popular cities', cfg.show.cities)}
           ${sw('show_sell', '"Have something to sell?" band', cfg.show.sell)}
         </div>
         <h2>Texts</h2>
+        <div class="row2">
+          ${field('Globe heading', html`<input name="globe_title" maxlength="80" value="${cfg.globe_title}">`)}
+          ${field('Globe text', html`<input name="globe_text" maxlength="200" value="${cfg.globe_text}">`)}
+        </div>
         ${field('Notice bar at the very top (optional)', html`<input name="announcement" maxlength="160" value="${cfg.announcement}" placeholder="e.g. 🎉 Post your first ad this week and get 2 extra days">`, 'Leave empty to hide the bar')}
         <div class="row2">
           ${field('TOP strip heading', html`<input name="top_title" maxlength="60" value="${cfg.top_title}">`)}
@@ -153,7 +158,9 @@ function register(app, { requireAdmin, page }) {
     cfg.sell_text = V.str(b.sell_text, 160);
     cfg.cities = V.str(b.cities, 600);
     cfg.footer_about = V.str(b.footer_about, 300);
-    cfg.show = { categories: b.show_categories === '1', top: b.show_top === '1', cities: b.show_cities === '1', sell: b.show_sell === '1' };
+    cfg.globe_title = V.str(b.globe_title, 80) || 'Buy and sell anything, anywhere.';
+    cfg.globe_text = V.str(b.globe_text, 200);
+    cfg.show = { globe: b.show_globe === '1', categories: b.show_categories === '1', top: b.show_top === '1', cities: b.show_cities === '1', sell: b.show_sell === '1' };
     saveHome(cfg);
     req.flash('success', 'Home page saved.');
     res.redirect('/admin/home#sections');

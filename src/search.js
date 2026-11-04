@@ -121,8 +121,8 @@ function vocab() {
   if (Date.now() - cache.at < 60_000) return cache;
   const freq = new Map();
   const add = (text, n = 1) => { for (const w of words(text)) if (w.length >= 3 && !/\d/.test(w)) freq.set(w, (freq.get(w) || 0) + n); };
-  for (const r of db.prepare("SELECT title, city, locality FROM ads WHERE status = 'active' ORDER BY id DESC LIMIT 5000").all()) { add(r.title, 2); add(r.city); add(r.locality); }
-  const cats = db.prepare('SELECT id, name, slug, parent_id FROM categories WHERE is_active = 1').all();
+  for (const r of db.prepare("SELECT title, city, locality FROM ads WHERE status = 'active' AND flagged = 0 ORDER BY id DESC LIMIT 5000").all()) { add(r.title, 2); add(r.city); add(r.locality); }
+  const cats = db.prepare('SELECT id, name, slug, parent_id FROM categories WHERE is_active = 1 AND flagged = 0').all();
   for (const c of cats) add(c.name, 5);
   for (const g of GROUPS) for (const w of g) if (w.length >= 3 && !freq.has(w)) freq.set(w, 1);
   for (const list of Object.values(BRANDS)) for (const w of list) if (w.length >= 3 && !freq.has(w)) freq.set(w, 1);
@@ -266,7 +266,7 @@ function suggest(q) {
   const m = sql(parsed);
   if (m || parsed.city) {
     ads = db.prepare(`SELECT a.id, a.title, a.city, ${m ? m.expr : '1'} AS sc FROM ads a JOIN categories c ON c.id = a.category_id LEFT JOIN categories pc ON pc.id = c.parent_id
-      WHERE a.status = 'active' AND a.expires_at > ? AND a.client_id IN (SELECT id FROM clients WHERE status = 'approved')
+      WHERE a.status = 'active' AND a.expires_at > ? AND a.flagged = 0 AND a.client_id IN (SELECT id FROM clients WHERE status = 'approved')
       ${parsed.city ? 'AND a.city = ? COLLATE NOCASE' : ''}
       ORDER BY sc DESC, a.admin_boost DESC, a.rank_score DESC LIMIT 40`)
       .all(...(m ? m.args : []), Date.now(), ...(parsed.city ? [parsed.city] : [])) // placeholders bind in text order

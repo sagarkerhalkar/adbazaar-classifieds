@@ -13,19 +13,24 @@ const DEFAULTS = {
     { title: 'Find trusted local services', subtitle: 'Tutors, repairs, salons, events and more. Call the seller directly.', button: 'Explore services', link: '/?kind=service', theme: 'marigold', photo: 'people-team-handshake', image: '', active: true },
     { title: 'Be seen first with TOP ads', subtitle: 'Pick your time slots and your ad shows at the very top of every page.', button: 'See prices', link: '/pricing', theme: 'green', photo: 'people-meeting', image: '', active: true },
   ],
-  show: { categories: true, top: true, cities: true, sell: true },
+  show: { globe: true, categories: true, top: true, cities: true, sell: true },
+  globe_title: 'Buy and sell anything, anywhere.',
+  globe_text: 'One marketplace for the whole world — phones, homes, jobs, classes, services and more. Talk to the seller directly.',
   cities: 'Mumbai, Delhi, Bengaluru, Pune, Hyderabad, Chennai, Kolkata, Ahmedabad, Jaipur, Nagpur, Nashik, Surat',
   top_title: 'TOP ads',
   fresh_title: 'Fresh recommendations',
   sell_title: 'Have something to sell?',
   sell_text: 'Post your ad in about 3 minutes and reach buyers in your city.',
-  footer_about: 'Buy, sell and find local services across India. Ads are posted by sellers under their own responsibility.',
+  footer_about: 'Buy, sell and find local services near you, anywhere in the world. Ads are posted by sellers under their own responsibility.',
 };
+// Older default texts that mentioned one country: replaced by the worldwide text unless the owner wrote their own.
+const OLD_FOOTER = 'Buy, sell and find local services across India. Ads are posted by sellers under their own responsibility.';
 
 function clean(raw) {
   const d = JSON.parse(JSON.stringify(DEFAULTS));
   if (!raw || typeof raw !== 'object') return d;
-  for (const k of ['announcement', 'cities', 'top_title', 'fresh_title', 'sell_title', 'sell_text', 'footer_about']) if (typeof raw[k] === 'string') d[k] = raw[k];
+  for (const k of ['announcement', 'cities', 'top_title', 'fresh_title', 'sell_title', 'sell_text', 'footer_about', 'globe_title', 'globe_text']) if (typeof raw[k] === 'string') d[k] = raw[k];
+  if (d.footer_about === OLD_FOOTER) d.footer_about = DEFAULTS.footer_about;
   if (raw.show && typeof raw.show === 'object') for (const k of Object.keys(d.show)) if (typeof raw.show[k] === 'boolean') d.show[k] = raw.show[k];
   if (Array.isArray(raw.slides)) {
     d.slides = raw.slides.slice(0, 8).map((s) => ({

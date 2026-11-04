@@ -17,6 +17,7 @@ const { staticDir } = require('./src/lib/files');
 const { db, getSettings } = require('./src/db');
 const Staff = require('./src/staff');
 const { startScheduler } = require('./src/ranking');
+const Safety = require('./src/safety');
 const { startJobs } = require('./src/jobs');
 const notify = require('./src/notify');
 
@@ -64,6 +65,7 @@ require('./src/routes/client').register(app);
 require('./src/routes/admin').register(app);
 
 startScheduler(Number(process.env.SCHEDULER_MINUTES || 5) * 60_000);
+try { const r = Safety.recheck(); if (r.ads || r.categories) console.log(`Blocked words: ${r.categories} categor${r.categories === 1 ? 'y' : 'ies'} and ${r.ads} ad(s) hidden from buyers (Admin → Settings → Approvals).`); } catch (e) { console.error('[safety]', e.message); }
 startJobs(30_000);   // auto-approve clients / auto-confirm payments (Admin → Settings)
 
 // ---- Start listening ----

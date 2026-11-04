@@ -759,3 +759,31 @@ Phone fixes in this round:
 - A **numbers band** under the banner (ads live, verified sellers, cities, categories) counts up. The admin dashboard numbers count up too.
 
 **A note on category names.** The category name *Adult Services* says "sexual services" to buyers, to the police and to payment companies, even when the ads are genuine massage. Rename it in Admin → Categories, for example to *Spa & Wellness*, which already exists.
+
+---
+
+## Part 26 — A 3D globe for the whole world, nothing internal shown to buyers, blocked words (4 Nov, evening)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5**.
+
+**A moving 3D globe at the top of the home page.** A dot-drawn Earth with every continent that turns slowly; you can drag it to spin. Cities with live ads on your site glow in gold, and big world cities (London, New York, Dubai, Singapore, Tokyo…) glow softly. Lights travel in arcs between cities, and a ring orbits the globe. Next to it:
+- a big heading (default *"Buy and sell anything, anywhere."*) and a short text;
+- a search box, city chips, and **Post your ad** / **Browse ads**.
+
+Change the heading and text, or switch the globe off, in Admin → **Home page → Sections & texts**. The banners now come after the categories (when the globe is off they stay at the top). On phones the globe sits above the text. It stops when it is off screen, and shows a still picture for people who turn off animations.
+
+**Nothing internal is shown to buyers:**
+- no numbers band (ads live, sellers, cities, categories) and no ad totals on the home page;
+- no view counts on ad pages (only the seller sees their own);
+- free ads show a coloured text card (category, title) and never the word "free";
+- the city box says **All cities**, the footer text is worldwide, and the ad-page safety note says "report it to the police and to us".
+
+The legal pages still say the site is run under Indian law, and prices are in Indian rupees, because your business and UPI payments are in India.
+
+**Blocked words** (Admin → Settings → **Approvals → Blocked words**). A starting list of words for sexual or adult services (escort, call girl, call boy, gigolo, happy ending, body to body, adult services…) is already filled in.
+- A seller **cannot post or save an ad** that uses them. They see why.
+- A **category** whose name uses one (for example *Call Boy*) is **hidden from buyers and sellers**; its sub-categories too. In Admin → Categories it is marked red, with the reason.
+- **Older ads** with these words, or in such a category, are hidden from buyers and marked **Hidden: blocked word** in Admin → Ads. When the seller removes the words, the ad shows again.
+- Edit the list at any time (one word or phrase per line). Matching is by whole words, so "unisex salon" is not blocked by "sex".
+
+Advertising sexual services is a crime in India (and in many other countries), and the website owner can be prosecuted too. These words protect you.

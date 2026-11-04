@@ -68,11 +68,12 @@ Built from every request in [CONVERSATION.md](CONVERSATION.md), 2–4 Nov 2026. 
 | 42 | International-level design, smooth, short pages, animation and 3D (TOP carousel, tilting tiles, scroll reveal), compact footer | ✅ | Whole site |
 | 42a | Uploaded photos show in full on the ad page (arrows, swipe, full-size view) | ✅ | Ad page |
 | 43 | Real photos (people, phones, laptops), not cartoons | ✅ | Banners, category tiles, test ads |
-| 44 | Government ID never shown to buyers | ✅ | — |
+| 44 | Government ID and internal numbers (totals, view counts, "free" label) never shown to buyers | ✅ | — |
+| 44a | Worldwide look: 3D globe hero, region-neutral wording | ✅ | Home page (Admin → Home page to edit) |
 | 45 | Search by any word: parts of words, typing mistakes, Hinglish, categories, cities; suggestions while typing | ✅ | Search box |
 | 46 | Under each ad: ads from the same area or city first, TOP → paid → free | ✅ | Ad page |
 | 47 | Categories for normal products and services, including massage/spa (wellness) and toys | ✅ | Spa & Wellness, Toys & Kids |
-| 48 | Adult or sexual services | ⛔ | Not built: advertising them is a crime in India (Immoral Traffic (Prevention) Act, IT Act) and the site owner is liable too. The Terms forbid them, and such ads are removed. |
+| 48 | Adult or sexual services | ⛔ | Not built: advertising them is a crime in India (Immoral Traffic (Prevention) Act, IT Act) and the site owner is liable too. The Terms forbid them; the **blocked words** list (Settings → Approvals) stops such ads and hides such categories. |
 
 ## Legal and running the site
 

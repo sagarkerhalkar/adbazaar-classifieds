@@ -28,7 +28,7 @@ function publicHeader(req, s) {
       <a class="logo" href="/" aria-label="${s.site_name} home">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
       <form class="hsearch" method="get" action="/" role="search">
         <input type="search" name="q" value="${req.path === '/' ? q.q : ''}" placeholder="Search phones, cars, tuition, repairs…" aria-label="Search">
-        <input name="city" value="${req.path === '/' ? q.city : ''}" list="cities-h" placeholder="All India" aria-label="City" class="hsearch-city">
+        <input name="city" value="${req.path === '/' ? q.city : ''}" list="cities-h" placeholder="All cities" aria-label="City" class="hsearch-city">
         <datalist id="cities-h">${['Mumbai', 'Pune', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Kolkata', 'Ahmedabad', 'Jaipur', 'Nagpur', 'Nashik', 'Surat'].map((c) => html`<option value="${c}">`)}</datalist>
         ${req.path === '/' && q.cat ? html`<input type="hidden" name="cat" value="${q.cat}">` : ''}
         <button class="hsearch-go" aria-label="Search">${icon('search', { size: 20 })}</button>

@@ -919,9 +919,9 @@ function register(app) {
     try { added = saveImages(req, keep); } catch (e) { if (e instanceof UploadError) return fail(e.message); throw e; }
     existing.filter((f) => remove.has(f)).forEach((f) => removeFile('ads', f));
     db.prepare(`UPDATE ads SET category_id=?, kind=?, title=?, description=?, price_paise=?, price_note=?, city=?, locality=?,
-      contact_phone=?, whatsapp=?, images=?, updated_at=? WHERE id=?`)
+      contact_phone=?, whatsapp=?, images=?, flagged=0, updated_at=? WHERE id=?`)
       .run(ad.category_id, ad.kind, ad.title, ad.description, ad.price_paise, ad.price_note, ad.city, ad.locality,
-        ad.contact_phone, ad.whatsapp, JSON.stringify([...keep, ...added]), Date.now(), current.id);
+        ad.contact_phone, ad.whatsapp, JSON.stringify([...keep, ...added]), Date.now(), current.id); // passed the blocked-words check, so it may be shown again
     req.flash('success', 'Ad updated.');
     res.redirect('/client');
   });

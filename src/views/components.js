@@ -31,6 +31,14 @@ const publicImages = (ad) => { if (ad.is_free) return []; try { return JSON.pars
 const publicVideos = (ad) => { if (ad.is_free) return []; try { return JSON.parse(ad.videos || '[]'); } catch { return []; } };
 const hasVideo = (ad) => publicVideos(ad).length > 0;
 
+// A text card used instead of a photo (free ads). Buyers are not told the ad is free.
+// The colour comes from the category name, so different categories look different.
+function textTile(ad, big = false) {
+  const cat = ad.sub_name || ad.main_name || ad.cat_name || '';
+  let h = 0; for (const ch of String(ad.main_name || cat)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return html`<span class="thumb-free ${big ? 'big' : ''}" style="--h:${h}"><span class="tf-cat">${cat}</span><strong class="tf-title">${ad.title}</strong><span class="tf-mark" aria-hidden="true">${String(ad.title || '?').trim().charAt(0).toUpperCase()}</span></span>`;
+}
+
 function adCard(ad) {
   const images = publicImages(ad);
   const place = `${ad.locality ? `${ad.locality}, ` : ''}${ad.city}`;
@@ -38,7 +46,7 @@ function adCard(ad) {
   <article class="ad-card ${ad.is_top ? 'is-top' : ''} ${ad.is_free ? 'is-free' : ''}">
     <a href="${adUrl(ad)}" class="ad-thumb" tabindex="-1" aria-hidden="true">
       ${images[0] ? html`<img src="${imgUrl(images[0])}" alt="" loading="lazy">`
-    : ad.is_free ? html`<span class="thumb-free"><span class="tf-cat">${ad.sub_name || ad.main_name || ad.cat_name || ''}</span><strong class="tf-title">${ad.title}</strong><span class="tf-tag">Free ad</span></span>`
+    : ad.is_free ? textTile(ad)
       : html`<img class="thumb-stock" src="${Ph.photoUrl(Ph.categoryPhotoName({ name: ad.main_name || ad.cat_name, slug: ad.main_slug }))}" alt="" loading="lazy"><span class="thumb-note">No photo yet</span>`}
       ${ad.is_top ? html`<span class="top-badge">★ TOP</span>` : ''}
       ${images.length > 1 || hasVideo(ad) ? html`<span class="img-count">${images.length > 1 ? html`${icon('camera', { size: 12 })} ${images.length}` : ''}${hasVideo(ad) ? html` ${icon('video', { size: 12 })}` : ''}</span>` : ''}
@@ -105,4 +113,4 @@ function addressFields(v = {}) {
     </div>`;
 }
 
-module.exports = { publicImages, publicVideos, csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, idFields, addressFields, CITIES };
+module.exports = { textTile, publicImages, publicVideos, csrf, pill, adCard, adUrl, imgUrl, priceText, pager, field, cityDatalist, stateSelect, idFields, addressFields, CITIES };

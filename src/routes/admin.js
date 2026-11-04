@@ -21,6 +21,7 @@ const Ph = require('../photos');
 const Free = require('../freeads');
 const Staff = require('../staff');
 const Brand = require('../brand');
+const Safety = require('../safety');
 const life = require('../lifecycle');
 const notify = require('../notify');
 const { SLOTS, ALL_SLOTS, slotLabels, slotPrices, maskFrom } = require('../slots');
@@ -342,7 +343,7 @@ function adsView(req, rows, f) {
       <td><div class="cell-ad">${im ? html`<img src="${imgUrl(im)}" alt="" loading="lazy">` : html`<div class="avatar">${icon('image', { size: 16 })}</div>`}
         <div><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></div></div></td>
       <td><a href="/admin/clients/${a.client_id}">${a.client_name}</a></td>
-      <td><div class="pills">${pill(a.status)}${a.top_slots ? html`<span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}</div>${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}${a.status === 'paused' ? html`<div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}</td>
+      <td><div class="pills">${pill(a.status)}${a.flagged ? html`<span class="pill pill-bad" title="Contains a blocked word or is in a hidden category">Hidden: blocked word</span>` : ''}${a.top_slots ? html`<span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}</div>${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}${a.status === 'paused' ? html`<div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}</td>
       <td>${a.is_free ? html`<span class="pill pill-muted">Free ad</span>` : html`${a.plan_name || '—'}<div class="small muted">${a.paid_total_paise ? `${rupees(a.paid_total_paise)} paid` : ''}</div>`}</td>
       <td>${a.expires_at ? html`${fmtDay(a.expires_at)}<div class="small muted">${a.status === 'active' ? timeLeft(a.expires_at) : ''}</div>` : '—'}</td>
       <td>${a.views}</td>
@@ -407,7 +408,8 @@ function categoriesView(req, mains, counts) {
     </form>
   </div>
   <div class="catgrid">
-    ${mains.map((m) => html`<article class="catcard ${m.is_active ? '' : 'off'}">
+    ${mains.map((m) => html`<article class="catcard ${m.is_active ? '' : 'off'} ${m.flagged ? 'flagged' : ''}">
+      ${m.flagged ? html`<p class="flagnote">${icon('shield', { size: 14 })} Hidden from buyers and sellers — the name has the blocked word "${Safety.match(m.name)}". Rename it or delete it.</p>` : ''}
       <div class="catcard-head">
         <img class="catcard-img" src="${m.image ? imgUrl(m.image) : Ph.photoUrl(Ph.categoryPhotoName(m))}" alt="">
         <div class="catcard-name"><strong>${m.name}</strong><small>${m.subs.length} sub-categor${m.subs.length === 1 ? 'y' : 'ies'} · ${total(m)} ad${total(m) === 1 ? '' : 's'}${m.is_active ? '' : ' · hidden'}</small></div>
@@ -418,7 +420,7 @@ function categoriesView(req, mains, counts) {
         ${m.image ? html`<button class="btn btn-sm btn-ghost" name="reset" value="1">Use built-in photo</button>` : html`<span class="small muted">Built-in photo</span>`}
       </form>
       <div class="subchips">
-        ${m.subs.length ? m.subs.map((sc) => html`<span class="subchip ${sc.is_active ? '' : 'off'}">${sc.name}${n(sc) ? html` <span class="muted">${n(sc)}</span>` : ''}${editBtn(sc, true)}${delBtn(sc)}</span>`) : html`<span class="muted small">No sub-categories — ads go straight into ${m.name}.</span>`}
+        ${m.subs.length ? m.subs.map((sc) => html`<span class="subchip ${sc.is_active ? '' : 'off'} ${sc.flagged ? 'flagged' : ''}" title="${sc.flagged ? 'Hidden: blocked word' : ''}">${sc.flagged ? html`${icon('shield', { size: 12 })} ` : ''}${sc.name}${n(sc) ? html` <span class="muted">${n(sc)}</span>` : ''}${editBtn(sc, true)}${delBtn(sc)}</span>`) : html`<span class="muted small">No sub-categories — ads go straight into ${m.name}.</span>`}
       </div>
       <form method="post" action="/admin/categories/add" class="addsub">
         ${csrf(req)}<input type="hidden" name="parent_id" value="${m.id}">
@@ -599,6 +601,8 @@ function settingsView(req, { s, plans, cats, admins }) {
         <p class="small muted">Payments are never confirmed automatically — only you (or another admin) can confirm a payment.</p>
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
         ${field('Block a seller automatically after complaints from', html`<input type="number" name="complaint_block_threshold" min="0" max="100000" value="${s.complaint_block_threshold}">`, 'different people about the same ad. The ad is removed and the seller cannot post again. 0 = off (you decide).')}
+        <h3>Blocked words</h3>
+        ${field('Ads and categories with these words are not published', html`<textarea name="blocked_words" rows="6" maxlength="20000" spellcheck="false">${(s.blocked_words ? String(s.blocked_words).split('\n') : Safety.DEFAULT_WORDS).join('\n')}</textarea>`, 'One word or phrase per line. Whole words only ("unisex" is fine for "sex"). Sellers cannot post an ad with these words; categories and old ads that have them are hidden from buyers and marked "Hidden" for you. Sexual or adult services are illegal to advertise in many countries, including India.')}
         ${field('Sponsored card in listings after every', html`<input type="number" name="sponsor_every" min="3" max="50" value="${s.sponsor_every}">`, 'ads (see Sponsors)')}
         <h3>Free ads</h3>
         <label class="check"><input type="checkbox" name="free_ads" value="1" ${s.free_ads !== '0' ? 'checked' : ''}> <span>Sellers may post ads <strong>free</strong> (shown after all paid ads, random order, never in TOP)</span></label>
@@ -1318,7 +1322,10 @@ function register(app) {
     const sort = parseInt(req.body.sort, 10) || 99;
     db.prepare('INSERT INTO categories (name, slug, icon, sort, is_active, parent_id) VALUES (?,?,?,?,1,?)')
       .run(name, Cat.makeSlug(name, parent ? parent.slug : ''), icon, sort, parent ? parent.id : null);
-    req.flash('success', parent ? `Sub-category "${name}" added under ${parent.name}.` : `Main category "${name}" added.`);
+    Safety.recheck();
+    const bad = Safety.match(name) || (parent && parent.flagged ? Safety.match(parent.name) : null);
+    if (bad) req.flash('error', `"${name}" was added but is hidden from buyers and sellers: "${bad}" is a blocked word (sexual or adult services are not allowed). Rename it, or change the list in Settings → Approvals → Blocked words.`);
+    else req.flash('success', parent ? `Sub-category "${name}" added under ${parent.name}.` : `Main category "${name}" added.`);
     res.redirect('/admin/categories');
   });
   app.post('/admin/categories/:id', requireAdmin, (req, res) => {
@@ -1334,7 +1341,10 @@ function register(app) {
       if (p && !p.parent_id) parentId = p.id;
     }
     db.prepare('UPDATE categories SET name = ?, icon = ?, sort = ?, is_active = ?, parent_id = ? WHERE id = ?').run(name, icon, sort, active, parentId, c.id);
-    req.flash('success', `"${name}" saved${active ? '' : ' — deactivated (hidden from the site menus and new ads; existing ads keep running)'}.`);
+    Safety.recheck();
+    const bad = Safety.match(name);
+    if (bad) req.flash('error', `"${name}" is hidden from buyers and sellers: "${bad}" is a blocked word (sexual or adult services are not allowed). Rename it, or change the list in Settings → Approvals → Blocked words.`);
+    else req.flash('success', `"${name}" saved${active ? '' : ' — deactivated (hidden from the site menus and new ads; existing ads keep running)'}.`);
     res.redirect('/admin/categories');
   });
   // Category tile photo: the admin's own picture, or back to the built-in photo.
@@ -1397,6 +1407,12 @@ function register(app) {
     setSetting('free_ads_review', req.body.free_ads_review === '1' ? '1' : '0');
     setSetting('free_ad_days', String(Math.max(1, Math.min(365, parseInt(req.body.free_ad_days, 10) || 15))));
     setSetting('free_ads_per_seller', String(Math.max(1, Math.min(50, parseInt(req.body.free_ads_per_seller, 10) || 2))));
+    if (typeof req.body.blocked_words === 'string') {
+      const list = req.body.blocked_words.split(/[\n,]+/).map((w) => w.trim().toLowerCase()).filter((w) => w.length >= 2).slice(0, 500);
+      setSetting('blocked_words', list.join('\n'));
+      const r = Safety.recheck();
+      if (r.ads || r.categories) req.flash('error', `Blocked words: ${r.categories} categor${r.categories === 1 ? 'y' : 'ies'} and ${r.ads} ad(s) are hidden from buyers. See Ads and Categories (marked "Hidden").`);
+    }
     const em = V.str(req.body.notify_email, 120);
     if (!em || V.isValidEmail(em)) setSetting('notify_email', em);
     req.flash('success', 'Saved.');

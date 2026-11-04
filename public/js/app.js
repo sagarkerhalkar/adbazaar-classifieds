@@ -235,8 +235,9 @@
         const r = card.getBoundingClientRect();
         const px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
         card.style.transform = 'perspective(800px) rotateX(' + (-py * 5) + 'deg) rotateY(' + (px * 6) + 'deg) translateY(-3px)';
+        card.style.setProperty('--mx', ((px + 0.5) * 100) + '%'); card.style.setProperty('--my', ((py + 0.5) * 100) + '%'); card.classList.add('lit');
       });
-      card.addEventListener('pointerleave', () => { card.style.transform = ''; });
+      card.addEventListener('pointerleave', () => { card.style.transform = ''; card.classList.remove('lit'); });
     });
   }
   bindTilt();
@@ -414,6 +415,7 @@
   if (document.querySelector('.hsearch input[name="q"]')) load('suggest.js');
   if (document.querySelector('input[type=file]')) load('upload.js');
   load('motion.js');
+  if (document.querySelector('[data-globe]')) load('globe.js');
 })();
 
 // "More" menus in admin tables: float above the table (tables scroll sideways, so the menu is placed on screen),

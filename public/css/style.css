@@ -1211,3 +1211,59 @@ html.motion .ad-card.rv.in { transform: none; }
   .bf-about { display: none; }
   .bigfooter.compact .bf-row a { padding: 6px 0; }
 }
+/* text card (free ads): no "free" label for buyers; colour from the category */
+.thumb-free { --h: 200; background: radial-gradient(220px 150px at 100% 0%, hsla(var(--h), 85%, 62%, .32), transparent 70%), radial-gradient(200px 140px at 0% 100%, hsla(calc(var(--h) + 40), 80%, 60%, .22), transparent 70%), linear-gradient(150deg, hsl(var(--h), 45%, 96%), #fff); overflow: hidden; }
+.tf-mark { position: absolute; right: -6px; bottom: -28px; font-family: var(--font-display); font-weight: 800; font-size: 7.5rem; line-height: 1; color: hsla(var(--h), 60%, 45%, .10); pointer-events: none; }
+.thumb-free.big .tf-mark { font-size: 16rem; bottom: -60px; right: 10px; }
+.tf-cat { color: hsl(var(--h), 45%, 32%); }
+.tf-tag { display: none; }
+
+/* ===== "Across India" band with the 3D globe ===== */
+.globeband { position: relative; display: grid; grid-template-columns: 1.05fr 1fr; align-items: center; gap: 24px; margin: 22px 0 8px; padding: 26px 30px; border-radius: 26px; overflow: hidden; color: #e3f1f6; isolation: isolate;
+  background: radial-gradient(700px 400px at 85% 50%, rgba(8, 131, 149, .55), transparent 70%), radial-gradient(500px 300px at 0% 100%, rgba(var(--marigold-rgb), .18), transparent 70%), linear-gradient(135deg, var(--peacock-d), #04202e 70%); }
+.globeband::before { content: ""; position: absolute; inset: -40%; z-index: -1; background: conic-gradient(from 0deg at 70% 50%, transparent 0 20%, rgba(120, 220, 255, .10) 30%, transparent 40% 60%, rgba(var(--marigold-rgb), .10) 70%, transparent 80%); animation: aurora 18s linear infinite; }
+@keyframes aurora { to { transform: rotate(360deg); } }
+.gb-text h2 { color: #fff; font-size: clamp(1.4rem, 2.6vw, 2.15rem); line-height: 1.12; margin: 0 0 10px; letter-spacing: -.02em; }
+.gb-text p { margin: 0 0 14px; color: #b9d3df; max-width: 46ch; }
+.gb-cities { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.gb-cities a { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .14); color: #e3f1f6; font-size: .86rem; backdrop-filter: blur(4px); transition: background .2s, transform .2s; }
+.gb-cities a:hover { background: rgba(255, 255, 255, .16); transform: translateY(-2px); color: #fff; }
+.gb-ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .35); }
+.gb-ghost:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+.gb-stage { position: relative; aspect-ratio: 1 / 1; max-height: 420px; width: 100%; justify-self: center; }
+.gb-stage canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: pan-y; }
+.gb-stage canvas:active { cursor: grabbing; }
+.gb-glow { position: absolute; inset: 12%; border-radius: 50%; z-index: -1; background: radial-gradient(circle, rgba(120, 220, 255, .28), transparent 65%); filter: blur(20px); }
+@media (max-width: 820px) { .globeband { grid-template-columns: 1fr; padding: 22px 18px; text-align: left; } .gb-stage { max-height: 320px; max-width: 340px; } }
+@media (prefers-reduced-motion: reduce) { .globeband::before { animation: none; } }
+@media (max-width: 820px) {
+  .globeband { gap: 4px; padding: 14px 16px 20px; }
+  .gb-stage { order: -1; max-height: 250px; max-width: 250px; margin: -6px auto -10px; }
+  .gb-text h2 { font-size: 1.35rem; }
+  .gb-text p { font-size: .9rem; }
+  .gb-cities a { padding: 4px 10px; font-size: .8rem; }
+  .globeband .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .globeband .btn-lg { padding: 10px 12px; font-size: .95rem; justify-content: center; }
+}
+/* a soft light follows the mouse over ad cards */
+.ad-card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 0%), rgba(var(--marigold-rgb), .16), transparent 45%); opacity: 0; transition: opacity .3s; z-index: 2; }
+.ad-card.lit::after { opacity: 1; }
+/* globe hero: bigger, with a search box and a soft starfield */
+.globeband { margin-top: 16px; min-height: 440px; padding: 34px 40px; }
+.globeband::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .7;
+  background-image: radial-gradient(1.2px 1.2px at 12% 18%, #fff, transparent 60%), radial-gradient(1px 1px at 28% 72%, #cfefff, transparent 60%), radial-gradient(1.4px 1.4px at 44% 12%, #fff, transparent 60%), radial-gradient(1px 1px at 58% 86%, #fff, transparent 60%), radial-gradient(1.2px 1.2px at 8% 88%, #ffe9b0, transparent 60%), radial-gradient(1px 1px at 36% 40%, #fff, transparent 60%), radial-gradient(1.3px 1.3px at 52% 56%, #cfefff, transparent 60%), radial-gradient(1px 1px at 20% 52%, #fff, transparent 60%);
+  animation: twinkle 6s ease-in-out infinite alternate; }
+@keyframes twinkle { from { opacity: .35; } to { opacity: .85; } }
+.gb-text h2 { font-size: clamp(1.7rem, 3.4vw, 2.9rem); }
+.gb-search { display: flex; align-items: center; gap: 8px; max-width: 520px; margin: 4px 0 14px; padding: 6px 6px 6px 14px; border-radius: 14px; background: rgba(255, 255, 255, .96); box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .6); color: var(--muted); }
+.gb-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 4px; font-size: 1rem; }
+.gb-search input:focus { outline: none; }
+.gb-search:focus-within { box-shadow: 0 0 0 3px rgba(var(--marigold-rgb), .6), 0 18px 40px -18px rgba(0, 0, 0, .6); }
+.gb-search .btn { padding: 10px 18px; }
+.gb-stage { max-height: 460px; }
+@media (max-width: 820px) { .globeband { min-height: 0; padding: 14px 16px 20px; } .gb-search { margin-top: 8px; } }
+@media (prefers-reduced-motion: reduce) { .globeband::after { animation: none; } }
+/* blocked words: hidden categories in admin */
+.catcard.flagged { border-color: var(--bad); box-shadow: 0 0 0 2px var(--bad-soft); }
+.flagnote { margin: 0 0 10px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--bad-soft); color: var(--bad); font-size: .84rem; display: flex; gap: 6px; align-items: flex-start; }
+.subchip.flagged { border-color: var(--bad); color: var(--bad); background: var(--bad-soft); }

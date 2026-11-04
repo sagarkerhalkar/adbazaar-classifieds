@@ -253,5 +253,20 @@ Commit: `a92c2cb`
 
 ---
 
+## 17. Nothing internal for buyers, a world-level 3D globe, blocked words — 4 Nov 18:04
+
+> (screenshots: a free-ad card in a category "Call Boy"; the numbers band) why buyer need to see this, it's like our thing exposed to buyer … do something new mesmerizing animated 3D global, international level, it is not for India it is for the world, so don't want that
+
+**What was built:**
+- **Hidden from buyers:** the numbers band, the home ad total, view counts, and the word "Free" on free ads (now a coloured text card).
+- **3D globe hero:** a dot-drawn Earth (all continents) turning slowly and draggable, with gold lights for cities with live ads, soft lights for world cities, travelling arcs and an orbit ring. Global heading, search box and buttons; heading and text editable, can be switched off. Banners moved below the categories.
+- **Worldwide wording:** "All cities", a worldwide footer text, a generic safety note. The legal pages keep Indian law and rupees.
+- **Blocked words:** an editable list. Ads with them cannot be posted; categories (such as "Call Boy") and older ads with them are hidden from buyers and marked for the admin.
+- **Guide:** Part 26.
+
+*(The globe, the text cards and the numbers-band removal were started by another session on the same message; finished here and changed from India-centred to worldwide.)*
+
+---
+
 ### How to get the newest version
 Double-click **"Update AdBazaar"** on the desktop, or run the install command from the top of [GUIDE.md](../GUIDE.md) again. Your settings and data are kept.

@@ -68,8 +68,8 @@ function validatePassword(pw) {
 // Words that are never allowed in an ad (sexual services). The ad is refused; the admin can still block anything else.
 const BANNED_AD_WORDS = /\b(escorts?|call\s*girls?|sex(ual)?\s*services?|body\s*to\s*body|happy\s*ending|nude|nudes|erotic|sensual\s*massage|adult\s*services?|hookups?|one\s*night|prostitut\w*|nsfw|porn\w*|xxx)\b/i;
 function bannedAdText(...texts) {
-  const m = BANNED_AD_WORDS.exec(texts.join(' '));
-  return m ? m[0] : null;
+  // The editable list in Settings → Approvals (src/safety.js); the fixed pattern above is a fallback.
+  try { return require('./safety').match(...texts); } catch { const m = BANNED_AD_WORDS.exec(texts.join(' ')); return m ? m[0] : null; }
 }
 
 module.exports = {

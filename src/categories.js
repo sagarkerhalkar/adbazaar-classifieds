@@ -10,7 +10,8 @@ function all() {
 
 /** Main categories, each with `.subs` (only active ones unless includeInactive). */
 function tree({ includeInactive = false } = {}) {
-  const rows = all().filter((c) => includeInactive || c.is_active);
+  // Buyers and sellers never see categories hidden by a blocked word (the admin sees them, marked).
+  const rows = all().filter((c) => includeInactive || (c.is_active && !c.flagged));
   const mains = rows.filter((c) => !c.parent_id);
   for (const m of mains) m.subs = rows.filter((c) => c.parent_id === m.id);
   return mains;
@@ -31,6 +32,7 @@ function idsForSlug(slug) {
 function checkForAd(id) {
   const c = byId(id);
   if (!c || !c.is_active) return 'Please choose a category.';
+  if (c.flagged) return 'This category is not available. Ads for sexual or adult services are not allowed (see Terms, section 3).';
   if (c.parent_id) {
     const parent = byId(c.parent_id);
     if (!parent || !parent.is_active) return 'Please choose a category.';
