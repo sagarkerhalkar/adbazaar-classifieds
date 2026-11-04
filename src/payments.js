@@ -1,18 +1,16 @@
 'use strict';
 // Payment logic: pricing, Razorpay integration, and activating an ad once payment is confirmed.
 
-const crypto = require('node:crypto');
 const { db, tx } = require('./db');
 const { rescore } = require('./ranking');
-const { safeEqual } = require('./lib/security');
 const { topCost } = require('./slots');
 
-const RZP_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
-const RZP_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
-const RZP_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-const razorpayEnabled = () => Boolean(RZP_KEY_ID && RZP_KEY_SECRET);
+// Razorpay keys come from Admin → Settings → Online payments (or .env); see src/gateways.js.
+const G = require('./gateways');
+const razorpayEnabled = () => G.enabled().razorpay;
 
 // Total = plan price + (price per day of each chosen TOP slot × plan days), minus the plan's discount (e.g. 20% on subscriptions).
+// (The showcase ring is sold separately, by bidding: src/showcase.js.)
 function listPrice(plan, topMask) {
   return plan.price_paise + topCost(topMask || 0, plan.days);
 }
@@ -22,28 +20,9 @@ function quote(plan, topMask) {
   return d ? Math.round((list * (100 - d)) / 10000) * 100 : list;   // discounted prices are rounded to whole rupees
 }
 
-async function createRazorpayOrder(amountPaise, receipt, notes) {
-  const auth = Buffer.from(`${RZP_KEY_ID}:${RZP_KEY_SECRET}`).toString('base64');
-  const r = await fetch('https://api.razorpay.com/v1/orders', {
-    method: 'POST',
-    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount: amountPaise, currency: 'INR', receipt, notes }),
-  });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body?.error?.description || `Razorpay error ${r.status}`);
-  return body;
-}
-
-function verifyCheckoutSignature(orderId, paymentId, signature) {
-  const expected = crypto.createHmac('sha256', RZP_KEY_SECRET).update(`${orderId}|${paymentId}`).digest('hex');
-  return safeEqual(expected, signature);
-}
-
-function verifyWebhookSignature(rawBody, signature) {
-  if (!RZP_WEBHOOK_SECRET) return false;
-  const expected = crypto.createHmac('sha256', RZP_WEBHOOK_SECRET).update(rawBody).digest('hex');
-  return safeEqual(expected, signature);
-}
+const createRazorpayOrder = (amountPaise, receipt, notes) => G.razorpayOrder(amountPaise, receipt, notes);
+const verifyCheckoutSignature = (orderId, paymentId, signature) => G.razorpayCheckoutOk(orderId, paymentId, signature);
+const verifyWebhookSignature = (rawBody, signature) => G.razorpayWebhookOk(rawBody, signature);
 
 /**
  * Mark a payment as paid and put the ad live (or extend it if it's already live).
@@ -60,6 +39,7 @@ function confirmPayment(paymentId, { adminId = null, razorpayPaymentId = null, n
     const dayMs = 86400_000;
 
     let startsAt, expiresAt, paidTotal, topSlots;
+    const oldShow = ad.status === 'active' && ad.showcase_until > now ? ad.showcase_until : null;
     if (ad.status === 'active' && ad.expires_at > now && !ad.is_free) {
       // Extension of a running ad: add days on top of the current expiry.
       startsAt = ad.starts_at;
@@ -80,9 +60,11 @@ function confirmPayment(paymentId, { adminId = null, razorpayPaymentId = null, n
     // Never re-activate an ad the admin has blocked; keep the payment recorded.
     if (ad.status !== 'blocked') {
       // A free ad that gets paid becomes a normal paid ad (its free days end, the paid days start now).
+      // Showcase bought with this payment runs to the end of the ad; one bought earlier keeps its end date.
+      const showUntil = pay.showcase ? expiresAt : oldShow;
       db.prepare(`UPDATE ads SET status = 'active', is_free = 0, plan_id = ?, is_top = ?, top_slots = ?, paid_total_paise = ?,
-                  starts_at = ?, expires_at = ?, updated_at = ? WHERE id = ?`)
-        .run(pay.plan_id, topSlots ? 1 : 0, topSlots, paidTotal, startsAt, expiresAt, now, ad.id);
+                  starts_at = ?, expires_at = ?, showcase_until = ?, updated_at = ? WHERE id = ?`)
+        .run(pay.plan_id, topSlots ? 1 : 0, topSlots, paidTotal, startsAt, expiresAt, showUntil, now, ad.id);
       rescore(ad.id);
     }
     return { already: false, pay };
@@ -112,7 +94,7 @@ function moveAdToUnpaid(adId) {
   const ad = db.prepare('SELECT * FROM ads WHERE id = ?').get(adId);
   if (!ad || ['deleted', 'awaiting_payment'].includes(ad.status)) return null;
   db.prepare(`UPDATE ads SET status = 'awaiting_payment', is_free = 0, paid_total_paise = 0, top_slots = 0, is_top = 0,
-    admin_top_until = NULL, starts_at = NULL, expires_at = NULL, paused_by = NULL, paused_remaining_ms = NULL, rank_score = -1, updated_at = ? WHERE id = ?`).run(Date.now(), ad.id);
+    admin_top_until = NULL, showcase_until = NULL, admin_showcase_until = NULL, starts_at = NULL, expires_at = NULL, paused_by = NULL, paused_remaining_ms = NULL, rank_score = -1, updated_at = ? WHERE id = ?`).run(Date.now(), ad.id);
   return ad;
 }
 
@@ -133,6 +115,6 @@ function failPayment(paymentId, adminId, note) {
 }
 
 module.exports = {
-  RZP_KEY_ID, razorpayEnabled, quote, listPrice, createRazorpayOrder,
+  razorpayEnabled, quote, listPrice, createRazorpayOrder,
   verifyCheckoutSignature, verifyWebhookSignature, confirmPayment, rejectPayment, failPayment, moveAdToUnpaid,
 };

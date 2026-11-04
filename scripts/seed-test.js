@@ -145,6 +145,8 @@ const ADS = [
   ['fatima', 'events-catering', 'service', 'Wedding & party catering — 50 to 500 guests', 'Veg and non-veg menus, live counters, decoration on request. Taste session before booking.', 450, 'per plate', 'Nashik', 'Panchavati', p15, 0, 2, 'active', ['event-table', 'event-food']],
   ['fatima', 'furniture-sofas-beds', 'product', 'Leather armchair with floor lamp', 'Comfortable armchair, 2 years old, very good condition. Self pickup.', 7500, null, 'Nashik', 'Indira Nagar', null, 0, 0, 'awaiting_payment', ['armchair', 'sofa-cushion']],
   ['karan', 'electronics-laptops-computers', 'product', 'Laptop 14", i5 12th gen, 16 GB RAM', 'Used 1 year, 512 GB SSD, charger included. Good for office and college.', 38000, null, 'Surat', 'Adajan', p15, 0, 2, 'active', ['laptop-open', 'laptop-dark']],
+  ['sneha', 'toys-kids-toys-games', 'product', 'Kids ride-on car with remote control', 'Battery car for kids aged 2 to 6, with parent remote, music and lights. Used for one summer, charger included.', 6500, 'Negotiable', 'Mumbai', 'Goregaon', null, 0, 1, 'active', [], true],
+  ['fatima', 'electronics-mobile-phones', 'product', 'iPhone 15 Pro, 256 GB, natural titanium', 'Bought in Dubai Mall, 11 months old, battery 91%. Box and receipt, Apple warranty till next month.', 3200, 'AED, negotiable', 'Dubai', 'Dubai Marina', p15, 0, 1, 'active', ['laptop-phone', 'phone-charger']],
 ];
 
 tx(() => {
@@ -173,10 +175,12 @@ tx(() => {
     const isLive = state === 'active';
     const paid = plan ? plan.price_paise + topCost(top, plan.days) : 0;
     const expires = free ? start + freeDays * DAY : plan && state !== 'awaiting_payment' && state !== 'payment_review' ? start + plan.days * DAY : null;
-    const r = db.prepare(`INSERT INTO ads (client_id, category_id, kind, title, description, price_paise, price_note, city, locality, contact_phone, whatsapp, images,
+    // worldwide: the Dubai test ad is in the UAE and priced in dirhams; the others are in India
+    const abroad = city === 'Dubai';
+    const r = db.prepare(`INSERT INTO ads (client_id, category_id, kind, title, description, price_paise, price_note, country, state, currency, city, locality, contact_phone, whatsapp, images,
       status, plan_id, is_top, top_slots, paid_total_paise, starts_at, expires_at, views, created_at, updated_at, is_free)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(ids[key], catId(cat), kind, title, desc, price * 100, note, city, loc, CLIENTS.find((c) => c[0] === key)[4], CLIENTS.find((c) => c[0] === key)[4],
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(ids[key], catId(cat), kind, title, desc, price * 100, abroad ? 'Negotiable' : note, abroad ? 'United Arab Emirates' : 'India', abroad ? 'Dubai' : require('../src/places').indianState(city) || null, abroad ? 'AED' : 'INR', city, loc, CLIENTS.find((c) => c[0] === key)[4], CLIENTS.find((c) => c[0] === key)[4],
         JSON.stringify(images), state, plan && (isLive || state === 'expired') ? plan.id : null, isLive && top ? 1 : 0, isLive ? top : 0, plan && (isLive || state === 'expired') ? paid : 0,
         isLive || state === 'expired' ? start : null, expires, isLive ? Math.floor(Math.random() * 180) : 0, start - HOUR, start, free ? 1 : 0);
     const adId = Number(r.lastInsertRowid);

@@ -25,6 +25,8 @@ function safeEqual(a, b) {
 }
 
 // ---- Security headers ----
+// (automatic tests run a stand-in payment server; its address must be allowed as a form target too)
+const TEST_GATEWAY = process.env.PAYPAL_API_BASE ? ` ${new URL(process.env.PAYPAL_API_BASE).origin}` : '';
 function securityHeaders(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
@@ -38,7 +40,8 @@ function securityHeaders(req, res) {
     "media-src 'self' blob:",
     "connect-src 'self' https://*.razorpay.com",
     "frame-src https://api.razorpay.com https://checkout.razorpay.com",
-    "form-action 'self'",
+    // after a form is sent, the browser may be redirected to the PayPal or Stripe payment page
+    `form-action 'self' https://www.paypal.com https://www.sandbox.paypal.com https://checkout.stripe.com${TEST_GATEWAY}`,
     "base-uri 'self'",
     "object-src 'none'",
   ].join('; '));
@@ -48,7 +51,7 @@ function securityHeaders(req, res) {
 }
 
 // ---- CSRF (synchronizer token stored in session) ----
-const CSRF_EXEMPT = new Set(['/webhooks/razorpay']);
+const CSRF_EXEMPT = new Set(['/webhooks/razorpay', '/webhooks/stripe']);
 
 function csrfProtect(req, res) {
   if (!req.session.csrf) req.session.csrf = randomToken(24);

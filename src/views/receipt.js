@@ -67,7 +67,7 @@ function receiptPage(req, p) {
   </table>
   <p class="rc-words">${amountInWords(p.amount_paise)}</p>
   <section class="rc-pay"><h3>Payment details</h3>
-    <p>Method: ${p.method === 'razorpay' ? 'Online (Razorpay)' : 'UPI'}${p.utr ? html` · UTR: <span class="mono">${p.utr}</span>` : ''}${p.razorpay_payment_id ? html` · Payment ID: <span class="mono">${p.razorpay_payment_id}</span>` : ''}</p></section>
+    <p>Method: ${p.method === 'upi_manual' ? 'UPI' : `Online (${require('../gateways').LABEL[p.method] || p.method})`}${p.utr ? html` · UTR: <span class="mono">${p.utr}</span>` : ''}${p.gateway_txn || p.razorpay_payment_id ? html` · Payment ID: <span class="mono">${p.gateway_txn || p.razorpay_payment_id}</span>` : ''}${p.charged && !String(p.charged).startsWith('INR') ? html` · Charged ${p.charged}` : ''}</p></section>
   <footer class="rc-foot">
     <p>This is a computer-generated receipt and does not need a signature. Ad placement fees are non-refundable once the ad is live, as per our <a href="/refund-policy">Refund policy</a> and <a href="/terms">Terms of use</a>.</p>
     <p>Questions? ${s.grievance_email || s.support_email ? html`Write to ${s.grievance_email || s.support_email}` : 'Contact us from the Contact page'}.</p>

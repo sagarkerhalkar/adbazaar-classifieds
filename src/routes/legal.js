@@ -9,7 +9,7 @@ const { renderPage } = require('../views/layout');
 const { icon } = require('../views/icons');
 const { slotPrices } = require('../slots');
 
-const TERMS_VERSION = '2026-11-03.3';
+const TERMS_VERSION = '2026-11-04.1';
 const EFFECTIVE = '3 November 2026';
 
 function biz(s) {
@@ -93,7 +93,8 @@ function termsBody(b) {
   <h2 id="payments">4. Fees and payments</h2>
   <ul>
     <li>Ads can be posted with a paid plan, or — when we offer it — as a free ad (see section 4E). Current prices for plans (for example 7, 15 or 29 days) and TOP time slots are shown on the <a href="/pricing">Pricing</a> page and on the payment screen. Prices include applicable taxes unless shown otherwise.</li>
-    <li>Your ad goes live only after your payment is <strong>confirmed by us</strong>. Confirmation usually takes 5 minutes to 24 hours.</li>
+    <li>Payments made <strong>online</strong> (card, Razorpay, PayPal or another payment gateway we offer) are confirmed <strong>automatically</strong> once the gateway reports them as successful, and your ad goes live at once. Payments made <strong>by UPI with a transaction reference (UTR)</strong> go live only after they are <strong>confirmed by us</strong>, usually within 5 minutes to 24 hours. An automatic confirmation does not stop us from cancelling a payment that the gateway or bank later reverses, refunds or reports as fraud: the ad then goes back to unpaid until it is paid again.</li>
+    <li>Online payments in another currency are charged at the rate shown on the payment button. Bank or card charges and currency-conversion fees are yours.</li>
     <li><strong>You alone are responsible for your payment.</strong> You must pay the exact total shown to the UPI ID or payment link shown on our payment screen, from your own bank or UPI account, and enter the correct transaction reference (UTR).</li>
     <li>We are <strong>not responsible</strong> for any loss caused by: a payment sent to a wrong UPI ID, account or person; a wrong amount; a wrong or reused UTR; a payment that fails, is pending, delayed, reversed or charged twice by your bank, UPI app, card issuer or payment gateway; or any person who pretends to be us. We will <strong>never</strong> ask for your OTP, UPI PIN, card PIN or password.</li>
     <li>If money leaves your account but the payment does not reach us, the refund of that money is handled by your bank, UPI app or payment gateway under their rules and the rules of the Reserve Bank of India. We cannot refund money we have not received.</li>
@@ -123,6 +124,14 @@ function termsBody(b) {
 
   <h2 id="free-ads">4E. Free ads</h2>
   <p>When we offer free ads, they run for a limited number of days, are shown <strong>after all paid ads</strong> in a changing order, and are not shown in TOP. We do not promise any place, views or calls for a free ad. We may limit the number of free ads per seller, check them before they are shown, refuse them, or stop offering free ads at any time, without giving a reason. These Terms apply to free ads in full.</p>
+
+  <h2 id="showcase">4F. Showcase bidding</h2>
+  <ul>
+    <li>The showcase at the top of the home page has a limited number of places in each 3-hour time slot. Sellers with a live paid ad may bid for a place with money from their balance.</li>
+    <li>While a bid is open the amount is held in your balance. When the slot starts, the highest bids win (an earlier bid wins a tie) and each winner pays the amount they bid. Bids that do not win are released and nothing is taken.</li>
+    <li>A winning place is shown for that time slot only. We do not promise any number of views, clicks or sales. If our website was not running for the whole time slot, no winner is charged for that slot.</li>
+    <li>We may remove any bid or showcase place at any time (for example for a breach of these Terms). A winning bid removed by us is returned to your balance, unless it was removed for a breach.</li>
+  </ul>
 
   <h2 id="refunds">5. Refunds and cancellation</h2>
   <p>Ad fees are <strong>non-refundable once your ad is live</strong>, including if you delete or deactivate the ad, or if we remove it for breaking these Terms. Exceptions are described in our <a href="/refund-policy">Refund & cancellation policy</a>.</p>
@@ -229,7 +238,7 @@ function refundBody(b) {
   <p>You pay ${b.site} to place your ad on the website for the plan period you choose (and, if chosen, to show it in TOP time slots). This is a digital service; nothing is shipped.</p>
 
   <h2 id="delivery">2. Delivery of the service</h2>
-  <p>Your ad goes live on the website as soon as your payment is confirmed — usually within 5 minutes to 24 hours. You get a message in your account and an email, and you can download a receipt from <em>My payments</em>. The paid period starts when the ad goes live.</p>
+  <p>Your ad goes live on the website as soon as your payment is confirmed: at once for online payments (card, Razorpay, PayPal and other gateways), and usually within 5 minutes to 24 hours for UPI payments with a UTR. You get a message in your account and an email, and you can download a receipt from <em>My payments</em>. The paid period starts when the ad goes live.</p>
 
   <h2>3. Cancellation</h2>
   <p>You can delete or deactivate your ad at any time. Deactivating saves the remaining paid days so you can reactivate later; deleting ends the ad. Neither gives a refund.</p>
@@ -304,6 +313,7 @@ function register(app) {
       <div class="plans">${plans.map((p) => html`<div class="plan-box"><span class="plan-days">${p.days} days</span><span class="plan-name">${p.name}</span><span class="plan-price">${rupees(p.price_paise)}</span><span class="muted small">${rupees(Math.round(p.price_paise / p.days))}/day · ranking level ${p.priority}</span></div>`)}</div>
       ${slots.length ? html`<h2>★ TOP time slots (optional)</h2><p>Show your ad at the very top during the 3-hour slots you choose (India time). Price per slot per day, for every day of your plan.</p>
       <div class="slots">${slots.map((sl) => html`<div class="slot"><span><b>${sl.label}</b><small>${rupees(sl.price_per_day_paise)}/day</small></span></div>`)}</div>` : ''}
+      ${(() => { const c = require('../showcase').cfg(); return c.on ? html`<h2>Showcase on the home page (bidding)</h2><p>The big 3D ring at the very top of the home page has <strong>${c.places} places</strong> in every 3-hour time slot. Live paid ads bid for a place with money from their balance; when the slot starts, the highest bids win and pay what they bid. Everyone else keeps their money. Minimum bids start at ${rupees(Math.min(...c.mins))} per slot.</p>` : ''; })()}
       <p class="small muted">Fees are non-refundable once an ad is live — see the <a href="/refund-policy">Refund policy</a>.</p>`));
   });
 }

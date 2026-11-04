@@ -18,6 +18,19 @@ function flashes(req) {
 
 const csrfInput = (req) => html`<input type="hidden" name="_csrf" value="${req.csrfToken}">`;
 
+// Search bar lists (cached for a minute): live places, and the categories.
+let lists = { at: 0 };
+function refreshLists() {
+  if (Date.now() - lists.at < 60_000) return lists;
+  let places = []; let cats = [];
+  try { places = require('../search').placeList(); } catch { places = []; }
+  try { cats = require('../categories').tree(); } catch { cats = []; }
+  lists = { at: Date.now(), places, cats };
+  return lists;
+}
+const placeOptions = () => refreshLists().places;
+const catOptions = () => refreshLists().cats;
+
 // ---- Public header: logo · search · actions (marketplace style) ----
 function publicHeader(req, s) {
   const q = req.query || {};
@@ -26,9 +39,14 @@ function publicHeader(req, s) {
     <div class="wrap topbar-inner">
       <a class="logo" href="/" aria-label="${s.site_name} home">${logoMark(s)}<span class="logo-text">${s.site_name}</span></a>
       <form class="hsearch" method="get" action="/" role="search">
-        <input type="search" name="q" value="${req.path === '/' ? q.q : ''}" placeholder="Search phones, cars, tuition, repairs…" aria-label="Search">
-        ${req.path === '/' && q.cat ? html`<input type="hidden" name="cat" value="${q.cat}">` : ''}
-        <button class="hsearch-go" aria-label="Search">${icon('search', { size: 20 })}</button>
+        <input type="search" name="q" value="${req.path === '/' ? q.q : ''}" placeholder="What are you looking for?" aria-label="Search words" class="hsearch-q">
+        <input name="where" value="${req.path === '/' ? q.where || q.city || q.state || q.country || '' : ''}" list="places-h" placeholder="Location" title="City, state or country" aria-label="Location: city, state or country" class="hsearch-where" autocomplete="off">
+        <datalist id="places-h">${placeOptions().map((p) => html`<option value="${p}">`)}</datalist>
+        <select name="cat" aria-label="Category" class="hsearch-cat">
+          <option value="">All categories</option>
+          ${catOptions().map((m) => html`<optgroup label="${m.name}"><option value="${m.slug}" ${q.cat === m.slug ? 'selected' : ''}>All ${m.name}</option>${m.subs.map((sc) => html`<option value="${sc.slug}" ${q.cat === sc.slug ? 'selected' : ''}>${sc.name}</option>`)}</optgroup>`)}
+        </select>
+        <button class="hsearch-go" aria-label="Search">${icon('search', { size: 20 })}<span>Search</span></button>
       </form>
       <nav class="hactions">
         <a href="/saved" class="hlink" data-saved-link>${icon('heart')}<span>Saved</span><span class="badge-count" data-saved-count hidden></span></a>
@@ -52,6 +70,7 @@ function clientHeader(req, s) {
       <nav class="nav">
         <a href="/client" class="nav-link ${on('/client')}">${icon('list')}My ads</a>
         <a href="/client/payments" class="nav-link ${on('/client/payments')}">${icon('card')}Payments</a>
+        <a href="/client/showcase" class="nav-link ${on('/client/showcase')}">${icon('star')}Showcase</a>
         <a href="/client/wallet" class="nav-link ${on('/client/wallet')}">${icon('tag')}Balance</a>
         <a href="/client/messages" class="nav-link ${on('/client/messages')}" aria-label="Messages${req.sellerUnread ? ` (${req.sellerUnread} new)` : ''}">${icon('bell')}Messages<span class="badge-count" data-live="unread" ${req.sellerUnread ? '' : 'hidden'}>${req.sellerUnread || 0}</span></a>
         <a href="/client/account" class="nav-link ${on('/client/account')}">${icon('user')}Account</a>
@@ -81,6 +100,7 @@ function adminSidebar(req, s, counts = {}) {
       ${can('sellers') ? item('/admin/clients', 'users', 'Clients', counts.kyc, 'kyc') : ''}
       ${can('payments') ? item('/admin/payments', 'card', can('money') ? 'Payments' : 'Payments to confirm', counts.pay, 'pay') : ''}
       ${can('ads') ? item('/admin/ads', 'layers', 'Ads', counts.free, 'free') : ''}
+      ${can('ads') ? item('/admin/bids', 'star', 'Showcase bids') : ''}
       ${can('categories') ? item('/admin/categories', 'tag', 'Categories') : ''}
       ${can('home') ? item('/admin/home', 'home', 'Home page') : ''}
       ${can('sponsors') ? item('/admin/sponsors', 'bolt', 'Sponsors') : ''}

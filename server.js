@@ -62,9 +62,11 @@ app.use((req) => {
 app.get('/healthz', (req, res) => res.json({ ok: true, app: 'adbazaar' }));
 require('./src/routes/public').register(app);
 require('./src/routes/client').register(app);
+require('./src/routes/onlinepay').register(app);   // PayPal / Stripe / Razorpay returns, online top-ups, webhooks
 require('./src/routes/admin').register(app);
 
 startScheduler(Number(process.env.SCHEDULER_MINUTES || 5) * 60_000);
+require('./src/showcase').start();   // decides the showcase bids when each time slot starts
 try { const r = Safety.recheck(); if (r.ads || r.categories) console.log(`Blocked words: ${r.categories} categor${r.categories === 1 ? 'y' : 'ies'} and ${r.ads} ad(s) hidden from buyers (Admin → Settings → Approvals).`); } catch (e) { console.error('[safety]', e.message); }
 startJobs(30_000);   // auto-approve clients / auto-confirm payments (Admin → Settings)
 

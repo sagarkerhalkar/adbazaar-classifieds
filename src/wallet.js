@@ -8,6 +8,10 @@ const { db, tx } = require('./db');
 
 const DAY = 86400_000;
 const balance = (clientId) => (db.prepare('SELECT wallet_paise FROM clients WHERE id = ?').get(clientId) || {}).wallet_paise || 0;
+// Money kept aside for open showcase bids (taken only if the bid wins).
+const HELD_SQL = "(SELECT COALESCE(SUM(amount_paise), 0) FROM showcase_bids WHERE client_id = ? AND status = 'open')";
+const held = (clientId) => db.prepare(`SELECT ${HELD_SQL} AS h`).get(clientId).h || 0;
+const available = (clientId) => Math.max(0, balance(clientId) - held(clientId));
 
 function credit(clientId, amount, kind, note, { adId = null, paymentId = null } = {}) {
   amount = Math.round(amount);
@@ -18,11 +22,14 @@ function credit(clientId, amount, kind, note, { adId = null, paymentId = null } 
   return amount;
 }
 
-/** Take money from the wallet. Returns false (and changes nothing) if the balance is too low. */
-function debit(clientId, amount, note, { adId = null, paymentId = null } = {}) {
+/** Take money from the wallet. Returns false (and changes nothing) if the balance is too low.
+ *  Money held for open showcase bids cannot be spent elsewhere (force = the admin removing money by hand). */
+function debit(clientId, amount, note, { adId = null, paymentId = null, force = false } = {}) {
   amount = Math.round(amount);
   if (!(amount > 0)) return true;
-  const r = db.prepare('UPDATE clients SET wallet_paise = wallet_paise - ? WHERE id = ? AND wallet_paise >= ?').run(amount, clientId, amount);
+  const r = force
+    ? db.prepare('UPDATE clients SET wallet_paise = wallet_paise - ? WHERE id = ? AND wallet_paise >= ?').run(amount, clientId, amount)
+    : db.prepare(`UPDATE clients SET wallet_paise = wallet_paise - ? WHERE id = ? AND wallet_paise - ${HELD_SQL} >= ?`).run(amount, clientId, clientId, amount);
   if (!r.changes) return false;
   db.prepare("INSERT INTO wallet_tx (client_id, amount_paise, kind, note, ad_id, payment_id, created_at) VALUES (?,?,'spent',?,?,?,?)")
     .run(clientId, -amount, note || null, adId, paymentId, Date.now());
@@ -49,4 +56,4 @@ function creditDeletedAd(ad) {
 
 const history = (clientId, limit = 100) => db.prepare('SELECT * FROM wallet_tx WHERE client_id = ? ORDER BY id DESC LIMIT ?').all(clientId, limit);
 
-module.exports = { balance, credit, debit, unusedValue, creditDeletedAd, history };
+module.exports = { balance, held, available, credit, debit, unusedValue, creditDeletedAd, history };

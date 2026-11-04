@@ -4,6 +4,7 @@
 const path = require('node:path');
 const { db, tx, getSettings, parseImages, parseVideos } = require('../db');
 const notify = require('../notify');
+const Show = require('../showcase');
 const { SLOTS, maskFrom, sanitizeMask, slotLabels, slotPrices } = require('../slots');
 const { html, rupees, fmtDate, fmtShort, fmtDay, timeLeft, approveTimeText, PAYMENT_TIME_TEXT } = require('../lib/html');
 const { renderPage } = require('../views/layout');
@@ -16,9 +17,11 @@ const V = require('../validators');
 const { receiptData, receiptPage } = require('../views/receipt');
 const { TERMS_VERSION } = require('./legal');
 const P = require('../payments');
+const G = require('../gateways');
 const W = require('../wallet');
 const rtc = require('../rtc');
 const Cat = require('../categories');
+const Places = require('../places');
 const life = require('../lifecycle');
 const Free = require('../freeads');
 
@@ -241,7 +244,20 @@ function walletView(req, { bal, rows, topups, settings }) {
       ${rows.length ? html`<ul class="list">${rows.map((t) => html`<li><span><strong>${TX_LABEL[t.kind] || t.kind}</strong><span class="small muted" style="display:block">${t.note || ''} · ${fmtDate(t.created_at)}</span></span><strong class="${t.amount_paise > 0 ? 'ok' : ''}">${t.amount_paise > 0 ? '+' : '−'}${rupees(Math.abs(t.amount_paise))}</strong></li>`)}</ul>` : html`<p class="muted small">No changes yet.</p>`}
     </section>
     <section class="card">
-      <h2>Add money</h2>
+      ${G.anyOnline() ? html`<h2>Add money online — instantly</h2>
+      <form method="post" action="/client/wallet/topup/paypal" class="form" data-topup-form>
+        ${csrf(req)}
+        ${field('Amount (₹)', html`<input name="amount" type="number" min="50" max="100000" step="1" required placeholder="e.g. 1000" data-topup-amount>`)}
+        <label class="check"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms#payments" target="_blank">payment terms</a>. Added money is kept for ads and showcase bids and is not refundable as cash.</span></label>
+        <div class="paybtns">
+          ${G.enabled().razorpay ? html`<button type="button" class="btn btn-accent btn-lg btn-block" data-rzp-topup>${icon('card', { size: 18 })} Card, UPI, netbanking or wallet</button>` : ''}
+          ${G.enabled().paypal ? html`<button class="btn btn-lg btn-block btn-paypal" formaction="/client/wallet/topup/paypal" data-intl-rate="${G.conf().rate}" data-intl-cur="${G.conf().currency}">PayPal <small data-intl-amount></small></button>` : ''}
+          ${G.enabled().stripe ? html`<button class="btn btn-lg btn-block btn-stripe" formaction="/client/wallet/topup/stripe" data-intl-rate="${G.conf().rate}" data-intl-cur="${G.conf().currency}">${icon('card', { size: 18 })} International card <small data-intl-amount></small></button>` : ''}
+        </div>
+        <p class="small muted">The money is in your balance as soon as the payment goes through.</p>
+      </form>
+      <div class="or"><span>or pay by UPI and wait for confirmation</span></div>` : ''}
+      <h2>Add money by UPI</h2>
       <p class="small muted">Pay any amount to our UPI ID, then enter the UTR. Money is added after we confirm it (${PAYMENT_TIME_TEXT}). Added money is kept for ads and is not refundable as cash.</p>
       <form method="post" action="/client/wallet/topup" enctype="multipart/form-data" class="form">
         ${csrf(req)}
@@ -257,9 +273,76 @@ function walletView(req, { bal, rows, topups, settings }) {
         <label class="check"><input type="checkbox" name="accept_terms" value="1" required> <span>I accept the <a href="/terms#payments" target="_blank">payment terms</a>. A wrong UPI ID, amount or UTR is my own responsibility.</span></label>
         <button class="btn btn-accent">Submit for confirmation</button>
       </form>
-      ${topups.length ? html`<h3>Your top-ups</h3><ul class="list">${topups.map((t) => html`<li><span>${rupees(t.amount_paise)} · UTR ${t.utr}<span class="small muted" style="display:block">${fmtDate(t.created_at)}${t.admin_note ? ` · ${t.admin_note}` : ''}</span></span>${pill(t.status === 'pending' ? 'payment_review' : t.status)}</li>`)}</ul>` : ''}
+      ${topups.length ? html`<h3>Your top-ups</h3><ul class="list">${topups.map((t) => html`<li><span>${rupees(t.amount_paise)} · ${t.method && t.method !== 'upi' ? G.LABEL[t.method] : `UTR ${t.utr}`}<span class="small muted" style="display:block">${fmtDate(t.created_at)}${t.admin_note ? ` · ${t.admin_note}` : ''}</span></span>${pill(t.status === 'pending' ? 'payment_review' : t.status)}</li>`)}</ul>` : ''}
     </section>
   </div>`;
+}
+
+// ---------- Showcase bidding (src/showcase.js) ----------
+const BID_PILL = { won: ['pill-ok', 'Won'], lost: ['pill-muted', 'Not won'], cancelled: ['pill-muted', 'Cancelled'], removed: ['pill-bad', 'Removed by admin'] };
+function dayLabel(day, today) {
+  const d = new Date(`${day}T12:00:00Z`);
+  const tomorrow = Show.istDay(Date.now() + 86400_000);
+  const name = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return day === today ? `Today, ${name}` : day === tomorrow ? `Tomorrow, ${name}` : name;
+}
+function showcaseView(req, { day, days, rows, ads, avail, held, history, cfg }) {
+  const today = Show.istDay();
+  const open = rows.filter((r) => !r.closed);
+  return html`
+  <div class="page-head"><div><h1>${icon('star', { size: 22 })} Showcase bidding</h1>
+    <p class="muted">The 3D ring at the very top of the home page has <strong>${cfg.places} places</strong> in every 3-hour time slot. The highest bids win when the slot starts. You pay only if you win — otherwise the money stays in your balance.</p></div></div>
+  <div class="bid-money">
+    <div><span class="muted small">Free to bid</span><strong>${rupees(avail)}</strong></div>
+    <div><span class="muted small">Held for open bids</span><strong>${rupees(held)}</strong></div>
+    <a class="btn btn-accent" href="/client/wallet">${icon('plus', { size: 16 })} Add money</a>
+  </div>
+  ${!cfg.on ? html`<div class="flash flash-info">Bidding is closed at the moment. Please check back later.</div>` : ''}
+  <nav class="chips bid-days" aria-label="Day">${days.map((d) => html`<a class="chip ${d === day ? 'active' : ''}" href="/client/showcase?day=${d}">${dayLabel(d, today)}</a>`)}</nav>
+
+  <div class="cols2 bid-cols">
+    <section class="card">
+      <h2>Place a bid — ${dayLabel(day, today)}</h2>
+      ${!ads.length ? html`<p class="muted">Only <strong>live paid ads</strong> can bid. <a href="/client">Pay for one of your ads</a> first.</p>`
+    : !open.length ? html`<p class="muted">All time slots of this day have started. Choose another day.</p>`
+      : html`<form method="post" action="/client/showcase/bid" class="form" data-bid-form>
+        ${csrf(req)}<input type="hidden" name="day" value="${day}">
+        ${field('Which ad', html`<select name="ad_id" required>${ads.map((a) => html`<option value="${a.id}">${a.title} — ${a.city}</option>`)}</select>`)}
+        <div class="field"><span class="label">Time slots (India time)</span>
+          <div class="slots bid-slots">${open.map((r) => html`<label class="slot" data-start="${r.start}" data-end="${r.end}"><input type="checkbox" name="slots[]" value="${r.slot}" data-need="${r.need}"><span><b>${r.label}</b><small class="local-time" data-local hidden></small>
+            <small>${r.placesLeft ? `${r.placesLeft} of ${cfg.places} places free · min ${rupees(r.min)}` : `Full · bid more than ${rupees(r.cutoff)}`}</small></span></label>`)}</div></div>
+        ${field('Your bid for each slot (₹)', html`<input type="number" name="amount" min="1" step="1" required inputmode="numeric" data-bid-amount>`, 'Pay what you bid, only if you win. You can raise, lower or cancel it until the slot starts.')}
+        <p class="small bid-total" data-bid-total></p>
+        <button class="btn btn-accent btn-lg">${icon('star', { size: 16 })} Place bid</button>
+      </form>`}
+    </section>
+    <section class="card">
+      <h2>How it works</h2>
+      <ol class="steps-list">
+        <li>Choose a live paid ad, a day and one or more 3-hour time slots, and enter your bid.</li>
+        <li>The money is <strong>held</strong> in your balance (not taken). Others can bid more; check back to raise your bid.</li>
+        <li>When the slot starts, the ${cfg.places} highest bids win (an earlier bid wins a tie). Winners pay their bid and their ad turns in the ring for the 3 hours.</li>
+        <li>If you don't win, nothing is taken. You get a message either way.</li>
+      </ol>
+    </section>
+  </div>
+
+  <section class="card table-wrap">
+    <h2>${dayLabel(day, today)} — all time slots</h2>
+    <table class="table table-fit bid-board"><thead><tr><th>Time slot</th><th>Places</th><th>To get a place now</th><th>Your bids</th></tr></thead><tbody>
+    ${rows.map((r) => html`<tr class="${r.live ? 'row-live' : ''}">
+      <td><strong>${r.label}</strong>${r.live ? html`<div><span class="pill pill-ok">Running now</span></div>` : r.closed ? html`<div class="small muted">Finished</div>` : ''}</td>
+      <td>${r.closed ? `${r.round ? r.round.winners : 0} won` : `${Math.min(r.count, cfg.places)} of ${cfg.places} taken`}</td>
+      <td>${r.closed ? html`<span class="muted">Closed</span>` : r.placesLeft ? html`${rupees(r.min)} <span class="small muted">(minimum)</span>` : html`more than <strong>${rupees(r.cutoff)}</strong>`}</td>
+      <td>${r.mine.length ? r.mine.map((b) => html`<div class="bid-mine"><span><strong>${rupees(b.amount_paise)}</strong> · ${b.ad_title}</span>
+        ${b.status === 'won' ? html`<span class="pill pill-ok">Won · place ${b.place}</span>` : html`<span class="pill ${b.inside ? 'pill-ok' : 'pill-warn'}">${b.inside ? `Winning · place ${b.place}` : `Outbid · place ${b.place}`}</span>`}
+        ${b.status === 'open' && !r.closed ? html`<form method="post" action="/client/showcase/${b.id}/cancel?day=${r.day}" class="inline">${csrf(req)}<button class="btn btn-sm btn-ghost" data-confirm="Cancel this bid? The held money becomes free again.">Cancel</button></form>` : ''}</div>`) : html`<span class="muted small">—</span>`}</td>
+    </tr>`)}
+    </tbody></table>
+  </section>
+
+  ${history.length ? html`<section class="card"><h2>Your past bids</h2><ul class="list">${history.map((b) => html`<li><span><strong>${b.ad_title}</strong><span class="small muted" style="display:block">${dayLabel(b.day, today)} · ${SLOTS[b.slot].label}${b.note ? ` · ${b.note}` : ''}</span></span>
+    <span>${rupees(b.amount_paise)} <span class="pill ${(BID_PILL[b.status] || [])[0] || ''}">${(BID_PILL[b.status] || [])[1] || b.status}</span></span></li>`)}</ul></section>` : ''}`;
 }
 
 function dashboardView(req, ads, stats, alerts = []) {
@@ -302,6 +385,8 @@ function adFormView(req, { ad = {}, cats, error }) {
   const isEdit = Boolean(ad.id);
   const images = isEdit ? parseImages(ad) : [];
   const priceR = ad.price_paise ? ad.price_paise / 100 : (ad.price || '');
+  const adCountry = (Places.country(ad.country) || Places.country(getSettings().default_country) || Places.country('India')).name;
+  const adCur = Places.CURRENCIES.includes(ad.currency) ? ad.currency : Places.country(adCountry).currency;
   return html`
   <section class="card form-card">
     <h1>${isEdit ? 'Edit ad' : 'Post a new ad'}</h1>
@@ -319,16 +404,23 @@ function adFormView(req, { ad = {}, cats, error }) {
       ${field('Title *', html`<input name="title" required minlength="5" maxlength="90" value="${ad.title}" placeholder="e.g. iPhone 13, 128GB, excellent condition">`)}
       ${field('Description *', html`<textarea name="description" required minlength="20" maxlength="4000" rows="6" placeholder="Condition, features, what's included, timings for services…">${ad.description}</textarea>`)}
       <div class="row2">
-        ${field('Price (₹)', html`<input name="price" type="number" min="0" max="1000000000" step="1" value="${priceR}">`, 'Leave empty for "Price on request"')}
+        <div class="field"><span class="label">Price</span><div class="price-cur">
+          <select name="currency" aria-label="Currency" data-currency>${Places.CURRENCIES.map((c) => html`<option ${c === adCur ? 'selected' : ''}>${c}</option>`)}</select>
+          <input name="price" type="number" min="0" max="1000000000" step="1" value="${priceR}" aria-label="Price"></div>
+          <span class="hint">Leave empty for "Price on request"</span></div>
         ${field('Price note', html`<input name="price_note" maxlength="40" value="${ad.price_note}" placeholder="e.g. Negotiable, per hour, per month">`)}
+      </div>
+      <div class="row2">
+        ${field('Country *', html`<select name="country" required data-country-select data-regions="${JSON.stringify(Places.REGIONS)}" data-currencies="${JSON.stringify(Object.fromEntries(Places.COUNTRIES.map((c) => [c.name, c.currency])))}">${Places.COUNTRIES.map((c) => html`<option ${c.name === adCountry ? 'selected' : ''}>${c.name}</option>`)}</select>`)}
+        ${field('State / region', html`<input name="state" list="regions" maxlength="60" value="${ad.state || (adCountry === 'India' ? req.seller.state : '') || ''}" placeholder="e.g. Maharashtra, California, Dubai"><datalist id="regions" data-regions-list>${(Places.REGIONS[adCountry] || []).map((r) => html`<option value="${r}">`)}</datalist>`)}
       </div>
       <div class="row2">
         ${field('City *', html`<input name="city" required list="cities" maxlength="60" value="${ad.city || req.seller.city}">`)}${cityDatalist()}
         ${field('Area / locality', html`<input name="locality" maxlength="80" value="${ad.locality}">`)}
       </div>
       <div class="row2">
-        ${field('Contact phone *', html`<input name="contact_phone" required inputmode="numeric" maxlength="13" value="${ad.contact_phone || req.seller.phone}">`)}
-        ${field('WhatsApp number', html`<input name="whatsapp" inputmode="numeric" maxlength="13" value="${ad.whatsapp ?? req.seller.phone}">`)}
+        ${field('Contact phone *', html`<input name="contact_phone" required inputmode="tel" maxlength="20" value="${ad.contact_phone ? Places.phoneText(ad.contact_phone) : req.seller.phone}">`, 'Outside India: start with + and the country code, e.g. +44 7700 900123')}
+        ${field('WhatsApp number', html`<input name="whatsapp" inputmode="tel" maxlength="20" value="${ad.whatsapp ? Places.phoneText(ad.whatsapp) : ad.whatsapp ?? req.seller.phone}">`)}
       </div>
       ${images.length < MAX_IMAGES ? field(isEdit ? `Add photos (${images.length} of ${MAX_IMAGES} used)` : `Photos (up to ${MAX_IMAGES})`, html`<input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" data-max-mb="5" multiple data-max-files="${MAX_IMAGES - images.length}">`, `JPG, PNG or WEBP. Big photos are made smaller by themselves. The first photo is the cover.${isEdit ? ' Change the order, the cover or a single photo below.' : ' Photos and videos are shown with a paid plan (free ads are text only). Add up to 2 videos later in My ads → Edit.'}`) : html`<p class="small muted">All ${MAX_IMAGES} photo places are used. Replace or delete a photo below.</p>`}
       <div class="form-actions">
@@ -421,6 +513,18 @@ function freeCard(req, ad, free) {
   <div class="or"><span>or choose a paid plan</span></div>`;
 }
 
+// Online payment buttons (src/gateways.js). Razorpay opens its window on this page; PayPal and Stripe open their own page.
+function onlineButtons(ad, on, c) {
+  if (!on.razorpay && !on.paypal && !on.stripe) return '';
+  return html`<div class="paybtns">
+    ${on.razorpay ? html`<button type="button" class="btn btn-accent btn-lg btn-block" data-rzp-pay>${icon('card', { size: 18 })} Pay online — card, UPI, netbanking or wallet · goes live instantly</button>` : ''}
+    ${on.paypal ? html`<button class="btn btn-lg btn-block btn-paypal" formaction="/client/ads/${ad.id}/pay/paypal" formnovalidate data-redirect-pay data-intl-rate="${c.rate}" data-intl-cur="${c.currency}">Pay with PayPal (from abroad) <small data-intl-amount></small></button>` : ''}
+    ${on.stripe ? html`<button class="btn btn-lg btn-block btn-stripe" formaction="/client/ads/${ad.id}/pay/stripe" formnovalidate data-redirect-pay data-intl-rate="${c.rate}" data-intl-cur="${c.currency}">${icon('card', { size: 18 })} International credit / debit card <small data-intl-amount></small></button>` : ''}
+    <p class="small muted center">Paid online = confirmed automatically, your ad goes live at once.</p>
+  </div>
+  <div class="or"><span>or pay by UPI manually</span></div>`;
+}
+
 function payView(req, { ad, plans, pending, settings, wallet = 0, free = null }) {
   const extending = ad.status === 'active' && !ad.is_free;
   const upiLink = settings.upi_id ? `upi://pay?${new URLSearchParams({ pa: settings.upi_id, pn: settings.upi_payee_name || settings.site_name, cu: 'INR', tn: `Ad #${ad.id}` })}` : '';
@@ -434,7 +538,7 @@ function payView(req, { ad, plans, pending, settings, wallet = 0, free = null })
 
     ${pending ? html`<div class="flash flash-info">We received your UPI payment reference <strong>${pending.utr}</strong> for ${rupees(pending.amount_paise)} on ${fmtDate(pending.created_at)}. Payment confirmation takes <strong>${PAYMENT_TIME_TEXT}</strong>; your ad goes live as soon as it is confirmed.</div>` : ''}
 
-    <form method="post" action="/client/ads/${ad.id}/pay/upi" enctype="multipart/form-data" class="form" data-pay-form data-ad-id="${ad.id}" data-rzp="${P.razorpayEnabled() ? '1' : ''}">
+    <form method="post" action="/client/ads/${ad.id}/pay/upi" enctype="multipart/form-data" class="form" data-pay-form data-ad-id="${ad.id}" data-rzp="${G.enabled().razorpay ? '1' : ''}">
       ${csrf(req)}
       <fieldset><legend>1 · How long should your ad run?</legend>
         <div class="plans">
@@ -454,6 +558,8 @@ function payView(req, { ad, plans, pending, settings, wallet = 0, free = null })
             </label>`;
           })}
         </div>
+        <a class="top-addon showcase-addon" href="/client/showcase">${icon('star', { size: 16 })}<span><strong>Want the 3D ring at the very top of the home page?</strong>
+          <span class="small muted">After your ad is live, bid for one of the ${Show.cfg().places} showcase places in any 3-hour time slot. Highest bids win; you pay only if you win.</span></span></a>
         <div class="top-addon">
           <strong>★ Show in TOP ads (optional)</strong>
           <p class="small muted">Pick the time slots (India time) when your ad should appear at the very top. Price is per day, for every day of your plan.${extending && ad.top_slots ? html` Your current TOP slots: <strong>${slotLabels(ad.top_slots).join(', ')}</strong>.` : ''}</p>
@@ -476,13 +582,11 @@ function payView(req, { ad, plans, pending, settings, wallet = 0, free = null })
             <li>Payments for ad placement are <strong>non-refundable</strong> once your ad is live.</li>
             <li>You are responsible for paying the <strong>exact total</strong> to the <strong>UPI ID shown here</strong> and entering the <strong>correct UTR</strong>. Payments sent to a wrong UPI ID, a wrong amount or with a wrong UTR are your own responsibility.</li>
             <li>Failed, pending or delayed payments are handled by your bank, UPI app or payment gateway. If money leaves your account but the payment fails, your bank returns it — ${req.settings.site_name} does not hold that money.</li>
-            <li>Payment confirmation takes ${PAYMENT_TIME_TEXT}.</li>
+            <li>${G.anyOnline() ? html`Online payments (card, Razorpay${G.enabled().paypal ? ', PayPal' : ''}) are confirmed <strong>automatically</strong> and your ad goes live at once. ` : ''}Manual UPI payments are confirmed by us in ${PAYMENT_TIME_TEXT}.</li>
           </ul>
           <label class="check"><input type="checkbox" name="accept_terms" value="1" required> <span>I have read and accept the <a href="/terms#payments" target="_blank">payment terms</a> and the <a href="/refund-policy" target="_blank">refund policy</a>.</span></label>
         </div>
-        ${P.razorpayEnabled() ? html`
-          <button type="button" class="btn btn-accent btn-lg btn-block" data-rzp-pay>Pay online (UPI / Card / Netbanking) — goes live instantly</button>
-          <div class="or"><span>or pay by UPI manually</span></div>` : ''}
+        ${onlineButtons(ad, G.enabled(), G.conf())}
         <div class="walletpay" data-wallet-only hidden>
           <p><strong>${icon('check', { size: 18 })} Your balance covers the full amount.</strong> Your ad goes live straight away — no UPI payment needed.</p>
           <button class="btn btn-ok btn-lg" name="pay_with" value="wallet">Pay from my balance & go live</button>
@@ -501,7 +605,7 @@ function payView(req, { ad, plans, pending, settings, wallet = 0, free = null })
           ${field('UPI transaction ID / UTR *', html`<input name="utr" required minlength="6" maxlength="30" pattern="[A-Za-z0-9]{6,30}" placeholder="e.g. 412345678901">`)}
           ${field('Payment screenshot', html`<input type="file" name="screenshot" accept="image/*" data-max-mb="5">`, 'Optional, helps faster confirmation')}
         </div>
-        <button class="btn btn-lg ${P.razorpayEnabled() ? '' : 'btn-accent'}" name="pay_with" value="upi">I have paid — submit for confirmation</button>
+        <button class="btn btn-lg ${G.anyOnline() ? '' : 'btn-accent'}" name="pay_with" value="upi">I have paid — submit for confirmation</button>
         </div>
       </fieldset>
     </form>
@@ -515,8 +619,8 @@ function paymentsView(req, rows) {
     <thead><tr><th>#</th><th>Date</th><th>Ad</th><th>Plan</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows.map((p) => html`<tr>
       <td>${p.id}</td><td class="nowrap">${fmtShort(p.created_at)}</td><td>${p.ad_title}</td>
-      <td>${p.days} days${p.top_slots ? html`<div class="small muted">TOP: ${slotLabels(p.top_slots).join(', ')}</div>` : ''}</td><td>${rupees(p.amount_paise)}</td>
-      <td>${p.method === 'razorpay' ? 'Online' : `UPI ${p.utr || ''}`}</td>
+      <td>${p.days} days${p.top_slots ? html`<div class="small muted">TOP: ${slotLabels(p.top_slots).join(', ')}</div>` : ''}${p.showcase ? html`<div class="small muted">+ Showcase</div>` : ''}</td><td>${rupees(p.amount_paise)}</td>
+      <td>${p.method === 'upi_manual' ? `UPI ${p.utr || ''}` : G.LABEL[p.method] || p.method}${p.charged && !String(p.charged).startsWith('INR') ? html`<div class="small muted">${p.charged}</div>` : ''}</td>
       <td>${pill(p.status)}${p.admin_note && (p.status === 'rejected' || p.status === 'failed') ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
       <td>${p.status === 'paid' ? html`<a class="btn btn-sm" href="/client/payments/${p.id}/receipt">${icon('receipt', { size: 15 })} Receipt</a>` : p.status === 'rejected' || p.status === 'failed' ? html`<a class="btn btn-sm btn-primary" href="/client/ads/${p.ad_id}/pay">Pay again</a>` : ''}</td></tr>`)}
     </tbody></table></div>` : html`<div class="card empty center"><p class="muted">No payments yet.</p></div>`}`;
@@ -575,8 +679,15 @@ function readAdForm(req) {
     title: V.str(b.title, 90), description: V.str(b.description, 4000),
     price: priceRaw, price_paise: priceRaw === '' ? null : Math.round(Number(priceRaw) * 100),
     price_note: V.str(b.price_note, 40), city: V.str(b.city, 60), locality: V.str(b.locality, 80),
-    contact_phone: V.normalizePhone(b.contact_phone), whatsapp: b.whatsapp ? V.normalizePhone(b.whatsapp) : '',
   };
+  // Worldwide: country (with its currency) and state / region; phone numbers with their country code.
+  const ctry = Places.country(b.country) || Places.country(getSettings().default_country) || Places.country('India');
+  ad.country = ctry.name;
+  ad.currency = Places.CURRENCIES.includes(b.currency) ? b.currency : ctry.currency;
+  const kc = Places.knownCity(ad.city);
+  ad.state = V.str(b.state, 60) || (kc && kc.country === ctry.name ? kc.state : '');
+  ad.contact_phone = Places.phone(b.contact_phone, ctry.name);
+  ad.whatsapp = String(b.whatsapp || '').trim() ? Places.phone(b.whatsapp, ctry.name) : '';
   let error = null;
   const catErr = Cat.checkForAd(ad.category_id);
   if (catErr) error = catErr;
@@ -584,8 +695,8 @@ function readAdForm(req) {
   else if (ad.description.length < 20) error = 'Description must be at least 20 characters.';
   else if (ad.price_paise != null && (!Number.isFinite(ad.price_paise) || ad.price_paise < 0)) error = 'Price must be a valid amount.';
   else if (!ad.city) error = 'City is required.';
-  else if (!V.isValidPhone(ad.contact_phone)) error = 'Enter a valid 10-digit contact phone number.';
-  else if (ad.whatsapp && !V.isValidPhone(ad.whatsapp)) error = 'Enter a valid 10-digit WhatsApp number.';
+  else if (!ad.contact_phone) error = `Enter a valid contact phone number${ad.country === 'India' ? ' (10 digits)' : ', with the country code (e.g. +44 7700 900123)'}.`;
+  else if (String(b.whatsapp || '').trim() && !ad.whatsapp) error = 'Enter a valid WhatsApp number, with the country code if it is outside India.';
   else if (V.bannedAdText(ad.title, ad.description, ad.price_note)) error = `This ad cannot be posted: "${V.bannedAdText(ad.title, ad.description, ad.price_note)}" is not allowed. Sexual or adult services of any kind are not allowed on this site (see Terms, section 3).`;
   return { ad, error };
 }
@@ -893,9 +1004,9 @@ function register(app) {
     let images;
     try { images = saveImages(req); } catch (e) { if (e instanceof UploadError) return fail(e.message); throw e; }
     const now = Date.now();
-    const r = db.prepare(`INSERT INTO ads (client_id, category_id, kind, title, description, price_paise, price_note, city, locality,
-      contact_phone, whatsapp, images, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'awaiting_payment', ?, ?)`)
-      .run(req.seller.id, ad.category_id, ad.kind, ad.title, ad.description, ad.price_paise, ad.price_note, ad.city, ad.locality,
+    const r = db.prepare(`INSERT INTO ads (client_id, category_id, kind, title, description, price_paise, price_note, currency, country, state, city, locality,
+      contact_phone, whatsapp, images, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'awaiting_payment', ?, ?)`)
+      .run(req.seller.id, ad.category_id, ad.kind, ad.title, ad.description, ad.price_paise, ad.price_note, ad.currency, ad.country, ad.state, ad.city, ad.locality,
         ad.contact_phone, ad.whatsapp, JSON.stringify(images), now, now);
     req.flash('success', Free.config().enabled ? 'Ad saved. Post it free, or choose a paid plan to be shown first.' : 'Ad saved. Choose a plan to publish it.');
     res.redirect(`/client/ads/${r.lastInsertRowid}/pay`);
@@ -918,9 +1029,9 @@ function register(app) {
     let added;
     try { added = saveImages(req, keep); } catch (e) { if (e instanceof UploadError) return fail(e.message); throw e; }
     existing.filter((f) => remove.has(f)).forEach((f) => removeFile('ads', f));
-    db.prepare(`UPDATE ads SET category_id=?, kind=?, title=?, description=?, price_paise=?, price_note=?, city=?, locality=?,
+    db.prepare(`UPDATE ads SET category_id=?, kind=?, title=?, description=?, price_paise=?, price_note=?, currency=?, country=?, state=?, city=?, locality=?,
       contact_phone=?, whatsapp=?, images=?, flagged=0, updated_at=? WHERE id=?`)
-      .run(ad.category_id, ad.kind, ad.title, ad.description, ad.price_paise, ad.price_note, ad.city, ad.locality,
+      .run(ad.category_id, ad.kind, ad.title, ad.description, ad.price_paise, ad.price_note, ad.currency, ad.country, ad.state, ad.city, ad.locality,
         ad.contact_phone, ad.whatsapp, JSON.stringify([...keep, ...added]), Date.now(), current.id); // passed the blocked-words check, so it may be shown again
     req.flash('success', 'Ad updated.');
     res.redirect('/client');
@@ -997,7 +1108,7 @@ function register(app) {
     if (ad.status === 'blocked') { req.flash('error', 'This ad was blocked by the admin.'); res.redirect('/client'); return; }
     if (ad.status === 'paused') { req.flash('error', 'This ad is deactivated by the admin. Please contact support.'); res.redirect('/client'); return; }
     const pending = db.prepare("SELECT * FROM payments WHERE ad_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1").get(ad.id);
-    res.html(renderPage(req, { title: 'Pay', portal: 'client', body: payView(req, { ad, plans: activePlans(), pending, settings: getSettings(), wallet: W.balance(req.seller.id), free: { cfg: Free.config(), why: Free.whyNot(ad) } }), scripts: P.razorpayEnabled() ? ['https://checkout.razorpay.com/v1/checkout.js', '/public/js/pay.js'] : ['/public/js/pay.js'] }));
+    res.html(renderPage(req, { title: 'Pay', portal: 'client', body: payView(req, { ad, plans: activePlans(), pending, settings: getSettings(), wallet: W.available(req.seller.id), free: { cfg: Free.config(), why: Free.whyNot(ad) } }), scripts: G.enabled().razorpay ? ['https://checkout.razorpay.com/v1/checkout.js', '/public/js/pay.js'] : ['/public/js/pay.js'] }));
   });
 
   // Publish free (no payment): shown after paid ads; may need the admin's check first.
@@ -1022,7 +1133,7 @@ function register(app) {
   function readPlan(req) {
     const plan = db.prepare('SELECT * FROM plans WHERE id = ? AND is_active = 1').get(parseInt(req.body.plan_id, 10) || 0);
     const topMask = sanitizeMask(maskFrom(req.body.top_slots));
-    return { plan, topMask };
+    return { plan, topMask, showcase: false };   // the showcase is now sold by bidding (/client/showcase)
   }
 
   // Manual UPI: client submits UTR → admin confirms → ad goes live.
@@ -1030,19 +1141,19 @@ function register(app) {
     const ad = ownAd(req, res); if (!ad) return;
     const back = `/client/ads/${ad.id}/pay`;
     if (ad.status === 'blocked') { res.redirect('/client'); return; }
-    const { plan, topMask } = readPlan(req);
+    const { plan, topMask, showcase } = readPlan(req);
     const utr = V.str(req.body.utr, 30).replace(/\s+/g, '');
     if (!plan) { req.flash('error', 'Please choose a plan.'); res.redirect(back); return; }
     if (req.body.accept_terms !== '1') { req.flash('error', 'Please tick the box to accept the payment terms.'); res.redirect(back); return; }
-    const total = P.quote(plan, topMask);
-    const walletPart = req.body.use_wallet === '1' ? Math.min(W.balance(req.seller.id), total) : 0;
+    const total = P.quote(plan, topMask, showcase);
+    const walletPart = req.body.use_wallet === '1' ? Math.min(W.available(req.seller.id), total) : 0;
     // Balance covers everything: pay from the wallet and go live straight away.
     if (walletPart >= total) {
       let payId = 0;
       let ok = false;
       try { ok = tx(() => {
-        const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, wallet_paise, method, status, created_at, terms_accepted_at)
-          VALUES (?,?,?,?,?,?,?,?, 'wallet', 'pending', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, total, total, Date.now(), Date.now());
+        const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, showcase, amount_paise, wallet_paise, method, status, created_at, terms_accepted_at)
+          VALUES (?,?,?,?,?,?,?,?,?, 'wallet', 'pending', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, showcase ? 1 : 0, total, total, Date.now(), Date.now());
         payId = Number(r.lastInsertRowid);
         if (!W.debit(req.seller.id, total, `Paid for "${ad.title}" (${plan.days} days)`, { adId: ad.id, paymentId: payId })) throw new Error('low balance');
         return true;
@@ -1062,8 +1173,8 @@ function register(app) {
     let payRowId = 0;
     try {
       tx(() => {
-        const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, wallet_paise, method, status, utr, screenshot_file, created_at, terms_accepted_at)
-          VALUES (?,?,?,?,?,?,?,?, 'upi_manual', 'pending', ?, ?, ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, total, walletPart, utr, shot, Date.now(), Date.now());
+        const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, showcase, amount_paise, wallet_paise, method, status, utr, screenshot_file, created_at, terms_accepted_at)
+          VALUES (?,?,?,?,?,?,?,?,?, 'upi_manual', 'pending', ?, ?, ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, showcase ? 1 : 0, total, walletPart, utr, shot, Date.now(), Date.now());
         payRowId = Number(r.lastInsertRowid);
         if (walletPart > 0 && !W.debit(req.seller.id, walletPart, `Part payment for "${ad.title}"`, { adId: ad.id, paymentId: payRowId })) throw new Error('Balance changed — please try again.');
         if (ad.status !== 'active') db.prepare("UPDATE ads SET status = 'payment_review', updated_at = ? WHERE id = ?").run(Date.now(), ad.id);
@@ -1080,20 +1191,20 @@ function register(app) {
     if (!P.razorpayEnabled()) { res.status(400).json({ error: 'Online payments are not enabled.' }); return; }
     const ad = db.prepare('SELECT * FROM ads WHERE id = ? AND client_id = ?').get(parseInt(req.params.id, 10) || 0, req.seller.id);
     if (!ad || ad.status === 'blocked') { res.status(404).json({ error: 'Ad not found' }); return; }
-    const { plan, topMask } = readPlan(req);
+    const { plan, topMask, showcase } = readPlan(req);
     if (!plan) { res.status(400).json({ error: 'Choose a plan' }); return; }
     if (req.body.accept_terms !== '1') { res.status(400).json({ error: 'Please tick the box to accept the payment terms.' }); return; }
-    const amount = P.quote(plan, topMask);
-    const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, method, status, created_at, terms_accepted_at)
-      VALUES (?,?,?,?,?,?,?, 'razorpay', 'created', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, amount, Date.now(), Date.now());
+    const amount = P.quote(plan, topMask, showcase);
+    const r = db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, showcase, amount_paise, method, status, created_at, terms_accepted_at)
+      VALUES (?,?,?,?,?,?,?,?, 'razorpay', 'created', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, showcase ? 1 : 0, amount, Date.now(), Date.now());
     const payId = Number(r.lastInsertRowid);
     try {
       const order = await P.createRazorpayOrder(amount, `pay_${payId}`, { payment_id: String(payId), ad_id: String(ad.id) });
       db.prepare('UPDATE payments SET razorpay_order_id = ? WHERE id = ?').run(order.id, payId);
       const s = getSettings();
       res.json({
-        key: P.RZP_KEY_ID, order_id: order.id, amount, currency: 'INR', name: s.site_name,
-        description: `${plan.days} days${topMask ? ' + TOP' : ''} — Ad #${ad.id}`,
+        key: G.conf().rzp.keyId, order_id: order.id, amount, currency: 'INR', name: s.site_name,
+        description: `${plan.days} days${topMask ? ' + TOP' : ''}${showcase ? ' + Showcase' : ''} — Ad #${ad.id}`,
         prefill: { name: req.seller.name, email: req.seller.email, contact: req.seller.phone },
       });
     } catch (e) {
@@ -1104,34 +1215,65 @@ function register(app) {
     }
   });
 
-  // Online payment failed in the checkout window: record it and tell the seller in their portal.
-  app.post('/client/payments/razorpay/failed', requireClient, (req, res) => {
-    const pay = db.prepare("SELECT * FROM payments WHERE razorpay_order_id = ? AND client_id = ? AND status = 'created'").get(String((req.body || {}).order_id || ''), req.seller.id);
-    if (pay) {
-      const why = V.str((req.body || {}).reason, 200) || 'Payment failed';
-      db.prepare("UPDATE payments SET status = 'failed', admin_note = ? WHERE id = ?").run(why, pay.id);
-      notify.paymentFailed(req.seller.id, db.prepare('SELECT * FROM ads WHERE id = ?').get(pay.ad_id), `The online payment failed: ${why}.`);
-    }
-    res.json({ ok: true });
-  });
+  // PayPal and Stripe for ad payments: the seller is sent to the gateway's page; the ad goes live automatically
+  // when they come back paid (routes/onlinepay.js). Amount is always computed here, on the server.
+  for (const gw of ['paypal', 'stripe']) {
+    app.post(`/client/ads/:id/pay/${gw}`, requireClient, requireAdult, async (req, res) => {
+      const ad = ownAd(req, res); if (!ad) return;
+      const back = `/client/ads/${ad.id}/pay`;
+      if (!G.enabled()[gw] || ad.status === 'blocked') { req.flash('error', 'This payment method is not available.'); res.redirect(back); return; }
+      const { plan, topMask } = readPlan(req);
+      if (!plan) { req.flash('error', 'Choose a plan.'); res.redirect(back); return; }
+      if (req.body.accept_terms !== '1') { req.flash('error', 'Please tick the box to accept the payment terms.'); res.redirect(back); return; }
+      const amount = P.quote(plan, topMask);
+      const payId = Number(db.prepare(`INSERT INTO payments (client_id, ad_id, plan_id, days, with_top, top_slots, amount_paise, method, status, created_at, terms_accepted_at)
+        VALUES (?,?,?,?,?,?,?, ?, 'created', ?, ?)`).run(req.seller.id, ad.id, plan.id, plan.days, topMask ? 1 : 0, topMask, amount, gw, Date.now(), Date.now()).lastInsertRowid);
+      try {
+        const o = await require('./onlinepay').startRedirect(req, gw, { amountPaise: amount, ref: `pay_${payId}`, description: `${req.settings.site_name}: ${plan.days} days${topMask ? ' + TOP' : ''} — ad #${ad.id}` });
+        db.prepare('UPDATE payments SET gateway_ref = ?, charged = ? WHERE id = ?').run(o.id, o.charged, payId);
+        res.redirect(o.url);
+      } catch (e) {
+        console.error(`[${gw}] start failed`, e.message);
+        db.prepare("UPDATE payments SET status = 'failed', admin_note = ? WHERE id = ?").run(String(e.message).slice(0, 200), payId);
+        req.flash('error', `Could not start the ${G.LABEL[gw]} payment: ${e.message}. Please try again or pay another way.`);
+        res.redirect(back);
+      }
+    });
+  }
 
-  app.post('/client/payments/razorpay/verify', requireClient, (req, res) => {
-    const { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: sig } = req.body || {};
-    const pay = orderId && db.prepare('SELECT * FROM payments WHERE razorpay_order_id = ? AND client_id = ?').get(String(orderId), req.seller.id);
-    if (!pay || !P.verifyCheckoutSignature(orderId, String(paymentId || ''), String(sig || ''))) {
-      res.status(400).json({ ok: false, error: 'Payment verification failed. If money was deducted, contact support with your payment ID.' });
-      return;
-    }
-    const done = P.confirmPayment(pay.id, { razorpayPaymentId: String(paymentId) });
-    if (!done.already) notify.paymentConfirmed(pay.id);
-    req.flash('success', 'Payment successful — your ad is live!');
-    res.json({ ok: true, redirect: '/client' });
+  // ---------- Showcase bidding ----------
+  app.get('/client/showcase', requireClient, (req, res) => {
+    const cfg = Show.cfg();
+    try { Show.settleDue(); } catch (e) { console.error('[showcase]', e); }
+    const days = Show.biddableDays();
+    const today = Show.istDay();
+    const day = days.includes(String(req.query.day)) || String(req.query.day) === today ? String(req.query.day) : days[0];
+    const ads = db.prepare("SELECT id, title, city FROM ads WHERE client_id = ? AND status = 'active' AND is_free = 0 AND flagged = 0 AND expires_at > ? ORDER BY id DESC").all(req.seller.id, Date.now());
+    const history = db.prepare(`SELECT b.*, a.title AS ad_title FROM showcase_bids b JOIN ads a ON a.id = b.ad_id
+      WHERE b.client_id = ? AND b.status IN ('won','lost','cancelled','removed') ORDER BY b.updated_at DESC LIMIT 30`).all(req.seller.id);
+    res.html(renderPage(req, { title: 'Showcase bidding', portal: 'client', scripts: ['/public/js/bid.js'], body: showcaseView(req, {
+      day, days, rows: Show.board(day, { clientId: req.seller.id }), ads, avail: W.available(req.seller.id), held: W.held(req.seller.id), history, cfg,
+    }) }));
+  });
+  app.post('/client/showcase/bid', requireClient, requireAdult, (req, res) => {
+    const day = V.str(req.body.day, 10);
+    const back = `/client/showcase?day=${encodeURIComponent(day)}`;
+    if (!rateLimit(`bid:${req.seller.id}`, 60, 600_000)) { req.flash('error', 'Too many bids at once. Please wait a few minutes.'); res.redirect(back); return; }
+    const r = Show.placeBids(req.seller, parseInt(req.body.ad_id, 10) || 0, day, req.body.slots, Math.round(Number(req.body.amount) * 100));
+    if (r.error) { req.flash('error', r.error); res.redirect(back); return; }
+    req.flash('success', `Bid placed for ${r.count} time slot${r.count > 1 ? 's' : ''}. ${r.held > 0 ? `${rupees(r.held)} more is held in your balance. ` : ''}You pay only if you win.`);
+    res.redirect(back);
+  });
+  app.post('/client/showcase/:id/cancel', requireClient, (req, res) => {
+    const r = Show.cancelBid(req.seller.id, parseInt(req.params.id, 10) || 0);
+    req.flash(r.error ? 'error' : 'success', r.error || 'Bid cancelled. The money is free in your balance again.');
+    res.redirect(`/client/showcase${/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.day)) ? `?day=${req.query.day}` : ''}`);
   });
 
   app.get('/client/wallet', requireClient, (req, res) => {
-    res.html(renderPage(req, { title: 'My balance', portal: 'client', body: walletView(req, {
+    res.html(renderPage(req, { title: 'My balance', portal: 'client', scripts: [...(G.enabled().razorpay ? ['https://checkout.razorpay.com/v1/checkout.js'] : []), '/public/js/topup.js'], body: walletView(req, {
       bal: W.balance(req.seller.id), rows: W.history(req.seller.id),
-      topups: db.prepare('SELECT * FROM wallet_topups WHERE client_id = ? ORDER BY id DESC LIMIT 20').all(req.seller.id), settings: getSettings(),
+      topups: db.prepare("SELECT * FROM wallet_topups WHERE client_id = ? AND status != 'created' ORDER BY id DESC LIMIT 20").all(req.seller.id), settings: getSettings(),
     }) }));
   });
   app.post('/client/wallet/topup', requireClient, (req, res) => {
@@ -1213,21 +1355,6 @@ function register(app) {
     db.prepare('UPDATE clients SET password_hash = ? WHERE id = ?').run(hashPassword(req.body.password), c.id);
     req.flash('success', 'Password updated.');
     res.redirect('/client/account');
-  });
-
-  // Razorpay webhook (backup confirmation if the browser closes before verify)
-  app.post('/webhooks/razorpay', (req, res) => {
-    if (!P.verifyWebhookSignature(req.rawBody || Buffer.alloc(0), String(req.headers['x-razorpay-signature'] || ''))) { res.status(400).send('bad signature'); return; }
-    const ev = req.body || {};
-    const entity = ev.payload?.payment?.entity;
-    if ((ev.event === 'payment.captured' || ev.event === 'order.paid') && entity?.order_id) {
-      const pay = db.prepare('SELECT * FROM payments WHERE razorpay_order_id = ?').get(entity.order_id);
-      if (pay && entity.amount === pay.amount_paise) {
-        const done = P.confirmPayment(pay.id, { razorpayPaymentId: entity.id });
-        if (!done.already) notify.paymentConfirmed(pay.id);
-      }
-    }
-    res.json({ ok: true });
   });
 
   // Payment screenshots (private)

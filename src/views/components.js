@@ -22,7 +22,7 @@ const adUrl = (ad) => `/ad/${ad.id}-${slugify(ad.title)}`;
 const imgUrl = (file) => `/media/ads/${file}`;
 
 function priceText(ad) {
-  if (ad.price_paise != null && ad.price_paise > 0) return html`${rupees(ad.price_paise)}${ad.price_note ? html` <small>${ad.price_note}</small>` : ''}`;
+  if (ad.price_paise != null && ad.price_paise > 0) return html`${require('../places').money(ad.price_paise, ad.currency || 'INR')}${ad.price_note ? html` <small>${ad.price_note}</small>` : ''}`;
   return ad.price_note || (ad.kind === 'service' ? 'Contact for price' : 'Price on request');
 }
 
@@ -41,7 +41,9 @@ function textTile(ad, big = false) {
 
 function adCard(ad) {
   const images = publicImages(ad);
-  const place = `${ad.locality ? `${ad.locality}, ` : ''}${ad.city}`;
+  // the country is added when it is not the site's own country ("Marina, Dubai, United Arab Emirates")
+  const home = (require('../db').getSettings().default_country || 'India');
+  const place = [ad.locality, ad.city, ad.country && ad.country !== home ? ad.country : ''].filter(Boolean).join(', ');
   return html`
   <article class="ad-card ${ad.is_top ? 'is-top' : ''} ${ad.is_free ? 'is-free' : ''}">
     <a href="${adUrl(ad)}" class="ad-thumb" tabindex="-1" aria-hidden="true">

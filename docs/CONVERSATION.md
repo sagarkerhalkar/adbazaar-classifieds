@@ -277,6 +277,20 @@ Commit: `a92c2cb`
 - **Not done:** showing sexual or adult services (escort, call boy and similar). This stays blocked, because advertising them is a crime in India and the site owner can be prosecuted.
 - **Guide:** Part 27.
 
+### 19. Showcase bidding, automatic online payments, search by place and category (4 Nov, night)
+
+> (screenshot: Admin → Categories with "Adult Services": Call Boy, Call Girl, Transsexual, Video Call Services) don't block, admin has privilege and owner, that block and revoke is important … TOP ad there ok but down also … we can charge extra to show ad on top bar, add this in admin panel … showcase having only 25 ads and that is bidding system, those want bid and win, automatic, minimum price set by admin, remaining by bid and time slot … add card payment, Razorpay, credit card, debit card, PayPal and all other services so payment confirmation is done automatically; only those paying through UPI ID need confirmation … in search need state, city, category and keyword search like kids, bho, lal … this site is for all over the world, not for India
+
+**What was built:**
+- **Showcase bidding:** 25 places per 3-hour slot; sellers bid with their balance (held, not taken); the highest bids win automatically when the slot starts and pay what they bid. Admin sets places, minimum bid per slot and days ahead; Admin → Showcase bids lists every bid, with Remove and earnings. Admin can also put any ad in the showcase.
+- **TOP ads** are also in the list below the ring.
+- **Online payments:** Razorpay (cards, UPI, netbanking, wallets), PayPal and Stripe (international cards), keys set by the owner; confirmed automatically by signature, capture or webhook. Online balance top-ups. UPI with UTR still needs the admin.
+- **Search:** keyword, location (city, state or country) and category boxes; parts of words and Hindi words; country, state and city filters.
+- **Worldwide ads:** country, state, currency and international phone numbers.
+- **Terms:** automatic online confirmation; new section 4F on showcase bidding.
+- **Not changed:** the blocked-words filter for sexual services (escort, call girl, call boy and similar). Advertising them is a crime in India, and the site owner can be prosecuted too, so it stays.
+- **Guide:** Part 28.
+
 ---
 
 ### How to get the newest version

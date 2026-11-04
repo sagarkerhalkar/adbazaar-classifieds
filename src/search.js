@@ -11,6 +11,7 @@
 // normal order applies (TOP now → admin boost → amount paid → fair shuffle), so paying sellers stay on top.
 
 const { db } = require('./db');
+const Places = require('./places');
 
 const STOP = new Set(`a an the in at on for of to and or with near nearby me my i want need needed looking look buy sell selling
 sale new best good cheap low price prices rs inr under below above available from per all any some please urgent urgently
@@ -67,7 +68,24 @@ camera dslr
 shoes shoe footwear sneakers joota
 dress kurti saree sari clothes clothing kapde
 book books novel
-toy toys
+toy toys khilona khilone game games
+kid kids child children baby babies bachcha bachche baccha bacche bacha bache infant toddler
+school stationery bag bags
+food khana bhojan meal meals tiffin lunch dinner thali restaurant catering caterer
+sweet sweets mithai cake cakes bakery
+grocery kirana ration
+red lal
+blue neela nila
+green hara hari
+black kala kaala
+white safed
+yellow peela pila
+pink gulabi
+gold sona golden
+silver chandi
+jewellery jewelry gehne zevar necklace ring rings earring earrings
+phone mobile
+used second secondhand purana old
 `.trim().split('\n').map((l) => l.trim().split(/\s+/));
 const SYN = new Map();
 for (const g of GROUPS) for (const w of g) SYN.set(w, [...new Set([...(SYN.get(w) || []), ...g])]);
@@ -127,11 +145,25 @@ function vocab() {
   for (const g of GROUPS) for (const w of g) if (w.length >= 3 && !freq.has(w)) freq.set(w, 1);
   for (const list of Object.values(BRANDS)) for (const w of list) if (w.length >= 3 && !freq.has(w)) freq.set(w, 1);
   const cities = db.prepare("SELECT city, COUNT(*) n FROM ads WHERE status = 'active' GROUP BY city COLLATE NOCASE ORDER BY n DESC LIMIT 300").all();
-  cache = { at: Date.now(), freq, list: [...freq.keys()], cats, cities: new Map(cities.map((c) => [c.city.toLowerCase(), c.city])) };
+  // states / regions and countries: the ones live ads use, plus every state the form offers
+  const states = new Map(Places.STATE_NAMES);
+  const liveStates = [];
+  for (const r of db.prepare("SELECT DISTINCT state FROM ads WHERE status = 'active' AND COALESCE(state, '') != ''").all()) { states.set(r.state.toLowerCase(), r.state); liveStates.push(r.state); }
+  const countries = new Map(db.prepare("SELECT DISTINCT country FROM ads WHERE status = 'active'").all().map((r) => [String(r.country).toLowerCase(), r.country]));
+  for (const k of [...states.keys(), ...countries.keys()]) for (const w of words(k)) if (w.length >= 3 && !freq.has(w)) freq.set(w, 1);
+  cache = { at: Date.now(), freq, list: [...freq.keys()], cats, cities: new Map(cities.map((c) => [c.city.toLowerCase(), c.city])), states, liveStates, countries };
   return cache;
 }
 const resetCache = () => { cache = { at: 0 }; };
 const known = (w, v) => v.freq.has(w) || SYN.has(w) || v.freq.has(stem(w)) || SYN.has(stem(w));
+const SYN_WORDS = [...SYN.keys()];
+/** Same-meaning words that start with what was typed ("bho" → bhojan, food, meal…; "khil" → khilona, toy…). */
+function startsOfSyn(w) {
+  if (w.length < 3 || SYN.has(w)) return [];
+  const out = new Set();
+  for (const k of SYN_WORDS) if (k.length > w.length && k.startsWith(w)) for (const x of SYN.get(k)) out.add(stem(x));
+  return [...out].slice(0, 16);
+}
 
 /** Closest known word for a mistyped one, or null. */
 function correct(w, v = vocab()) {
@@ -149,13 +181,18 @@ function correct(w, v = vocab()) {
 
 /** Category ids whose name fits one of these terms (a main category brings its sub-categories). */
 function categoryIds(terms, v = vocab()) {
-  const ids = new Set();
-  for (const c of v.cats) {
+  const fits = (c) => {
     const cw = words(`${c.name} ${String(c.slug).replace(/-/g, ' ')}`).map(stem);
-    if (terms.some((t) => t.length >= 2 && cw.some((x) => x === t || (t.length >= 5 && x.startsWith(t))))) {
-      ids.add(c.id);
-      if (!c.parent_id) for (const s of v.cats) if (s.parent_id === c.id) ids.add(s.id);
-    }
+    return terms.some((t) => t.length >= 2 && cw.some((x) => x === t || (t.length >= 5 && x.startsWith(t))));
+  };
+  const hit = v.cats.filter(fits);
+  const ids = new Set(hit.map((c) => c.id));
+  // A main category brings all its sub-categories — unless one of its sub-categories fits better
+  // ("phone" → Mobile phones only, not every electronics sub-category; "kids" → all of Toys & Kids).
+  for (const c of hit) {
+    if (c.parent_id) continue;
+    if (hit.some((x) => x.parent_id === c.id)) continue;
+    for (const sc of v.cats) if (sc.parent_id === c.id) ids.add(sc.id);
   }
   return [...ids];
 }
@@ -166,17 +203,21 @@ function categoryIds(terms, v = vocab()) {
  * terms match whole words (and plurals; longer ones also as the start of a word); prefix terms match the start of any word;
  * related words and categories count as a match too, but rank below a match in the title.
  */
-function parse(q, { cityGiven = false } = {}) {
+function parse(q, { cityGiven = false, placeGiven = false } = {}) {
   const v = vocab();
   let ws = words(q).slice(0, 8);
-  let city = '';
-  if (!cityGiven) {
-    for (let i = 0; i < ws.length && !city; i++) {
-      for (const len of [2, 1]) { // two-word city names first ("new delhi", "navi mumbai")
+  let city = ''; let state = ''; let country = '';
+  // Place names inside the search ("flat pune", "phone maharashtra", "car dubai", "jobs uk"): three-word names first.
+  if (!cityGiven && !placeGiven) {
+    for (let i = 0; i < ws.length && !(city || state || country); i++) {
+      for (const len of [3, 2, 1]) {
         if (i + len > ws.length) continue;
         const part = ws.slice(i, i + len).join(' ');
-        const hit = CITY_ALIAS[part] || v.cities.get(part);
-        if (hit) { city = hit; ws = [...ws.slice(0, i), ...ws.slice(i + len)]; break; }
+        // a known city counts even when no ad is there yet ("bhopal" is a place, not a typo of "bhojan")
+        const c = CITY_ALIAS[part] || v.cities.get(part) || ((Places.knownCity(part) || {}).city || '');
+        const st = !c && part.length >= 3 ? v.states.get(part) : '';
+        const co = !c && !st ? (v.countries.get(part) || (Places.country(part) && v.countries.get(Places.country(part).name.toLowerCase()))) : '';
+        if (c || st || co) { city = c || ''; state = st || ''; country = co || ''; ws = [...ws.slice(0, i), ...ws.slice(i + len)]; break; }
       }
     }
   }
@@ -195,11 +236,12 @@ function parse(q, { cityGiven = false } = {}) {
     }
     const related = new Set();
     for (const t of terms) for (const k of KIND_OF.get(t) || []) if (!terms.has(stem(k))) related.add(stem(k));
+    if (!fix) for (const k of startsOfSyn(w)) if (!terms.has(k)) related.add(k);
     const prefix = !fix && !known(w, v) && w.length >= 2 && !/^\d+$/.test(w) ? [w] : [];
     groups.push({ word: raw, terms: [...terms].slice(0, 24), related: [...related].slice(0, 12), prefix,
       catIds: categoryIds([...terms, ...related], v) });
   }
-  return { groups: groups.slice(0, 6), city, corrections };
+  return { groups: groups.slice(0, 6), city, state, country, corrections };
 }
 
 // ---- Matching, done in JavaScript inside SQLite (search_score) so it can work on whole words ----
@@ -234,7 +276,8 @@ function score(json, catId, title, rest) {
 db.function('search_score', { deterministic: true }, (json, catId, strong, weak) => score(String(json), Number(catId), strong, weak));
 
 const STRONG = 'a.title';
-const WEAK = "c.name || ' ' || COALESCE(pc.name, '') || ' ' || a.description || ' ' || COALESCE(a.locality, '')";
+// (the main category's name is matched through category ids, so "phone" does not bring every electronics ad)
+const WEAK = "c.name || ' ' || a.description || ' ' || COALESCE(a.locality, '')";
 
 /**
  * SQL for the parsed search. `expr` (bind `args`) gives the match score 0–4 for an ad row; categories c / pc must be joined.
@@ -243,6 +286,30 @@ function sql(parsed) {
   if (!parsed.groups.length) return null;
   const spec = JSON.stringify(parsed.groups.map((g) => ({ t: g.terms, r: g.related, p: g.prefix, c: g.catIds })));
   return { expr: `search_score(?, a.category_id, ${STRONG}, ${WEAK})`, args: [spec] };
+}
+
+/** What a "where" box holds: a city, a state / region or a country ("Pune", "Maharashtra", "UK"). Unknown text is read as a city. */
+function place(text) {
+  const t = words(text).join(' ');
+  if (!t) return {};
+  const v = vocab();
+  const c = CITY_ALIAS[t] || v.cities.get(t);
+  if (c) return { city: c };
+  if (v.states.has(t)) return { state: v.states.get(t) };
+  const co = Places.country(t);
+  if (co) return { country: v.countries.get(co.name.toLowerCase()) || co.name };
+  return { city: String(text).trim().slice(0, 60) };
+}
+
+/** Places to offer under the "where" box: live cities, states and countries. */
+function placeList() {
+  const v = vocab();
+  const live = db.prepare(`SELECT city, state, country, COUNT(*) n FROM ads WHERE status = 'active' AND flagged = 0
+    GROUP BY city COLLATE NOCASE, state, country ORDER BY n DESC LIMIT 200`).all();
+  const out = new Set();
+  for (const r of live) { out.add(r.city); if (r.state) out.add(r.state); out.add(r.country); }
+  for (const co of v.countries.values()) out.add(co);
+  return [...out].filter(Boolean).slice(0, 300);
 }
 
 /** What to show under the box while typing: categories, ad titles and cities. */
@@ -273,8 +340,8 @@ function suggest(q) {
       .filter((r) => r.sc > 0).slice(0, 6)
       .map((r) => ({ id: r.id, title: r.title, city: r.city }));
   }
-  const cities = [...v.cities.values()].filter((c) => c.toLowerCase().startsWith(last) && last.length >= 2).slice(0, 3);
+  const cities = [...new Set([...v.cities.values(), ...v.liveStates, ...v.countries.values()])].filter((c) => c.toLowerCase().startsWith(last) && last.length >= 2).slice(0, 3);
   return { cats, ads, cities, city: parsed.city, corrections: parsed.corrections };
 }
 
-module.exports = { parse, sql, suggest, distance, stem, words, correct, resetCache, SYN };
+module.exports = { parse, place, placeList, sql, suggest, distance, stem, words, correct, resetCache, SYN };

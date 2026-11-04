@@ -405,6 +405,23 @@
   $$('input.upper').forEach((i) => i.addEventListener('input', () => { i.value = i.value.toUpperCase(); }));
 })();
 
+// New-ad form: when the country changes, offer its states / regions and switch the price currency
+(function () {
+  const sel = document.querySelector('[data-country-select]'); if (!sel) return;
+  let regions = {}; let curs = {};
+  try { regions = JSON.parse(sel.dataset.regions || '{}'); curs = JSON.parse(sel.dataset.currencies || '{}'); } catch (e) { /* ignore */ }
+  const list = document.querySelector('[data-regions-list]');
+  const cur = sel.form && sel.form.querySelector('[data-currency]');
+  let curTouched = false;
+  if (cur) cur.addEventListener('change', () => { curTouched = true; });
+  sel.addEventListener('change', () => {
+    if (list) list.innerHTML = (regions[sel.value] || []).map((r) => '<option value="' + r.replace(/"/g, '&quot;') + '">').join('');
+    const st = sel.form && sel.form.querySelector('[name=state]');
+    if (st && st.value && !(regions[sel.value] || []).includes(st.value)) st.value = '';
+    if (cur && !curTouched && curs[sel.value]) cur.value = curs[sel.value];
+  });
+})();
+
 // Seller pages: listen for an incoming video call from the admin (loads public/js/ring.js)
 (function () {
   const me = document.currentScript && document.currentScript.src;

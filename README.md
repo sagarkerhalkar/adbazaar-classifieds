@@ -30,7 +30,7 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 
 ## Also included
 - **One-time email OTP** (plus optional SMS OTP), confirmation emails, and admin notifications. Paste your Gmail App Password in Admin → Settings; SMS can be added later (free from your own Android phone). See GUIDE Part 15.
-- **Auto-approve** sellers (after the email OTP) if the admin doesn't act within 1 minute (configurable), with an email to both sides. **Payments are always confirmed by an admin**; they are never automatic.
+- **Auto-approve** sellers (after the email OTP) if the admin doesn't act within 1 minute (configurable), with an email to both sides. Manual UPI payments are confirmed by an admin; online gateway payments confirm themselves (see below).
 - **18+ only:** date of birth is checked at registration and before posting; the admin sees the age next to the KYC documents.
 - **TOP ads by 3-hour time slots** (8 a day, price per slot per day, set by the admin).
 - **5 photos + 2 videos** (up to 1 minute each) per ad, changeable any time.
@@ -48,6 +48,9 @@ You can also **add clients yourself** (Admin → Clients → Add client). Upload
 - **Staff roles** (`src/staff.js`): the owner makes roles from 10 permissions (payments, money, sellers, ads, categories, home, sponsors, reports, messages, settings); pages, menu and figures follow the role. Brand name, logo and 6 colour themes are owner-only (`src/brand.js`).
 - **Payment failed later:** mark a confirmed payment failed or move an ad to unpaid; the seller is told and it goes live again after the next confirmed payment.
 - **Uploads checked at once** (`public/js/upload.js`): wrong type or too many files flagged on choosing; big photos shrunk in the browser; previews. ID: Aadhaar front+back, Passport first+last page, PAN front.
+- **Showcase bidding** (`src/showcase.js`): 25 places per 3-hour slot in the home page ring; sellers bid from their balance (held, not taken), the highest bids win when the slot starts and pay their bid; admin sets places and minimum bids and can remove bids (Admin → Showcase bids).
+- **Online payments** (`src/gateways.js`, `src/routes/onlinepay.js`): Razorpay (cards, UPI, netbanking, wallets), PayPal (Orders v2) and Stripe (Checkout), with no extra packages. Confirmed automatically after signature, capture or webhook checks; owner-only keys in Admin → Settings → Online payments; online balance top-ups. Manual UPI still waits for the admin.
+- **Worldwide** (`src/places.js`): country, state / region and currency on each ad, international phone numbers; search by keyword, location (city, state or country) and category, with country, state and city filters.
 - **Requirements checklist:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 - **Real photos** in `public/photos` (Unsplash License, see `CREDITS.md`) for banners, category tiles and test ads.
 - **Sponsors** (`src/routes/sponsors.js`): third-party ads between listings, under ad pages and on the home page, with view and click counts and an `/advertise` enquiry form.

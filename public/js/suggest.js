@@ -21,7 +21,8 @@
     const w = q.trim().split(/\s+/).filter((x) => x.length >= 2).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     return w.length ? safe.replace(new RegExp('(' + w.join('|') + ')', 'ig'), '<b>$1</b>') : safe;
   };
-  const cityVal = () => (form.querySelector('[name="city"]') || {}).value || '';
+  const whereVal = () => (form.querySelector('[name="where"]') || {}).value || '';
+  const catVal = () => (form.querySelector('[name="cat"]') || {}).value || '';
 
   function close() { box.hidden = true; active = -1; input.setAttribute('aria-expanded', 'false'); }
   function open() { if (items.length) { box.hidden = false; input.setAttribute('aria-expanded', 'true'); } }
@@ -32,13 +33,13 @@
   }
 
   function render(d, q) {
-    const city = cityVal();
+    const where = whereVal(); const cat = catVal();
     const rows = [];
     const qs = (o) => '/?' + new URLSearchParams(Object.fromEntries(Object.entries(o).filter(([, v]) => v))).toString();
-    (d.cats || []).forEach((c) => rows.push({ href: qs({ cat: c.slug, city }), cls: 'cat', html: '<span class="sg-kind">Category</span><span class="sg-text">' + mark(c.name, q) + (c.parent ? ' <span class="sg-sub">in ' + esc(c.parent) + '</span>' : '') + '</span><span class="sg-n">' + c.n + '</span>' }));
+    (d.cats || []).forEach((c) => rows.push({ href: qs({ cat: c.slug, where }), cls: 'cat', html: '<span class="sg-kind">Category</span><span class="sg-text">' + mark(c.name, q) + (c.parent ? ' <span class="sg-sub">in ' + esc(c.parent) + '</span>' : '') + '</span><span class="sg-n">' + c.n + '</span>' }));
     (d.ads || []).forEach((a) => rows.push({ href: '/ad/' + a.id, cls: 'ad', html: '<span class="sg-kind">Ad</span><span class="sg-text">' + mark(a.title, q) + '</span><span class="sg-sub">' + esc(a.city) + '</span>' }));
-    (d.cities || []).forEach((c) => rows.push({ href: qs({ q: q.replace(new RegExp(c, 'i'), '').trim(), city: c }), cls: 'city', html: '<span class="sg-kind">City</span><span class="sg-text">All ads in ' + esc(c) + '</span>' }));
-    rows.push({ href: qs({ q, city }), cls: 'all', html: '<span class="sg-kind">Search</span><span class="sg-text">All results for “' + esc(q) + '”</span>' });
+    (d.cities || []).forEach((c) => rows.push({ href: qs({ q: q.replace(new RegExp(c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').trim(), where: c, cat }), cls: 'city', html: '<span class="sg-kind">Place</span><span class="sg-text">All ads in ' + esc(c) + '</span>' }));
+    rows.push({ href: qs({ q, where, cat }), cls: 'all', html: '<span class="sg-kind">Search</span><span class="sg-text">All results for “' + esc(q) + '”</span>' });
     box.innerHTML = rows.map((r, i) => '<a id="sg-' + i + '" role="option" class="sg ' + r.cls + '" href="' + esc(r.href) + '">' + r.html + '</a>').join('');
     items = Array.from(box.querySelectorAll('a'));
     setActive(-1);

@@ -805,3 +805,55 @@ Buyers just type what they want. The search understands categories and cities by
 **Admin → Home page → Sections & texts:** "3D ad showcase with the moving globe" switches the ring on or off, "Put TOP ads first in the showcase" decides whether TOP ads lead it, "Showcase heading" is the line at the top, and "Globe cities" are the city lights on the globe.
 
 **Your test ad was not deleted.** Ads in a hidden category or with a blocked word stay in the database. You see them in Admin → Ads with the red **Hidden: blocked word** label, and the seller sees them under My ads.
+
+## Part 28 — Showcase bidding, card and PayPal payments that confirm themselves, search by place and category (4 Nov, night)
+
+**Update first:** double-click **Update AdBazaar**, then press **Ctrl+F5**.
+
+### Showcase bidding: earn from the 3D ring at the top
+- The ring at the top of the home page has **25 places in every 3-hour time slot** (the same 8 slots as TOP).
+- Sellers open **Showcase** in their menu, choose a live paid ad, a day (up to 7 days ahead), one or more time slots, and their bid.
+- The money is **held** in their balance while the bid is open, so they need balance first (they can add it by card in a minute). They can raise, lower or cancel a bid until the slot starts.
+- When a slot starts, the **25 highest bids win automatically** (an earlier bid wins a tie). Winners pay what they bid; the others pay nothing. Both get a message.
+- The seller page shows, for every slot, how many places are taken and how much it takes to get in now.
+- Sellers outside India also see each slot in their own time.
+
+**You decide the rules:** Admin → Settings → **TOP slots → Showcase bidding**:
+- the number of places per slot (25), how many days ahead people can bid, and the **minimum bid for each slot** (cheaper at night, more in the evening);
+- bidding open or closed;
+- whether empty places are filled with TOP ads and other paid ads.
+
+**You see everything:** Admin → **Showcase bids** lists every bid by day and slot, who is winning, and what you earned. **Remove** takes out any bid (a winning bid goes back to the seller's balance). In **Ads → Boost & TOP** you can also put any ad in the showcase for some days yourself, or take it out.
+
+**TOP ads** are now shown in the ring (when there are free places) **and** in the ads list below, at the top.
+
+### Card, Razorpay, PayPal and Stripe payments that confirm themselves
+Admin → Settings → **Online payments** (only you, the owner, see this tab). Paste the keys of the services you use:
+
+| Service | What buyers can use | Where to get the keys |
+|---|---|---|
+| **Razorpay** | Credit and debit cards (Visa, Mastercard, RuPay, Amex), UPI, netbanking, wallets, EMI; international cards if switched on in Razorpay | Razorpay Dashboard → Account & Settings → API Keys |
+| **PayPal** | PayPal balance and cards on PayPal's page, for buyers abroad | developer.paypal.com → Apps & Credentials |
+| **Stripe** | International credit and debit cards, Apple Pay, Google Pay | Stripe Dashboard → Developers → API keys |
+
+- A payment made through any of them is **confirmed automatically**: the ad goes live, or the money is added to the balance, the moment the service confirms it. Nobody has to click Confirm. The Payments list marks them **auto**.
+- **Manual UPI with a UTR still waits for you** (or your payment checker), as before.
+- PayPal cannot take rupee payments inside India, so PayPal and Stripe charge in the currency you choose (USD by default) at the rate you type (₹ for 1 USD). Amounts are rounded up, so you never get less. Buyers see the foreign amount on the button before they pay.
+- Add the **webhook** addresses shown on that page in Razorpay and Stripe. Then a payment is confirmed even if the buyer closes the window before coming back.
+- Saved secrets are never shown again; leave a box empty to keep the saved one.
+- Test first with test keys (Razorpay `rzp_test_…`, PayPal **Sandbox**, Stripe `sk_test_…`), then switch to the live keys.
+- Payment services check your website before they approve your account: your Terms, Privacy, Refund and Contact pages are ready, and Business & legal must be filled in.
+
+### Search by keyword, place and category
+The search bar now has three boxes: **What are you looking for?**, **Location** (a city, a state or a country, with suggestions) and **All categories**.
+- Words work in parts and in Hindi: *kids* finds toys and children's things, *bho* finds bhojan (food, catering), *lal* finds red things, *khil* finds khilona (toys).
+- A place in the words works too: "flat bhopal", "iphone dubai", "phone maharashtra", "jobs uk".
+- After a search, the left panel narrows by **country**, **state** and **city**, showing how many ads each has.
+
+### Worldwide ads
+- The new-ad form asks for the **country** (the price currency follows it: ₹, $, €, AED…) and the **state / region**. Old ads got their state from their city.
+- Phone numbers can be from any country (start with + and the country code). Indian 10-digit numbers work as before.
+- Settings → Site & payments → **Country chosen first** sets which country the form starts with.
+
+### Terms
+Section 4 now says that online payments are confirmed automatically and UPI payments by you. A new section, **4F Showcase bidding**, explains held money, winners paying their bid, and that you may remove any bid.

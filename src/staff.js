@@ -29,13 +29,15 @@ const RULES = [
   [/^\/admin\/(payments|topups|payment-file)(\/|$)/, 'payments'],
   [/^\/admin\/(clients|kyc)(\/|$)/, 'sellers'],
   [/^\/admin\/ads(\/|$)/, 'ads'],
+  [/^\/admin\/bids(\/|$)/, 'ads'],
+  [/^\/admin\/gateways(\/|$)/, 'owner'],
   [/^\/admin\/categories(\/|$)/, 'categories'],
   [/^\/admin\/home(\/|$)/, 'home'],
   [/^\/admin\/(sponsors|enquiries)(\/|$)/, 'sponsors'],
   [/^\/admin\/reports\/export\/(payments|sellers)$/, 'money'],
   [/^\/admin\/reports(\/|$)/, 'reports'],
   [/^\/admin\/messages$/, 'messages'],
-  [/^\/admin\/(settings|plans|slots|automation|alerts|legal|messaging|test-email|test-sms)(\/|$)/, 'settings'],
+  [/^\/admin\/(settings|plans|slots|showcase|automation|alerts|legal|messaging|test-email|test-sms)(\/|$)/, 'settings'],
   [/^\/admin$/, 'any'],
 ];
 const needFor = (path) => { for (const [re, p] of RULES) if (re.test(path)) return p; return 'settings'; };

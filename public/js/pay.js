@@ -37,7 +37,17 @@
     }
     const amt = form.querySelector('[data-upi-amount]');
     if (amt) amt.textContent = inr(rest);
+    // PayPal / Stripe charge the full total in a foreign currency (rate set by the owner); rounded up like the server
+    form.querySelectorAll('[data-intl-rate]').forEach((b) => {
+      const minor = Math.max(50, Math.ceil(total / Number(b.dataset.intlRate)));
+      const s = b.querySelector('[data-intl-amount]'); if (s) s.textContent = `· ${b.dataset.intlCur} ${(minor / 100).toFixed(2)}`;
+    });
   }
+  // PayPal / Stripe buttons leave this page: the payment terms must be ticked first
+  form.querySelectorAll('[data-redirect-pay]').forEach((b) => b.addEventListener('click', (e) => {
+    const terms = form.querySelector('[name=accept_terms]');
+    if (terms && !terms.checked) { e.preventDefault(); terms.reportValidity ? terms.reportValidity() : alert('Please accept the payment terms first.'); terms.focus(); }
+  }));
   form.addEventListener('change', update);
   update();
 

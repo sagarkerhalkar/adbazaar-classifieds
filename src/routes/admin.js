@@ -22,6 +22,8 @@ const Free = require('../freeads');
 const Staff = require('../staff');
 const Brand = require('../brand');
 const Safety = require('../safety');
+const Show = require('../showcase');
+const G = require('../gateways');
 const life = require('../lifecycle');
 const notify = require('../notify');
 const { SLOTS, ALL_SLOTS, slotLabels, slotPrices, maskFrom } = require('../slots');
@@ -296,7 +298,7 @@ function topupsTable(req, rows) {
     <tbody>${rows.map((t) => html`<tr>
       <td><strong class="amt">${rupees(t.amount_paise)}</strong><div class="small muted nowrap">T${t.id} · ${fmtShort(t.created_at)}</div></td>
       <td><a href="/admin/clients/${t.client_id}">${t.client_name}</a></td>
-      <td><span class="mono">${t.utr}</span>${t.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${t.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}</td>
+      <td>${t.method && t.method !== 'upi' ? html`${G.LABEL[t.method]} <span class="pill pill-ok">auto</span><div class="small muted mono">${t.gateway_txn || ''}${t.charged && !String(t.charged).startsWith('INR') ? ` · ${t.charged}` : ''}</div>` : html`<span class="mono">${t.utr}</span>`}${t.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${t.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}</td>
       <td>${pill(t.status === 'pending' ? 'payment_review' : t.status)}${t.admin_note ? html`<div class="small muted">${t.admin_note}</div>` : ''}</td>
       <td class="actions"><div class="act-row">${t.status === 'pending' ? html`
         <form method="post" action="/admin/topups/${t.id}/confirm" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Confirm</button></form>
@@ -307,7 +309,7 @@ function topupsTable(req, rows) {
 function paymentsView(req, rows, status, topups = []) {
   const tabs = !can(req, 'money') ? [] : [['pending', 'To confirm'], ['paid', 'Paid'], ['rejected', 'Rejected'], ['failed', 'Failed later'], ['all', 'All']];
   const how = (p) => (p.method === 'wallet' ? html`Balance`
-    : p.method === 'razorpay' ? html`Online<div class="small muted mono">${p.razorpay_payment_id || p.razorpay_order_id}</div>`
+    : p.method !== 'upi_manual' ? html`${G.LABEL[p.method] || p.method} <span class="pill pill-ok" title="Confirmed by the gateway">auto</span><div class="small muted mono">${p.gateway_txn || p.razorpay_payment_id || p.razorpay_order_id || p.gateway_ref || ''}</div>${p.charged && !String(p.charged).startsWith('INR') ? html`<div class="small muted">${p.charged}</div>` : ''}`
       : html`UPI <span class="mono">${p.utr}</span>${p.screenshot_file ? html`<div><a class="small" href="/admin/payment-file/${p.screenshot_file}" target="_blank">View screenshot</a></div>` : ''}`);
   return html`
   <div class="page-head"><div><h1>Payments</h1>${!can(req, 'money') ? html`<p class="muted">Check each payment in the bank / UPI app, then confirm or reject it. You see only payments that are waiting.</p>` : html`<p class="muted">Only you can make an ad live: check the money in your bank or UPI app, then confirm.</p>`}</div></div>
@@ -319,7 +321,7 @@ function paymentsView(req, rows, status, topups = []) {
       <td><strong class="amt">${rupees(p.amount_paise)}</strong>${p.wallet_paise ? html`<div class="small muted">${p.method === 'wallet' ? 'all from balance' : html`UPI ${rupees(p.amount_paise - p.wallet_paise)} + balance ${rupees(p.wallet_paise)}`}</div>` : ''}
         <div class="small muted nowrap">#${p.id} · ${fmtShort(p.created_at)}</div></td>
       <td class="cell-wide"><a href="/admin/clients/${p.client_id}"><strong>${p.client_name}</strong></a><div class="small clamp1"><a href="${adUrl({ id: p.ad_id, title: p.ad_title })}" target="_blank">${p.ad_title}</a></div></td>
-      <td class="nowrap">${p.days} days${p.top_slots ? html`<div class="small"><span class="pill pill-top">TOP ${slotLabels(p.top_slots).join(', ')}</span></div>` : ''}</td>
+      <td class="nowrap">${p.days} days${p.top_slots ? html`<div class="small"><span class="pill pill-top">TOP ${slotLabels(p.top_slots).join(', ')}</span></div>` : ''}${p.showcase ? html`<div class="small"><span class="pill pill-show">+ Showcase</span></div>` : ''}</td>
       <td>${how(p)}</td>
       <td>${pill(p.status)}${p.admin_note ? html`<div class="small muted">${p.admin_note}</div>` : ''}</td>
       <td class="actions"><div class="act-row">${p.status === 'pending' ? html`
@@ -343,7 +345,7 @@ function adsView(req, rows, f) {
       <td><div class="cell-ad">${im ? html`<img src="${imgUrl(im)}" alt="" loading="lazy">` : html`<div class="avatar">${icon('image', { size: 16 })}</div>`}
         <div><a href="${adUrl(a)}" target="_blank"><strong>${a.title}</strong></a><div class="small muted">#${a.id} · ${a.cat_name} · ${a.city}</div></div></div></td>
       <td><a href="/admin/clients/${a.client_id}">${a.client_name}</a></td>
-      <td><div class="pills">${pill(a.status)}${a.flagged ? html`<span class="pill pill-bad" title="Contains a blocked word or is in a hidden category">Hidden: blocked word</span>` : ''}${a.top_slots ? html`<span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}</div>${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}${a.status === 'paused' ? html`<div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}</td>
+      <td><div class="pills">${pill(a.status)}${a.flagged ? html`<span class="pill pill-bad" title="Contains a blocked word or is in a hidden category">Hidden: blocked word</span>` : ''}${a.top_slots ? html`<span class="pill pill-top">TOP ${slotLabels(a.top_slots).join(', ')}</span>` : ''}${a.admin_top_until > Date.now() ? html`<span class="pill pill-top" title="Set by admin">★ Admin TOP till ${fmtDay(a.admin_top_until)}</span>` : ''}${Math.max(a.showcase_until || 0, a.admin_showcase_until || 0) > Date.now() ? html`<span class="pill pill-show" title="${a.admin_showcase_until > Date.now() ? 'Given by admin' : 'Paid by the seller'}">Showcase till ${fmtDay(Math.max(a.showcase_until || 0, a.admin_showcase_until || 0))}</span>` : ''}${a.admin_boost ? html`<span class="pill pill-info">boost ${a.admin_boost}</span>` : ''}</div>${a.block_reason ? html`<div class="small muted">${a.block_reason}</div>` : ''}${a.status === 'paused' ? html`<div class="small muted">${a.paused_by === 'account' ? 'Seller account deactivated' : 'Deactivated by admin'} · ${Math.ceil((a.paused_remaining_ms || 0) / 86400_000)} day(s) saved</div>` : ''}</td>
       <td>${a.is_free ? html`<span class="pill pill-muted">Free ad</span>` : html`${a.plan_name || '—'}<div class="small muted">${a.paid_total_paise ? `${rupees(a.paid_total_paise)} paid` : ''}</div>`}</td>
       <td>${a.expires_at ? html`${fmtDay(a.expires_at)}<div class="small muted">${a.status === 'active' ? timeLeft(a.expires_at) : ''}</div>` : '—'}</td>
       <td>${a.views}</td>
@@ -351,7 +353,8 @@ function adsView(req, rows, f) {
         ${a.status === 'free_review' ? html`<form method="post" action="/admin/ads/${a.id}/free/approve" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">${icon('check', { size: 14 })} Approve</button></form>` : ''}
         ${a.status === 'active' || a.status === 'expired' ? html`<button type="button" class="btn btn-primary btn-sm" data-dialog-open="ad-promote"
           data-fill-action="/admin/ads/${a.id}/promote" data-fill-title="${a.title}" data-fill-boost="${a.admin_boost}"
-          data-fill-topdays="${a.admin_top_until > Date.now() ? Math.ceil((a.admin_top_until - Date.now()) / 86400_000) : ''}">${icon('bolt', { size: 14 })} Boost & TOP</button>` : ''}
+          data-fill-topdays="${a.admin_top_until > Date.now() ? Math.ceil((a.admin_top_until - Date.now()) / 86400_000) : ''}"
+          data-fill-showdays="${a.admin_showcase_until > Date.now() ? Math.ceil((a.admin_showcase_until - Date.now()) / 86400_000) : ''}">${icon('bolt', { size: 14 })} Boost & TOP</button>` : ''}
         ${a.status === 'paused' ? html`<form method="post" action="/admin/ads/${a.id}/resume" class="inline">${csrf(req)}<button class="btn btn-ok btn-sm">Reactivate</button></form>` : ''}
         ${a.status === 'blocked' ? html`<form method="post" action="/admin/ads/${a.id}/unblock" class="inline">${csrf(req)}<button class="btn btn-sm">Unblock</button></form>` : ''}
         ${a.status !== 'deleted' ? html`<details class="more-menu"><summary class="btn btn-sm btn-ghost" aria-label="More actions for ad ${a.id}">More ${icon('down', { size: 14 })}</summary><div class="more-pop">
@@ -374,12 +377,17 @@ function adsView(req, rows, f) {
       <div class="field"><span class="label">In these time slots</span>
         <div class="slots" style="margin:0">${SLOTS.map((sl) => html`<label class="slot"><input type="checkbox" name="top_slots[]" value="${sl.slot}" checked><span><b>${sl.label}</b></span></label>`)}</div>
       </div>
+      <h3 style="margin:6px 0 0">Put it in the showcase (3D ring at the top of the home page)</h3>
+      <div class="row2">
+        ${field('For how many days', html`<input type="number" name="show_days" min="0" max="365" data-fill="showdays" placeholder="e.g. 7">`, '0 or empty = no change')}
+        ${field('…or until (India time)', html`<input type="datetime-local" name="show_until">`, 'Optional, overrides days')}
+      </div>
       <div class="row2">
         ${field('Ranking boost (−10 … +10)', html`<input type="number" name="boost" min="-10" max="10" data-fill="boost">`, 'Higher boost = above ads that paid the same')}
         ${field('Add free days to the run', html`<input type="number" name="extend_days" min="0" max="365" value="0">`)}
       </div>
     </div>
-    <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn" name="remove_top" value="1">Remove admin TOP</button><button class="btn btn-primary">Save</button></div>
+    <div class="modal-foot"><button type="button" class="btn" data-dialog-close>Cancel</button><button class="btn" name="remove_top" value="1">Remove admin TOP</button><button class="btn" name="remove_show" value="1">Remove from showcase</button><button class="btn btn-primary">Save</button></div>
   </form></dialog>`;
 }
 
@@ -511,6 +519,41 @@ function messagingSetupCard(req, s) {
   </section>`;
 }
 
+// Owner only: keys for Razorpay, PayPal and Stripe. Payments through them are confirmed automatically.
+function onlinePayCard(req, s) {
+  const c = G.conf(s); const on = G.enabled(c);
+  const base = require('./onlinepay').origin(req);
+  const secret = (name, has, label, hint) => field(label, html`<input type="password" name="${name}" autocomplete="off" placeholder="${has ? 'Saved — leave empty to keep it' : ''}">`, hint);
+  const fromEnv = (k) => (process.env[k] ? html` <span class="pill pill-info" title="Set in the .env file; that value is used">from .env</span>` : '');
+  return html`<section class="card tab-panel narrow-ish" data-panel="online">
+    <h2>${icon('card', { size: 18 })} Online payments — confirmed automatically</h2>
+    <p class="muted small">Payments through these gateways need <strong>no confirmation</strong>: when the gateway confirms the money, the ad goes live (or the balance is topped up) by itself. Only manual UPI payments (with a UTR) wait for you or your payment checker.</p>
+    <form method="post" action="/admin/gateways" class="form">
+      ${csrf(req)}
+      <div class="gw-card"><h3>Razorpay ${on.razorpay ? html`<span class="pill pill-ok">On</span>` : html`<span class="pill pill-muted">Off</span>`}${fromEnv('RAZORPAY_KEY_ID')}</h3>
+        <p class="small muted">India: credit and debit cards (Visa, Mastercard, RuPay, Amex), UPI, netbanking, wallets, EMI, and international cards if you switch them on in Razorpay. Keys: Razorpay Dashboard → Account & Settings → API Keys.</p>
+        <div class="row2">${field('Key ID', html`<input name="rzp_key_id" value="${s.rzp_key_id}" placeholder="rzp_live_… or rzp_test_…" autocomplete="off">`)}${secret('rzp_key_secret', !!s.rzp_key_secret, 'Key secret')}</div>
+        ${secret('rzp_webhook_secret', !!s.rzp_webhook_secret, 'Webhook secret (recommended)', html`In Razorpay → Webhooks add <code>${base}/webhooks/razorpay</code> with the events <b>payment.captured</b> and <b>order.paid</b>, and the same secret here. It confirms payments even if the buyer closes the window early.`)}
+      </div>
+      <div class="gw-card"><h3>PayPal ${on.paypal ? html`<span class="pill pill-ok">On</span>` : html`<span class="pill pill-muted">Off</span>`}${fromEnv('PAYPAL_CLIENT_ID')}</h3>
+        <p class="small muted">For buyers abroad: PayPal balance or cards on PayPal's page. PayPal does not take rupee payments inside India, so it charges in the currency below. Keys: developer.paypal.com → Apps & Credentials.</p>
+        <div class="row2">${field('Client ID', html`<input name="paypal_client_id" value="${s.paypal_client_id}" autocomplete="off">`)}${secret('paypal_secret', !!s.paypal_secret, 'Secret')}</div>
+        <label class="field"><span class="label">Mode</span><select name="paypal_mode"><option value="sandbox" ${c.paypal.live ? '' : 'selected'}>Sandbox (test money)</option><option value="live" ${c.paypal.live ? 'selected' : ''}>Live (real money)</option></select></label>
+      </div>
+      <div class="gw-card"><h3>Stripe ${on.stripe ? html`<span class="pill pill-ok">On</span>` : html`<span class="pill pill-muted">Off</span>`}${fromEnv('STRIPE_SECRET_KEY')}</h3>
+        <p class="small muted">International credit and debit cards, Apple Pay and Google Pay. Stripe accepts new Indian businesses only by invitation; use it if you have an account. Key: Stripe Dashboard → Developers → API keys.</p>
+        <div class="row2">${secret('stripe_secret', !!s.stripe_secret, 'Secret key', 'sk_live_… or sk_test_…')}${secret('stripe_webhook_secret', !!s.stripe_webhook_secret, 'Webhook signing secret', html`Add the endpoint <code>${base}/webhooks/stripe</code> with the event <b>checkout.session.completed</b>.`)}</div>
+      </div>
+      <div class="row2">
+        <label class="field"><span class="label">PayPal and Stripe charge in</span><select name="intl_currency">${G.CURRENCIES.map((x) => html`<option ${x === c.currency ? 'selected' : ''}>${x}</option>`)}</select></label>
+        ${field(`₹ for 1 ${c.currency}`, html`<input type="number" name="intl_rate" min="0.01" step="0.01" value="${c.rate}" required>`, 'Update it now and then. Amounts are rounded up, so you never get less than the rupee price.')}
+      </div>
+      <label class="check"><input type="checkbox" name="clear" value="1"> <span>Remove all saved keys (switches online payments off)</span></label>
+      <button class="btn btn-accent">Save online payments</button>
+    </form>
+  </section>`;
+}
+
 function settingsView(req, { s, plans, cats, admins }) {
   return html`
   <div class="page-head"><div><h1>Settings</h1><p class="muted">Pick a section. Each one saves on its own.</p></div></div>
@@ -522,6 +565,7 @@ function settingsView(req, { s, plans, cats, admins }) {
     <button type="button" class="tab" data-tab="email">${icon('mail', { size: 16 })} Email & SMS ${emailConfigured() ? '' : html`<span class="badge-count">!</span>`}</button>
     <button type="button" class="tab" data-tab="alerts">${icon('bell', { size: 16 })} Alerts ${alertChannels().length ? html`<span class="pill pill-ok">${alertChannels().length}</span>` : ''}</button>
     <button type="button" class="tab" data-tab="site">${icon('settings', { size: 16 })} Site & payments</button>
+    ${isOwner(req) ? html`<button type="button" class="tab" data-tab="online">${icon('card', { size: 16 })} Online payments ${G.anyOnline() ? html`<span class="pill pill-ok">on</span>` : ''}</button>` : ''}
     <button type="button" class="tab" data-tab="legal">${icon('id', { size: 16 })} Business & legal ${!s.legal_name || !(s.grievance_email || s.support_email) ? html`<span class="badge-count">!</span>` : ''}</button>
     <button type="button" class="tab" data-tab="admins">${icon('shield', { size: 16 })} ${isOwner(req) ? 'Staff & brand' : 'My password'}</button>
   </div>
@@ -591,6 +635,21 @@ function settingsView(req, { s, plans, cats, admins }) {
         </tbody></table></div>
         <button class="btn btn-accent">Save slot prices</button>
       </form>
+      <h2 style="margin-top:22px">${icon('star', { size: 18 })} Showcase bidding (3D ring at the top of the home page)</h2>
+      ${(() => { const c = Show.cfg(s); return html`
+      <p class="muted small">Every 3-hour time slot has a fixed number of places. Sellers bid with their balance; when the slot starts the highest bids win automatically and pay what they bid. You set the minimum bid for each slot. See every bid in <a href="/admin/bids">Ads → Showcase bids</a>.</p>
+      <form method="post" action="/admin/showcase" class="form">
+        ${csrf(req)}
+        <div class="row3">
+          ${field('Places per time slot', html`<input type="number" name="showcase_places" min="1" max="60" value="${c.places}" required>`)}
+          ${field('Bidding opens … days ahead', html`<input type="number" name="showcase_days_ahead" min="1" max="30" value="${c.daysAhead}" required>`)}
+          <label class="field"><span class="label">Bidding</span><span class="switch-row"><input type="checkbox" class="switch" name="showcase_on" value="1" ${c.on ? 'checked' : ''}> Open</span></label>
+        </div>
+        <div class="field"><span class="label">Minimum bid per time slot (₹, for the whole 3 hours)</span>
+          <div class="min-grid">${SLOTS.map((sl) => html`<label><span class="small muted">${sl.label}</span><input type="number" name="min_${sl.slot}" min="1" step="1" value="${c.mins[sl.slot] / 100}" required></label>`)}</div></div>
+        <label class="check"><input type="checkbox" name="showcase_fill" value="1" ${c.fill ? 'checked' : ''}> <span>When fewer than 9 ads won a slot, fill the empty places with TOP ads and other paid ads with photos (winners always come first)</span></label>
+        <button class="btn btn-accent">Save showcase</button>
+      </form>`; })()}
     </section>
     <section class="card tab-panel narrow-ish" data-panel="approvals">
       <h2>Approvals & notifications</h2>
@@ -625,10 +684,12 @@ function settingsView(req, { s, plans, cats, admins }) {
         ${field('UPI QR code image', html`<input type="file" name="upi_qr" accept="image/*" data-max-mb="3" data-no-shrink>`, s.upi_qr_file ? 'A QR is uploaded — choose a file to replace it.' : 'Upload the QR from your UPI / merchant app')}
         ${s.upi_qr_file ? html`<img class="upi-qr" src="${imgUrl(s.upi_qr_file)}" alt="UPI QR">` : ''}
         <div class="row2">${field('Support phone', html`<input name="support_phone" maxlength="20" value="${s.support_phone}">`)}${field('Support email', html`<input name="support_email" type="email" maxlength="120" value="${s.support_email}">`)}</div>
-        <p class="small muted">Online payments (Razorpay): ${P.razorpayEnabled() ? html`<strong class="ok">enabled</strong>` : html`<strong>not configured</strong> — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env`}</p>
+        ${field('Country chosen first on the new-ad form', html`<select name="default_country">${require('../places').COUNTRIES.map((c) => html`<option ${c.name === (s.default_country || 'India') ? 'selected' : ''}>${c.name}</option>`)}</select>`, 'Sellers can pick any country; this is only the first choice. The currency follows the country.')}
+        <p class="small muted">Online payments (cards, Razorpay, PayPal, Stripe): ${G.anyOnline() ? html`<strong class="ok">on</strong> — confirmed automatically` : html`<strong>off</strong>`}${isOwner(req) ? html` · <a href="#online">set up in Online payments</a>` : ''}</p>
         <button class="btn btn-accent">Save settings</button>
       </form>
     </section>
+    ${isOwner(req) ? onlinePayCard(req, s) : ''}
     <section class="card tab-panel narrow-ish" data-panel="legal">
       <h2>Business & legal details</h2>
       <p class="muted small">Shown on receipts, the Contact page and in the Terms, Privacy and Refund policies. Indian law asks every website like this to show a Grievance Officer with contact details. Payment gateways (Razorpay etc.) check these pages before going live.</p>
@@ -925,7 +986,7 @@ function register(app) {
     const amount = Math.round(Number(req.body.amount) * 100);
     if (!c || !Number.isFinite(amount) || !amount) { req.flash('error', 'Enter an amount, e.g. 100 or -100.'); res.redirect(back(req, '/admin/clients')); return; }
     const note = V.str(req.body.note, 120) || (amount > 0 ? 'Added by our team' : 'Removed by our team');
-    const ok = amount > 0 ? W.credit(c.id, amount, 'admin', note) : W.debit(c.id, -amount, note);
+    const ok = amount > 0 ? W.credit(c.id, amount, 'admin', note) : W.debit(c.id, -amount, note, { force: true });
     if (!ok) { req.flash('error', 'The balance is lower than that amount.'); res.redirect(`/admin/clients/${c.id}`); return; }
     if (amount > 0) notify.inbox(c.id, { kind: 'wallet', tone: 'success', title: `${rupees(amount)} added to your balance`, body: note, link: '/client/wallet', linkText: 'My balance' });
     req.flash('success', `Balance ${amount > 0 ? 'increased' : 'reduced'} by ${rupees(Math.abs(amount))}.`);
@@ -1028,7 +1089,7 @@ function register(app) {
       WHERE ${status === 'all' ? "p.status != 'created'" : 'p.status = ?'} ORDER BY p.id ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 300`)
       .all(...(status === 'all' ? [] : [status]));
     const topups = db.prepare(`SELECT t.*, c.name AS client_name FROM wallet_topups t JOIN clients c ON c.id = t.client_id
-      WHERE ${status === 'all' ? '1' : 't.status = ?'} ORDER BY t.id DESC LIMIT 100`).all(...(status === 'all' ? [] : [status]));
+      WHERE ${status === 'all' ? "t.status != 'created'" : 't.status = ?'} ORDER BY t.id DESC LIMIT 100`).all(...(status === 'all' ? [] : [status]));
     res.html(page(req, 'Payments', paymentsView(req, rows, status, topups)));
   });
   // Balance top-ups: admin confirms the UPI money arrived → balance goes up (never automatic).
@@ -1199,6 +1260,16 @@ function register(app) {
       const mask = (maskFrom(req.body.top_slots) & ALL_SLOTS) || ALL_SLOTS;
       if (until) { db.prepare('UPDATE ads SET admin_top_until = ?, admin_top_slots = ? WHERE id = ?').run(until, mask, ad.id); msgs.push(`TOP until ${fmtDate(until)} (${slotLabels(mask).join(', ')})`); }
     }
+    if (req.body.remove_show === '1') {
+      // Takes the ad out of the showcase, including a showcase the seller paid for (the owner decides).
+      db.prepare('UPDATE ads SET admin_showcase_until = NULL, showcase_until = NULL WHERE id = ?').run(ad.id); msgs.push('removed from the showcase');
+    } else if (req.body.remove_top !== '1') {
+      let su = null;
+      if (req.body.show_until) { const t = Date.parse(`${req.body.show_until}:00+05:30`); if (Number.isFinite(t) && t > now) su = t; }
+      const sd = Math.max(0, Math.min(365, parseInt(req.body.show_days, 10) || 0));
+      if (!su && sd) su = now + sd * 86400_000;
+      if (su) { db.prepare('UPDATE ads SET admin_showcase_until = ? WHERE id = ?').run(su, ad.id); msgs.push(`showcase until ${fmtDate(su)}`); }
+    }
     if (req.body.boost !== undefined && req.body.boost !== '') {
       const boost = Math.max(-10, Math.min(10, parseInt(req.body.boost, 10) || 0));
       db.prepare('UPDATE ads SET admin_boost = ? WHERE id = ?').run(boost, ad.id); msgs.push(`boost ${boost}`);
@@ -1269,6 +1340,7 @@ function register(app) {
   app.post('/admin/settings', requireAdmin, (req, res) => {
     const b = req.body;
     for (const k of ['upi_id', 'upi_payee_name', 'support_phone', 'support_email']) setSetting(k, V.str(b[k], 120));
+    if (require('../places').country(b.default_country)) setSetting('default_country', require('../places').country(b.default_country).name);
     if (req.files.upi_qr?.[0]) {
       try {
         const name = saveUpload(req.files.upi_qr[0], 'ads', { maxMb: 3 });
@@ -1396,6 +1468,79 @@ function register(app) {
     });
     req.flash('success', 'TOP slot prices saved.');
     res.redirect('/admin/settings#slots');
+  });
+  app.post('/admin/gateways', requireAdmin, (req, res) => {
+    const b = req.body || {};
+    const keys = ['rzp_key_id', 'rzp_key_secret', 'rzp_webhook_secret', 'paypal_client_id', 'paypal_secret', 'stripe_secret', 'stripe_webhook_secret'];
+    if (b.clear === '1') keys.forEach((k) => setSetting(k, ''));
+    else {
+      for (const k of keys) {
+        const v = V.str(b[k], 300).trim();
+        // secrets are never shown again: an empty box keeps the saved value
+        if (v || ['rzp_key_id', 'paypal_client_id'].includes(k)) setSetting(k, v);
+      }
+    }
+    setSetting('paypal_mode', b.paypal_mode === 'live' ? 'live' : 'sandbox');
+    if (G.CURRENCIES.includes(b.intl_currency)) setSetting('intl_currency', b.intl_currency);
+    const rate = Number(b.intl_rate); if (rate > 0 && rate < 100000) setSetting('intl_rate', String(rate));
+    const on = G.enabled();
+    req.flash('success', `Online payments saved. On: ${Object.entries(on).filter(([, v]) => v).map(([k]) => G.LABEL[k]).join(', ') || 'none'}.`);
+    res.redirect('/admin/settings#online');
+  });
+  app.post('/admin/showcase', requireAdmin, (req, res) => {
+    const int = (v, lo, hi, d) => String(Math.max(lo, Math.min(hi, parseInt(v, 10) || d)));
+    setSetting('showcase_places', int(req.body.showcase_places, 1, 60, 25));
+    setSetting('showcase_days_ahead', int(req.body.showcase_days_ahead, 1, 30, 7));
+    setSetting('showcase_min_paise', JSON.stringify(SLOTS.map((sl) => Math.max(100, Math.min(100_000_00, Math.round(Number(req.body[`min_${sl.slot}`]) * 100) || 9900)))));
+    setSetting('showcase_on', req.body.showcase_on === '1' ? '1' : '0');
+    setSetting('showcase_fill', req.body.showcase_fill === '1' ? '1' : '0');
+    req.flash('success', 'Showcase saved.');
+    res.redirect('/admin/settings#slots');
+  });
+  // Showcase bids: every bid by day and time slot. The owner / admin decides what to remove.
+  app.get('/admin/bids', requireAdmin, (req, res) => {
+    try { Show.settleDue(); } catch (e) { console.error('[showcase]', e); }
+    const today = Show.istDay();
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.day)) ? String(req.query.day) : today;
+    const days = [...new Set([Show.istDay(Date.now() - 86400_000), today, ...Show.biddableDays()])];
+    if (!days.includes(day)) days.unshift(day);
+    const c = Show.cfg();
+    const bids = db.prepare(`SELECT b.*, a.title AS ad_title, cl.name AS client_name FROM showcase_bids b JOIN ads a ON a.id = b.ad_id JOIN clients cl ON cl.id = b.client_id
+      WHERE b.day = ? ORDER BY b.slot, CASE b.status WHEN 'won' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, b.amount_paise DESC, b.amount_at ASC`).all(day);
+    const rounds = new Map(db.prepare('SELECT * FROM showcase_rounds WHERE day = ?').all(day).map((r) => [r.slot, r]));
+    const money = can(req, 'money');
+    const now = Date.now();
+    const body = html`
+    <div class="page-head"><div><h1>${icon('star', { size: 22 })} Showcase bids</h1><p class="muted">${c.places} places per time slot. Highest bids win when the slot starts. ${can(req, 'settings') ? html`<a href="/admin/settings#slots">Places and minimum bids</a>` : ''}</p></div>
+      ${money ? html`<div class="kpis kpis-sm"><div class="kpi"><span>Earned today</span><strong>${rupees(Show.earnedSince(Date.parse(`${today}T00:00:00+05:30`)))}</strong></div><div class="kpi"><span>Last 30 days</span><strong>${rupees(Show.earnedSince(now - 30 * 86400_000))}</strong></div></div>` : ''}</div>
+    <nav class="chips bid-days">${days.map((d) => html`<a class="chip ${d === day ? 'active' : ''}" href="/admin/bids?day=${d}">${d === today ? 'Today' : new Date(`${d}T12:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</a>`)}</nav>
+    ${SLOTS.map((sl) => {
+      const list = bids.filter((b) => b.slot === sl.slot);
+      const start = Show.slotStart(day, sl.slot); const r = rounds.get(sl.slot);
+      const state = now >= start + Show.SLOT_MS ? 'Finished' : now >= start ? 'Running now' : 'Open for bids';
+      let place = 0;
+      return html`<section class="card table-wrap bid-slot">
+        <div class="section-head"><h2>${sl.label} <span class="pill ${state === 'Running now' ? 'pill-ok' : 'pill-muted'}">${state}</span></h2>
+          <span class="small muted">min ${rupees(c.mins[sl.slot])} · ${r ? `${r.winners} won${money ? ` · ${rupees(r.earned_paise)}` : ''}` : `${list.filter((b) => b.status === 'open').length} open bid(s)`}</span></div>
+        ${list.length ? html`<table class="table table-fit"><thead><tr><th>#</th><th>Ad</th><th>Seller</th><th>Bid</th><th>Status</th><th></th></tr></thead><tbody>
+        ${list.map((b) => { const live = ['open', 'won'].includes(b.status); if (live) place += 1; return html`<tr>
+          <td>${live ? place : ''}</td>
+          <td><a href="${adUrl({ id: b.ad_id, title: b.ad_title })}" target="_blank">${b.ad_title}</a></td>
+          <td><a href="/admin/clients/${b.client_id}">${b.client_name}</a></td>
+          <td><strong>${rupees(b.amount_paise)}</strong><div class="small muted">${fmtShort(b.amount_at)}</div></td>
+          <td>${b.status === 'open' ? html`<span class="pill ${place <= c.places ? 'pill-ok' : 'pill-warn'}">${place <= c.places ? 'Winning' : 'Outbid'}</span>` : pill(b.status === 'won' ? 'paid' : b.status === 'lost' ? 'expired' : 'rejected')}
+            <div class="small muted">${b.status === 'won' ? 'Won' : b.status === 'lost' ? 'Not won' : b.status === 'cancelled' ? 'Cancelled by seller' : b.status === 'removed' ? 'Removed' : ''}${b.note ? ` · ${b.note}` : ''}</div></td>
+          <td class="actions">${live ? html`<form method="post" action="/admin/bids/${b.id}/remove?day=${day}" class="inline bid-remove">${csrf(req)}<input name="note" placeholder="Reason (optional)" maxlength="160"><button class="btn btn-sm btn-danger" data-confirm="${b.status === 'won' ? 'Remove this winning bid? The seller gets the money back in their balance.' : 'Remove this bid?'}">Remove</button></form>` : ''}</td>
+        </tr>`; })}
+        </tbody></table>` : html`<p class="muted small">No bids.</p>`}
+      </section>`;
+    })}`;
+    res.html(renderPage(req, { title: 'Showcase bids', portal: 'admin', body }));
+  });
+  app.post('/admin/bids/:id/remove', requireAdmin, (req, res) => {
+    const b = Show.adminRemove(parseInt(req.params.id, 10) || 0, V.str(req.body.note, 160));
+    req.flash(b ? 'success' : 'error', b ? `Bid removed${b.status === 'won' ? ` and ${rupees(b.amount_paise)} returned to the seller's balance` : ''}. The seller was told.` : 'Bid not found.');
+    res.redirect(`/admin/bids${/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.day)) ? `?day=${req.query.day}` : ''}`);
   });
   app.post('/admin/automation', requireAdmin, (req, res) => {
     const num = (v) => String(Math.max(0, Math.min(10080, parseInt(v, 10) || 0)));

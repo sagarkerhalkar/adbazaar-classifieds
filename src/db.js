@@ -208,6 +208,38 @@ addColumn('ads', 'admin_top_slots', 'INTEGER NOT NULL DEFAULT 255');
 addColumn('ads', 'is_free', 'INTEGER NOT NULL DEFAULT 0');
 // Blocked words (src/safety.js): 1 = hidden from buyers because the ad or its category contains a blocked word.
 addColumn('ads', 'flagged', 'INTEGER NOT NULL DEFAULT 0');
+// Worldwide (src/places.js): the ad's country, state / region and the currency of its price.
+addColumn('ads', 'country', "TEXT NOT NULL DEFAULT 'India'");
+addColumn('ads', 'state', 'TEXT');
+addColumn('ads', 'currency', "TEXT NOT NULL DEFAULT 'INR'");
+// Showcase: the turning 3D ring at the top of the home page. Bought with a plan (showcase_until) or given by the admin.
+addColumn('ads', 'showcase_until', 'INTEGER');
+addColumn('ads', 'admin_showcase_until', 'INTEGER');
+addColumn('payments', 'showcase', 'INTEGER NOT NULL DEFAULT 0');   // old fixed-price showcase (replaced by bidding)
+// Showcase bidding (src/showcase.js): 25 places per 3-hour slot; the highest bids win when the slot starts.
+db.exec(`CREATE TABLE IF NOT EXISTS showcase_bids (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ad_id INTEGER NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,                 -- India date YYYY-MM-DD
+  slot INTEGER NOT NULL,             -- 0–7 (see src/slots.js)
+  amount_paise INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',   -- open | won | lost | cancelled | removed
+  place INTEGER, note TEXT,
+  amount_at INTEGER NOT NULL,        -- when the amount was last set (earlier bid wins a tie)
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  UNIQUE (ad_id, day, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_bids_round ON showcase_bids(day, slot, status);
+CREATE INDEX IF NOT EXISTS idx_bids_client ON showcase_bids(client_id, status);
+CREATE TABLE IF NOT EXISTS showcase_rounds (
+  day TEXT NOT NULL, slot INTEGER NOT NULL, settled_at INTEGER NOT NULL, winners INTEGER NOT NULL DEFAULT 0, earned_paise INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, slot)
+);`);
+// Online payments (src/gateways.js): Razorpay, PayPal, Stripe. Confirmed automatically after the gateway confirms.
+addColumn('payments', 'gateway_ref', 'TEXT');      // PayPal order id / Stripe session id
+addColumn('payments', 'gateway_txn', 'TEXT');      // the gateway's payment / capture id
+addColumn('payments', 'charged', 'TEXT');          // what the buyer was charged, e.g. "USD 12.40"
 addColumn('categories', 'flagged', 'INTEGER NOT NULL DEFAULT 0');
 // A photo the admin uploads for a category tile (empty = a built-in photo is used).
 addColumn('categories', 'image', 'TEXT');
@@ -259,6 +291,11 @@ CREATE TABLE IF NOT EXISTS enquiries (
   ip TEXT, handled INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
 );
 `);
+// Online top-ups (src/gateways.js)
+addColumn('wallet_topups', 'method', "TEXT NOT NULL DEFAULT 'upi'");   // upi | razorpay | paypal | stripe
+addColumn('wallet_topups', 'gateway_ref', 'TEXT');
+addColumn('wallet_topups', 'gateway_txn', 'TEXT');
+addColumn('wallet_topups', 'charged', 'TEXT');
 
 // ---- Seed defaults ----
 const now = Date.now();
@@ -360,6 +397,17 @@ const DEFAULT_SETTINGS = {
   auto_approve_minutes: '1',
   complaint_block_threshold: '500',  // block a seller when one ad gets complaints from this many different people (0 = off)
   sponsor_every: '8',                 // show a sponsored card after every N ads in listings
+  default_country: 'India',           // country chosen first on the new-ad form (Settings → Site & payments)
+  showcase_on: '1',                   // sellers can bid for a place in the home page showcase ring
+  showcase_places: '25',              // places per time slot
+  showcase_min_paise: '[9900,4900,4900,9900,14900,19900,24900,14900]',   // minimum bid per slot (8 slots, India time)
+  showcase_days_ahead: '7',           // how many days ahead sellers can bid
+  showcase_fill: '1',                 // fill empty places in the ring with TOP and other paid ads
+  // Online payments (owner only, Settings → Online payments). Environment variables override these.
+  rzp_key_id: '', rzp_key_secret: '', rzp_webhook_secret: '',
+  paypal_client_id: '', paypal_secret: '', paypal_mode: 'sandbox',
+  stripe_secret: '', stripe_webhook_secret: '',
+  intl_currency: 'USD', intl_rate: '88',   // PayPal / Stripe charge in this currency; ₹ per 1 unit
   free_ads: '1',                      // sellers may post ads without paying (shown after paid ads)
   free_ad_days: '15',                 // how long a free ad stays live
   free_ads_per_seller: '2',           // free ads one seller may have live or waiting at the same time
@@ -386,7 +434,16 @@ if (!db.prepare("SELECT 1 FROM settings WHERE key = 'free_live_migrated'").get()
   db.prepare("UPDATE ads SET status = 'active', is_free = 1, rank_score = 0, starts_at = ?, expires_at = ?, updated_at = ? WHERE status = 'free_review'").run(t, t + days * 86400_000, t);
   db.prepare("INSERT INTO settings (key, value) VALUES ('free_live_migrated', '1')").run();
 }
-// Payments are confirmed only by an admin (an older version had an auto-confirm option).
+// Fill in the state of ads that have none, from their city (or from the seller's address). Cheap: only empty ones.
+{
+  const { indianState } = require('./places');
+  const set = db.prepare('UPDATE ads SET state = ? WHERE id = ?');
+  for (const a of db.prepare("SELECT a.id, a.city, a.country, c.state AS seller_state FROM ads a LEFT JOIN clients c ON c.id = a.client_id WHERE COALESCE(a.state, '') = '' AND a.country = 'India'").all()) {
+    const st = indianState(a.city) || a.seller_state || '';
+    if (st) set.run(st, a.id);
+  }
+}
+// Online gateway payments are confirmed automatically (src/gateways.js); manual UPI payments only by an admin.
 db.prepare("DELETE FROM settings WHERE key = 'auto_confirm_payment_minutes'").run();
 
 function getSettings() {

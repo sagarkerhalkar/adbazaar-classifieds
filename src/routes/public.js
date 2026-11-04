@@ -11,6 +11,8 @@ const Sp = require('./sponsors');
 const { getHome, cityList } = require('../homeconfig');
 const Ph = require('../photos');
 const Search = require('../search');
+const Places = require('../places');
+const Show = require('../showcase');
 const { renderPage } = require('../views/layout');
 const { csrf, adCard, adUrl, imgUrl, priceText, pager, cityDatalist, publicImages, publicVideos, textTile } = require('../views/components');
 const { DIRS, sendFile, safeName } = require('../lib/files');
@@ -43,18 +45,22 @@ const SORTS = {
   price_desc: 'top_now DESC, a.price_paise IS NULL, a.price_paise DESC, a.rank_score DESC',
 };
 
-function listAds({ q, city, cat, kind, page, sort, excludeTop = false, seed = 0 }) {
+function listAds({ q, city, state, country, cat, kind, page, sort, excludeTop = false, seed = 0 }) {
   const where = ["a.status = 'active'", 'a.expires_at > ?', SELLER_OK];
   const args = [Date.now()];
   // Smart search (src/search.js): parts of words, typos, same-meaning words, category and city names.
   let parsed = null; let match = null;
   if (q) {
-    parsed = Search.parse(q, { cityGiven: !!city });
+    parsed = Search.parse(q, { cityGiven: !!city, placeGiven: !!(city || state || country) });
     if (parsed.city) city = parsed.city;
+    if (parsed.state) state = parsed.state;
+    if (parsed.country) country = parsed.country;
     match = Search.sql(parsed);
     if (match) { where.push(`${match.expr} > 0`); args.push(...match.args); }
   }
   if (city) { where.push('a.city = ? COLLATE NOCASE'); args.push(city); }
+  if (state) { where.push('a.state = ? COLLATE NOCASE'); args.push(state); }
+  if (country) { where.push('a.country = ? COLLATE NOCASE'); args.push(country); }
   if (cat) {
     const ids = Cat.idsForSlug(cat);
     where.push(`a.category_id IN (${ids.map(() => '?').join(',') || 'NULL'})`);
@@ -74,7 +80,7 @@ function listAds({ q, city, cat, kind, page, sort, excludeTop = false, seed = 0 
     FROM ads a ${CAT_JOIN} WHERE ${w}
     ORDER BY ${order} LIMIT ? OFFSET ?`).all(...(match ? match.args : []), ...args, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   rows.forEach((r) => { r.is_top = r.top_now; });
-  return { rows, total, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), slot, city, search: parsed };
+  return { rows, total, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), slot, city, state, country, search: parsed };
 }
 
 // Each banner shows its uploaded picture, or one of the built-in photos (public/photos).
@@ -105,7 +111,7 @@ function bannerSlider(slides) {
 function loadMore(filters, data) {
   if (filters.page >= data.totalPages) return '';
   const p = new URLSearchParams();
-  for (const k of ['q', 'city', 'cat', 'kind', 'sort']) if (filters[k] && !(k === 'sort' && filters[k] === 'best')) p.set(k, filters[k]);
+  for (const k of ['q', 'city', 'state', 'country', 'cat', 'kind', 'sort']) if (filters[k] && !(k === 'sort' && filters[k] === 'best')) p.set(k, filters[k]);
   p.set('page', filters.page + 1);
   return html`<div class="loadmore" data-loadmore><a class="btn btn-lg" href="/?${p}" data-load-more>Load more ads</a><span class="muted small">Showing ${Math.min(filters.page * PAGE_SIZE, data.total)} of ${data.total}</span></div>`;
 }
@@ -166,8 +172,21 @@ function searchNote(data, filters) {
   if (!s) return '';
   const parts = [];
   if (s.corrections.length) parts.push(html`including <strong>${s.corrections.map((c) => c.to).join(' ')}</strong> (you typed ${s.corrections.map((c) => c.from).join(' ')})`);
-  if (s.city && !filters.city) parts.push(html`in <strong>${s.city}</strong>`);
+  const where = [s.city, s.state, s.country].filter(Boolean).join(', ');
+  if (where && !filters.city && !filters.state && !filters.country) parts.push(html`in <strong>${where}</strong>`);
   return parts.length ? html` · ${parts.map((p, i) => html`${i ? ' · ' : ''}${p}`)}` : '';
+}
+
+// Where the live ads are, for the filter panel: countries, then states of the chosen country, then cities.
+function locationFacets(f) {
+  const base = `FROM ads a WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK}`;
+  const now = Date.now();
+  const countries = db.prepare(`SELECT country, COUNT(*) n ${base} GROUP BY country COLLATE NOCASE ORDER BY n DESC LIMIT 30`).all(now);
+  const cw = f.country ? ' AND a.country = ? COLLATE NOCASE' : '';
+  const states = db.prepare(`SELECT state, COUNT(*) n ${base} AND COALESCE(a.state, '') != ''${cw} GROUP BY state COLLATE NOCASE ORDER BY n DESC LIMIT 40`).all(now, ...(f.country ? [f.country] : []));
+  const sw = f.state ? ' AND a.state = ? COLLATE NOCASE' : '';
+  const cities = db.prepare(`SELECT city, COUNT(*) n ${base}${cw}${sw} GROUP BY city COLLATE NOCASE ORDER BY n DESC LIMIT 40`).all(now, ...(f.country ? [f.country] : []), ...(f.state ? [f.state] : []));
+  return { countries, states, cities };
 }
 
 function homeResults(req, { cats, data, filters, cities }) {
@@ -175,16 +194,20 @@ function homeResults(req, { cats, data, filters, cities }) {
   const sel = Cat.bySlug(filters.cat);
   const activeMain = sel ? cats.find((m) => m.id === (sel.parent_id || sel.id)) : null;
   const activeSub = sel && sel.parent_id ? sel : null;
-  const base = { q: filters.q, city: filters.city, kind: filters.kind, cat: filters.cat, sort: filters.sort };
+  // the place the search found in the words ("flat pune") counts as chosen
+  const f = { ...filters, city: filters.city || data.city || '', state: filters.state || data.state || '', country: filters.country || data.country || '' };
+  const base = { q: filters.q, country: f.country, state: f.state, city: f.city, kind: filters.kind, cat: filters.cat, sort: filters.sort };
+  const loc = locationFacets(f);
+  const placeName = [f.city, f.state, f.country].filter(Boolean).join(', ');
   const q = (extra) => {
     const p = new URLSearchParams();
     Object.entries({ ...base, ...extra }).forEach(([k, v]) => { if (v && !(k === 'sort' && v === 'best')) p.set(k, v); });
     const s = p.toString();
     return s ? `/?${s}` : '/';
   };
-  const heading = filters.q ? `Results for “${filters.q}”` : activeSub ? activeSub.name : activeMain ? activeMain.name : filters.city ? `Ads in ${filters.city}` : 'All ads';
+  const heading = filters.q ? `Results for “${filters.q}”` : activeSub ? activeSub.name : activeMain ? activeMain.name : placeName ? `Ads in ${placeName}` : 'All ads';
   return html`
-  <nav class="crumbs"><a href="/">Home</a>${activeMain ? html` › <a href="${q({ cat: activeMain.slug, page: '' })}">${activeMain.name}</a>` : ''}${activeSub ? html` › <span>${activeSub.name}</span>` : ''}${filters.city ? html` › <span>${filters.city}</span>` : ''}</nav>
+  <nav class="crumbs"><a href="/">Home</a>${activeMain ? html` › <a href="${q({ cat: activeMain.slug, page: '' })}">${activeMain.name}</a>` : ''}${activeSub ? html` › <span>${activeSub.name}</span>` : ''}${f.country ? html` › <a href="${q({ country: f.country, state: '', city: '', page: '' })}">${f.country}</a>` : ''}${f.state ? html` › <a href="${q({ state: f.state, city: '', page: '' })}">${f.state}</a>` : ''}${f.city ? html` › <span>${f.city}</span>` : ''}</nav>
   ${activeMain && activeMain.subs.length ? html`<div class="subcats">
     <a class="chip ${!activeSub ? 'active' : ''}" href="${q({ cat: activeMain.slug, page: '' })}">All ${activeMain.name}</a>
     ${activeMain.subs.map((sc) => html`<a class="chip ${activeSub && activeSub.id === sc.id ? 'active' : ''}" href="${q({ cat: sc.slug, page: '' })}">${sc.name}</a>`)}
@@ -198,9 +221,17 @@ function homeResults(req, { cats, data, filters, cities }) {
       <div class="f-group"><h3>Type</h3>
         ${[['', 'Everything'], ['product', 'Products'], ['service', 'Services']].map(([k, l]) => html`<a class="f-opt ${filters.kind === k ? 'active' : ''}" href="${q({ kind: k, page: '' })}">${l}</a>`)}
       </div>
-      ${cities.length ? html`<div class="f-group"><h3>City</h3>
-        <a class="f-opt ${!filters.city ? 'active' : ''}" href="${q({ city: '', page: '' })}">All cities</a>
-        ${cities.slice(0, 10).map((c) => html`<a class="f-opt ${c.city.toLowerCase() === filters.city.toLowerCase() ? 'active' : ''}" href="${q({ city: c.city, page: '' })}">${c.city}</a>`)}
+      ${loc.countries.length > 1 || f.country ? html`<div class="f-group"><h3>Country</h3>
+        <a class="f-opt ${!f.country ? 'active' : ''}" href="${q({ country: '', state: '', city: '', page: '' })}">All countries</a>
+        ${loc.countries.slice(0, 12).map((c) => html`<a class="f-opt ${c.country.toLowerCase() === f.country.toLowerCase() ? 'active' : ''}" href="${q({ country: c.country, state: '', city: '', page: '' })}">${c.country} <span class="muted">${c.n}</span></a>`)}
+      </div>` : ''}
+      ${loc.states.length ? html`<div class="f-group"><h3>State / region</h3>
+        <a class="f-opt ${!f.state ? 'active' : ''}" href="${q({ state: '', city: '', page: '' })}">All states</a>
+        ${loc.states.slice(0, 15).map((c) => html`<a class="f-opt ${c.state.toLowerCase() === f.state.toLowerCase() ? 'active' : ''}" href="${q({ state: c.state, city: '', page: '' })}">${c.state} <span class="muted">${c.n}</span></a>`)}
+      </div>` : ''}
+      ${loc.cities.length ? html`<div class="f-group"><h3>City</h3>
+        <a class="f-opt ${!f.city ? 'active' : ''}" href="${q({ city: '', page: '' })}">All cities</a>
+        ${loc.cities.slice(0, 15).map((c) => html`<a class="f-opt ${c.city.toLowerCase() === f.city.toLowerCase() ? 'active' : ''}" href="${q({ city: c.city, page: '' })}">${c.city} <span class="muted">${c.n}</span></a>`)}
       </div>` : ''}
     </aside>
     <section data-results>
@@ -220,7 +251,7 @@ function homeResults(req, { cats, data, filters, cities }) {
         <div class="empty card center">
           <div class="empty-icon">${icon('search', { size: 26 })}</div>
           <h3>No ads match this search</h3>
-          ${(filters.city || data.city) && data.search && data.search.groups.length ? html`<p><a class="btn" href="${q({ q: data.search.groups.map((g) => g.word).join(' '), city: '', page: '' })}">Show “${data.search.groups.map((g) => g.word).join(' ')}” in all cities</a></p>` : ''}
+          ${placeName && data.search && data.search.groups.length ? html`<p><a class="btn" href="${q({ q: data.search.groups.map((g) => g.word).join(' '), city: '', state: '', country: '', page: '' })}">Show “${data.search.groups.map((g) => g.word).join(' ')}” everywhere</a></p>` : ''}
           <p class="muted">Try a shorter word, another city, or one of these categories.</p>
           <div class="subcats" style="justify-content:center">${cats.slice(0, 8).map((c) => html`<a class="chip" href="/?cat=${encodeURIComponent(c.slug)}">${c.name}</a>`)}</div>
           <a class="btn btn-primary" href="/">Show all ads</a>
@@ -239,9 +270,9 @@ function savedView(ads) {
 
 function adView(req, { ad, images, videos = [], related }) {
   const isOwnerView = !!(req.seller && req.seller.id === ad.client_id); // view count is for the seller, not buyers
-  const wa = ad.whatsapp ? normalizePhone(ad.whatsapp) : '';
+  const wa = ad.whatsapp ? Places.dialDigits(ad.whatsapp) : '';
   const waText = encodeURIComponent(`Hi, I saw your ad "${ad.title}" on ${req.settings.site_name}.`);
-  const place = `${ad.locality ? `${ad.locality}, ` : ''}${ad.city}`;
+  const place = [ad.locality, ad.city, ad.state, ad.country].filter(Boolean).join(', ');
   return html`
   <nav class="crumbs"><a href="/">Home</a> › <a href="/?cat=${ad.main_slug}">${ad.main_name}</a>${ad.main_slug !== ad.cat_slug ? html` › <a href="/?cat=${ad.cat_slug}">${ad.sub_name}</a>` : ''} › <span>${ad.title}</span></nav>
   <div class="ad-page">
@@ -306,8 +337,8 @@ function adView(req, { ad, images, videos = [], related }) {
           <div class="avatar">${(ad.business_name || ad.seller_name || '?').slice(0, 1).toUpperCase()}</div>
           <div><strong>${ad.business_name || ad.seller_name}</strong><div class="verified small">${icon('star', { size: 14 })} Trusted seller</div></div>
         </div>
-        <a class="btn btn-primary btn-lg btn-block" href="tel:+91${normalizePhone(ad.contact_phone)}" data-reveal-phone="+91 ${normalizePhone(ad.contact_phone)}">${icon('phone', { size: 18 })} Show phone number</a>
-        ${wa ? html`<a class="btn btn-wa btn-lg btn-block" target="_blank" rel="noopener" href="https://wa.me/91${wa}?text=${waText}">${icon('chat', { size: 18 })} Chat on WhatsApp</a>` : ''}
+        <a class="btn btn-primary btn-lg btn-block" href="tel:+${Places.dialDigits(ad.contact_phone)}" data-reveal-phone="${Places.phoneText(ad.contact_phone)}">${icon('phone', { size: 18 })} Show phone number</a>
+        ${wa ? html`<a class="btn btn-wa btn-lg btn-block" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${waText}">${icon('chat', { size: 18 })} Chat on WhatsApp</a>` : ''}
         <p class="hint center" style="margin:6px 0 0">Mention ${req.settings.site_name} when you call.</p>
       </div>
     </aside>
@@ -367,10 +398,14 @@ function relatedAds(ad, slot = currentSlot(), seed = 0) {
 function register(app) {
   app.get('/', (req, res) => {
     const filters = {
-      q: str(req.query.q, 80), city: str(req.query.city, 60), cat: str(req.query.cat, 60),
+      q: str(req.query.q, 80), city: str(req.query.city, 60), state: str(req.query.state, 60), country: str(req.query.country, 60), cat: str(req.query.cat, 60),
       kind: str(req.query.kind, 10), page: Math.max(1, Math.min(500, parseInt(req.query.page, 10) || 1)),
       sort: SORTS[req.query.sort] ? req.query.sort : 'best',
     };
+    // One "where" box in the search bar: a city, a state / region or a country.
+    const where = str(req.query.where, 60);
+    if (where && !filters.city && !filters.state && !filters.country) Object.assign(filters, Search.place(where));
+    filters.where = where;
     // New shuffle for equal-paying ads on every fresh visit; "Load more" pages keep the same order.
     if (filters.page === 1 || !req.session.shuffle) req.session.shuffle = Math.floor(Math.random() * 1_000_000);
     filters.seed = req.session.shuffle;
@@ -378,21 +413,35 @@ function register(app) {
     const data = listAds(filters);
     const cities = db.prepare(`SELECT city, COUNT(*) AS n FROM ads a WHERE status = 'active' AND expires_at > ? AND ${SELLER_OK} GROUP BY city COLLATE NOCASE ORDER BY n DESC LIMIT 12`).all(Date.now());
     const activeCat = filters.cat ? Cat.label((Cat.bySlug(filters.cat) || {}).id) : '';
-    const landing = !filters.q && !filters.city && !filters.cat && !filters.kind;
+    const landing = !filters.q && !filters.city && !filters.state && !filters.country && !filters.cat && !filters.kind;
     let body;
     if (landing) {
       const home = getHome(req.settings);
       const slot = currentSlot();
-      // Showcase: TOP ads first, topped up with other paid ads that have photos (free ads never appear here).
-      const tops = home.show.top ? db.prepare(`SELECT a.*, ${CAT_COLS}, 1 AS is_top FROM ads a ${CAT_JOIN}
-        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND ${TOP_NOW(slot)} ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT 16`).all(Date.now()) : [];
-      const need = Math.max(0, 9 - tops.length);
-      const paid = need ? db.prepare(`SELECT a.*, ${CAT_COLS}, 0 AS is_top FROM ads a ${CAT_JOIN}
-        WHERE a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK} AND a.is_free = 0 AND a.images NOT IN ('', '[]')
-          AND a.id NOT IN (${tops.map((t) => Number(t.id) | 0).join(',') || 0})
-        ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT ${need}`).all(Date.now()) : [];
-      const fresh = tops.length ? listAds({ ...filters, excludeTop: true }) : data;
-      body = homeLanding(req, { data: fresh, filters, cities, stage: [...tops, ...paid], home });
+      // Showcase ring: the ads that won the bidding for the time slot running now (highest bid first),
+      // then ads the admin put there. If the owner allows it, empty places (up to 9) are filled with TOP ads,
+      // then other paid ads with photos. Free ads never appear here. Every ad, TOP included, is also in the list below.
+      const now = Date.now();
+      try { Show.settleDue(now); } catch (e) { console.error('[showcase]', e); }
+      const LIVE = `a.status = 'active' AND a.expires_at > ? AND ${SELLER_OK}`;
+      const won = Show.winnersNow(now);
+      let stage = won.length ? db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS is_top FROM ads a ${CAT_JOIN}
+        WHERE ${LIVE} AND a.id IN (${won.map((w) => Number(w.ad_id) | 0).join(',')})`).all(now) : [];
+      stage.sort((x, y) => won.findIndex((w) => w.ad_id === x.id) - won.findIndex((w) => w.ad_id === y.id));
+      const notIn = () => stage.map((t) => Number(t.id) | 0).join(',') || 0;
+      stage = stage.concat(db.prepare(`SELECT a.*, ${CAT_COLS}, ${TOP_NOW(slot)} AS is_top FROM ads a ${CAT_JOIN}
+        WHERE ${LIVE} AND COALESCE(a.admin_showcase_until, 0) > ? AND a.id NOT IN (${notIn()}) ORDER BY a.admin_boost DESC, a.rank_score DESC LIMIT 25`).all(now, now));
+      const fill = Show.cfg(req.settings).fill;
+      if (fill && home.show.top && stage.length < 9) {
+        stage = stage.concat(db.prepare(`SELECT a.*, ${CAT_COLS}, 1 AS is_top FROM ads a ${CAT_JOIN}
+          WHERE ${LIVE} AND ${TOP_NOW(slot)} AND a.id NOT IN (${notIn()}) ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT ${9 - stage.length}`).all(now));
+      }
+      if (fill && stage.length < 9) {
+        stage = stage.concat(db.prepare(`SELECT a.*, ${CAT_COLS}, 0 AS is_top FROM ads a ${CAT_JOIN}
+          WHERE ${LIVE} AND a.is_free = 0 AND a.images NOT IN ('', '[]') AND a.id NOT IN (${notIn()})
+          ORDER BY a.admin_boost DESC, a.rank_score DESC, ${SHUFFLE(filters.seed)} LIMIT ${9 - stage.length}`).all(now));
+      }
+      body = homeLanding(req, { data, filters, cities, stage, home });
     } else body = homeResults(req, { cats, data, filters, cities });
     res.html(renderPage(req, { title: activeCat || (filters.q ? `Search: ${filters.q}` : ''), body }));
   });

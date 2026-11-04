@@ -27,7 +27,7 @@ Built from every request in [CONVERSATION.md](CONVERSATION.md), 2–4 Nov 2026. 
 
 | # | Requirement | Status | Where |
 |---|---|---|---|
-| 15 | Only the owner or staff confirm payments; never automatic | ✅ | Admin → Payments |
+| 15 | Manual UPI payments are confirmed by the owner or staff; online payments (cards, Razorpay, PayPal, Stripe) confirm themselves | 🔁 | Admin → Payments; Settings → Online payments |
 | 16 | Plans: 1, 7, 15 and 29 days, monthly and yearly, with a discount the admin sets (20%) | ✅ | Settings → Plans |
 | 17 | TOP by 3-hour time slots (8 a day), priced by the admin | ✅ | Settings → TOP slots |
 | 18 | Ranking: TOP → admin boost → money paid (more = higher); equal payments shuffled on every visit | ✅ | Home, search |
@@ -89,4 +89,9 @@ Built from every request in [CONVERSATION.md](CONVERSATION.md), 2–4 Nov 2026. 
 | 56 | How to open to the public in India | ✅ | GUIDE Part 21 |
 | 57 | Everything saved on GitHub, with this conversation history | ✅ | `docs/CONVERSATION.md` |
 | 58 | Ads on the first screen: a turning 3D ring of paid ads (TOP first) in front of the globe | ✅ | home page, `public/js/stage.js`, GUIDE Part 27 |
-| 59 | No category tiles or category bar, no city box or city list — buyers just search | ✅ | header, home page, footer |
+| 59 | No category tiles or category bar under the header; no city list on the home page | 🔁 | home page, footer |
+| 60 | Showcase: 25 places per 3-hour time slot, won by automatic bidding; the owner sets places and minimum bids | ✅ | Seller → Showcase; Admin → Showcase bids; Settings → TOP slots |
+| 61 | TOP ads also shown in the ads list below the showcase | ✅ | Home page |
+| 62 | Card payments (credit and debit), Razorpay, PayPal, Stripe; confirmed automatically; UPI stays manual | ✅ | Payment page, Balance; Admin → Settings → Online payments (owner only) |
+| 63 | Search by keyword, location (city, state or country) and category; parts of words and Hindi words ("kids", "bho", "lal") | ✅ | Search bar; filter panel with country, state and city |
+| 64 | A worldwide site: country, state and currency on every ad, international phone numbers | ✅ | New-ad form; ad pages |
