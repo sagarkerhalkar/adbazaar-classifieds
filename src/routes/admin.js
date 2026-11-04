@@ -67,9 +67,9 @@ function docLink(file, label) {
 
 // ---------- views ----------
 function dashboardView(req, d) {
-  const hour = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
+  const hour = require('../region').hour();
   const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long' });
+  const today = new Date().toLocaleDateString(require('../region').get().india ? 'en-IN' : 'en-GB', { timeZone: require('../region').get().tz, weekday: 'long', day: 'numeric', month: 'long' });
   const kpi = (href, ic, tone, value, label, sub = '') => html`<a class="kpi kpi-${tone}" href="${href}">
     <span class="kpi-ic">${icon(ic, { size: 20 })}</span><span class="kpi-v" data-count="${typeof value === 'number' ? value : ''}">${value}</span><span class="kpi-l">${label}</span>${sub ? html`<span class="kpi-sub">${sub}</span>` : ''}</a>`;
   const first = String(req.admin.name || '').split(' ')[0];
@@ -147,13 +147,13 @@ function clientDetailView(req, c, { snapshots, ads, payments, tempPassword }) {
         <div><dt>Mobile OTP</dt><dd>${c.phone_verified_at ? html`<span class="pill pill-ok">✔ verified</span>` : html`<span class="pill pill-muted">${smsConfigured() ? 'not verified' : 'SMS not set up'}</span>`}</dd></div>
         ${c.auto_approved ? html`<div><dt>Approval</dt><dd><span class="pill pill-info">Auto-approved</span></dd></div>` : ''}
         <div class="wide"><dt>ID for age verification</dt><dd class="mono">${describeId(c)}</dd></div>
-        <div><dt>Date of birth</dt><dd>${c.dob ? html`${fmtDay(Date.parse(`${c.dob}T00:00:00+05:30`))} <span class="pill ${V.ageFromDob(c.dob) >= 18 ? 'pill-ok' : 'pill-bad'}">${V.ageFromDob(c.dob)} yrs</span>` : html`<span class="muted">Not given yet</span>`}</dd></div>
+        <div><dt>Date of birth</dt><dd>${c.dob ? html`${fmtDay(require('../region').dayStart(c.dob))} <span class="pill ${V.ageFromDob(c.dob) >= 18 ? 'pill-ok' : 'pill-bad'}">${V.ageFromDob(c.dob)} yrs</span>` : html`<span class="muted">Not given yet</span>`}</dd></div>
         <div class="wide"><dt>Address (optional)</dt><dd>${[c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || html`<span class="muted">Not given</span>`}</dd></div>
       </dl>
       <form method="post" action="/admin/clients/${c.id}/wallet" class="walletadmin">
         ${csrf(req)}
         <span><span class="muted small">Balance</span><strong>${rupees(c.wallet_paise || 0)}</strong></span>
-        <input type="number" name="amount" step="1" placeholder="₹ e.g. 100 or -100" required aria-label="Amount">
+        <input type="number" name="amount" step="1" placeholder="${require('../region').get().symbol} e.g. 100 or -100" required aria-label="Amount">
         <input name="note" maxlength="120" placeholder="Note (seller sees it)" aria-label="Note">
         <button class="btn btn-sm">Add / remove</button>
       </form>
@@ -372,7 +372,7 @@ function adsView(req, rows, f) {
       <h3 style="margin:0">Put it in TOP ads</h3>
       <div class="row2">
         ${field('For how many days', html`<input type="number" name="top_days" min="0" max="365" data-fill="topdays" placeholder="e.g. 3">`, '0 or empty = no admin TOP')}
-        ${field('…or until (India time)', html`<input type="datetime-local" name="top_until">`, 'Optional, overrides days')}
+        ${field(`…or until (${require('../region').get().timeName})`, html`<input type="datetime-local" name="top_until">`, 'Optional, overrides days')}
       </div>
       <div class="field"><span class="label">In these time slots</span>
         <div class="slots" style="margin:0">${SLOTS.map((sl) => html`<label class="slot"><input type="checkbox" name="top_slots[]" value="${sl.slot}" checked><span><b>${sl.label}</b></span></label>`)}</div>
@@ -380,7 +380,7 @@ function adsView(req, rows, f) {
       <h3 style="margin:6px 0 0">Put it in the showcase (3D ring at the top of the home page)</h3>
       <div class="row2">
         ${field('For how many days', html`<input type="number" name="show_days" min="0" max="365" data-fill="showdays" placeholder="e.g. 7">`, '0 or empty = no change')}
-        ${field('…or until (India time)', html`<input type="datetime-local" name="show_until">`, 'Optional, overrides days')}
+        ${field(`…or until (${require('../region').get().timeName})`, html`<input type="datetime-local" name="show_until">`, 'Optional, overrides days')}
       </div>
       <div class="row2">
         ${field('Ranking boost (−10 … +10)', html`<input type="number" name="boost" min="-10" max="10" data-fill="boost">`, 'Higher boost = above ads that paid the same')}
@@ -546,7 +546,7 @@ function onlinePayCard(req, s) {
       </div>
       <div class="row2">
         <label class="field"><span class="label">PayPal and Stripe charge in</span><select name="intl_currency">${G.CURRENCIES.map((x) => html`<option ${x === c.currency ? 'selected' : ''}>${x}</option>`)}</select></label>
-        ${field(`₹ for 1 ${c.currency}`, html`<input type="number" name="intl_rate" min="0.01" step="0.01" value="${c.rate}" required>`, 'Update it now and then. Amounts are rounded up, so you never get less than the rupee price.')}
+        ${field(`${require('../region').get().symbol} for 1 ${c.currency}`, html`<input type="number" name="intl_rate" min="0.01" step="0.01" value="${c.rate}" required>`, 'Update it now and then. Amounts are rounded up, so you never get less than the rupee price.')}
       </div>
       <label class="check"><input type="checkbox" name="clear" value="1"> <span>Remove all saved keys (switches online payments off)</span></label>
       <button class="btn btn-accent">Save online payments</button>
@@ -603,7 +603,7 @@ function settingsView(req, { s, plans, cats, admins }) {
     <form method="post" action="/admin/plans" class="form">
       ${csrf(req)}
       <div class="table-wrap"><table class="table plans-table">
-        <thead><tr><th>Name</th><th>Days</th><th>Price (₹)</th><th>Discount %</th><th>Customer pays</th><th>Active</th></tr></thead>
+        <thead><tr><th>Name</th><th>Days</th><th>Price (${require('../region').get().symbol})</th><th>Discount %</th><th>Customer pays</th><th>Active</th></tr></thead>
         <tbody>
           ${plans.map((p) => html`<tr>
             <td><input type="hidden" name="id[]" value="${p.id}"><input name="name[]" value="${p.name}" required maxlength="60"></td>
@@ -615,7 +615,7 @@ function settingsView(req, { s, plans, cats, admins }) {
           <tr class="new-row">
             <td><input type="hidden" name="id[]" value="new"><input name="name[]" placeholder="+ New plan name" maxlength="60"></td>
             <td><input type="number" name="days[]" min="1" max="365" placeholder="days"></td>
-            <td><input type="number" name="price[]" min="0" step="1" placeholder="₹"></td>
+            <td><input type="number" name="price[]" min="0" step="1" placeholder="${require('../region').get().symbol}"></td>
             <td><input type="hidden" name="priority[]" value="1"><input type="number" name="discount[]" min="0" max="90" value="0"></td><td></td>
             <td><select name="active[]"><option value="1">Yes</option><option value="0">No</option></select></td></tr>
         </tbody></table></div>
@@ -625,10 +625,10 @@ function settingsView(req, { s, plans, cats, admins }) {
 
     <section class="card tab-panel narrow-ish" data-panel="slots">
       <h2>★ TOP ad time slots</h2>
-      <p class="muted small">Clients choose the 3-hour slots (India time) when their ad is pinned in TOP. They pay this price per day × the days of their plan.</p>
+      <p class="muted small">Clients choose the 3-hour slots (${require('../region').get().timeName}) when their ad is pinned in TOP. They pay this price per day × the days of their plan.</p>
       <form method="post" action="/admin/slots" class="form">
         ${csrf(req)}
-        <div class="table-wrap"><table class="table"><thead><tr><th>Slot</th><th>Price per day (₹)</th><th>On sale</th></tr></thead><tbody>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Slot</th><th>Price per day (${require('../region').get().symbol})</th><th>On sale</th></tr></thead><tbody>
           ${slotPrices().map((sl) => html`<tr><td><strong>${sl.label}</strong></td>
             <td><input type="number" name="price_${sl.slot}" value="${sl.price_per_day_paise / 100}" min="0" step="1" required></td>
             <td><select name="active_${sl.slot}"><option value="1" ${sl.is_active ? 'selected' : ''}>Yes</option><option value="0" ${!sl.is_active ? 'selected' : ''}>No</option></select></td></tr>`)}
@@ -645,7 +645,7 @@ function settingsView(req, { s, plans, cats, admins }) {
           ${field('Bidding opens … days ahead', html`<input type="number" name="showcase_days_ahead" min="1" max="30" value="${c.daysAhead}" required>`)}
           <label class="field"><span class="label">Bidding</span><span class="switch-row"><input type="checkbox" class="switch" name="showcase_on" value="1" ${c.on ? 'checked' : ''}> Open</span></label>
         </div>
-        <div class="field"><span class="label">Minimum bid per time slot (₹, for the whole 3 hours)</span>
+        <div class="field"><span class="label">Minimum bid per time slot (${require('../region').get().symbol}, for the whole 3 hours)</span>
           <div class="min-grid">${SLOTS.map((sl) => html`<label><span class="small muted">${sl.label}</span><input type="number" name="min_${sl.slot}" min="1" step="1" value="${c.mins[sl.slot] / 100}" required></label>`)}</div></div>
         <label class="check"><input type="checkbox" name="showcase_fill" value="1" ${c.fill ? 'checked' : ''}> <span>When fewer than 9 ads won a slot, fill the empty places with TOP ads and other paid ads with photos (winners always come first)</span></label>
         <button class="btn btn-accent">Save showcase</button>
@@ -661,7 +661,7 @@ function settingsView(req, { s, plans, cats, admins }) {
         ${field('Send admin notifications to', html`<input type="email" name="notify_email" value="${s.notify_email}" placeholder="you@gmail.com">`)}
         ${field('Block a seller automatically after complaints from', html`<input type="number" name="complaint_block_threshold" min="0" max="100000" value="${s.complaint_block_threshold}">`, 'different people about the same ad. The ad is removed and the seller cannot post again. 0 = off (you decide).')}
         <h3>Blocked words</h3>
-        ${field('Ads and categories with these words are not published', html`<textarea name="blocked_words" rows="6" maxlength="20000" spellcheck="false">${(s.blocked_words ? String(s.blocked_words).split('\n') : Safety.DEFAULT_WORDS).join('\n')}</textarea>`, 'One word or phrase per line. Whole words only ("unisex" is fine for "sex"). Sellers cannot post an ad with these words; categories and old ads that have them are hidden from buyers and marked "Hidden" for you. Sexual or adult services are illegal to advertise in many countries, including India.')}
+        ${field('Ads and categories with these words are not published', html`<textarea name="blocked_words" rows="6" maxlength="20000" spellcheck="false">${s.blocked_words != null ? String(s.blocked_words) : Safety.DEFAULT_WORDS.join('\n')}</textarea>`, 'One word or phrase per line. Whole words only ("unisex" is fine for "sex"). Sellers cannot post an ad with these words; categories and old ads that have them are hidden from buyers and marked "Hidden" for you. Sexual or adult services are illegal to advertise in many countries, including India.')}
         ${field('Sponsored card in listings after every', html`<input type="number" name="sponsor_every" min="3" max="50" value="${s.sponsor_every}">`, 'ads (see Sponsors)')}
         <h3>Free ads</h3>
         <label class="check"><input type="checkbox" name="free_ads" value="1" ${s.free_ads !== '0' ? 'checked' : ''}> <span>Sellers may post ads <strong>free</strong> (shown after all paid ads, random order, never in TOP)</span></label>
@@ -824,7 +824,7 @@ function register(app) {
     const map = Object.fromEntries(dailyRows.map((r) => [r.day, r.total]));
     const daily = [];
     for (let i = 13; i >= 0; i--) {
-      const day = new Date(Date.now() - i * 86400_000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const day = require('../region').day(Date.now() - i * 86400_000);
       daily.push({ day, total: map[day] || 0 });
     }
     const d = {
@@ -839,7 +839,7 @@ function register(app) {
       paidLive: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'active' AND is_free = 0").get().n,
       freeLive: db.prepare("SELECT COUNT(*) n FROM ads WHERE status = 'active' AND is_free = 1").get().n,
       revToday: (() => { // since midnight India time
-        const IST = 19_800_000; const start = Math.floor((Date.now() + IST) / 86400_000) * 86400_000 - IST;
+        const R = require('../region'); const start = R.dayStart(R.day());
         return db.prepare("SELECT COALESCE(SUM(amount_paise - wallet_paise),0) s FROM payments WHERE status='paid' AND confirmed_at >= ?").get(start).s
           + db.prepare("SELECT COALESCE(SUM(amount_paise),0) s FROM wallet_topups WHERE status='paid' AND confirmed_at >= ?").get(start).s; })(),
       newSellers: db.prepare("SELECT COUNT(*) n FROM clients WHERE status = 'approved' AND created_at >= ?").get(Date.now() - 7 * 86400_000).n,
@@ -950,7 +950,7 @@ function register(app) {
     let callAt = null;
     if (status === 'video_call' && req.body.video_call_at) {
       // datetime-local is entered in India time
-      const t = Date.parse(`${req.body.video_call_at}:00+05:30`);
+      const t = require('../region').parse(req.body.video_call_at);
       if (Number.isFinite(t)) callAt = t;
     }
     tx(() => {
@@ -1254,7 +1254,7 @@ function register(app) {
       db.prepare('UPDATE ads SET admin_top_until = NULL WHERE id = ?').run(ad.id); msgs.push('admin TOP removed');
     } else {
       let until = null;
-      if (req.body.top_until) { const t = Date.parse(`${req.body.top_until}:00+05:30`); if (Number.isFinite(t) && t > now) until = t; }
+      if (req.body.top_until) { const t = require('../region').parse(req.body.top_until); if (Number.isFinite(t) && t > now) until = t; }
       const days = Math.max(0, Math.min(365, parseInt(req.body.top_days, 10) || 0));
       if (!until && days) until = now + days * 86400_000;
       const mask = (maskFrom(req.body.top_slots) & ALL_SLOTS) || ALL_SLOTS;
@@ -1265,7 +1265,7 @@ function register(app) {
       db.prepare('UPDATE ads SET admin_showcase_until = NULL, showcase_until = NULL WHERE id = ?').run(ad.id); msgs.push('removed from the showcase');
     } else if (req.body.remove_top !== '1') {
       let su = null;
-      if (req.body.show_until) { const t = Date.parse(`${req.body.show_until}:00+05:30`); if (Number.isFinite(t) && t > now) su = t; }
+      if (req.body.show_until) { const t = require('../region').parse(req.body.show_until); if (Number.isFinite(t) && t > now) su = t; }
       const sd = Math.max(0, Math.min(365, parseInt(req.body.show_days, 10) || 0));
       if (!su && sd) su = now + sd * 86400_000;
       if (su) { db.prepare('UPDATE ads SET admin_showcase_until = ? WHERE id = ?').run(su, ad.id); msgs.push(`showcase until ${fmtDate(su)}`); }
@@ -1512,7 +1512,7 @@ function register(app) {
     const now = Date.now();
     const body = html`
     <div class="page-head"><div><h1>${icon('star', { size: 22 })} Showcase bids</h1><p class="muted">${c.places} places per time slot. Highest bids win when the slot starts. ${can(req, 'settings') ? html`<a href="/admin/settings#slots">Places and minimum bids</a>` : ''}</p></div>
-      ${money ? html`<div class="kpis kpis-sm"><div class="kpi"><span>Earned today</span><strong>${rupees(Show.earnedSince(Date.parse(`${today}T00:00:00+05:30`)))}</strong></div><div class="kpi"><span>Last 30 days</span><strong>${rupees(Show.earnedSince(now - 30 * 86400_000))}</strong></div></div>` : ''}</div>
+      ${money ? html`<div class="kpis kpis-sm"><div class="kpi"><span>Earned today</span><strong>${rupees(Show.earnedSince(require('../region').dayStart(today)))}</strong></div><div class="kpi"><span>Last 30 days</span><strong>${rupees(Show.earnedSince(now - 30 * 86400_000))}</strong></div></div>` : ''}</div>
     <nav class="chips bid-days">${days.map((d) => html`<a class="chip ${d === day ? 'active' : ''}" href="/admin/bids?day=${d}">${d === today ? 'Today' : new Date(`${d}T12:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</a>`)}</nav>
     ${SLOTS.map((sl) => {
       const list = bids.filter((b) => b.slot === sl.slot);

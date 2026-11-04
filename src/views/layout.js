@@ -132,8 +132,9 @@ ${Brand.themeCss(s) ? html`<style>${raw(Brand.themeCss(s))}</style>` : ''}
 </head>`;
 }
 
-function scriptsHtml(scripts) {
+function scriptsHtml(scripts, portal) {
   return html`<script src="${assetUrl('/public/js/app.js')}"></script>
+${portal !== 'admin' ? html`<script src="${assetUrl('/public/js/consent.js')}"></script>` : ''}
 ${scripts.map((src) => html`<script src="${assetUrl(src)}"></script>`)}`;
 }
 
@@ -156,7 +157,7 @@ ${flashes(req)}
 ${body}
   </main>
 </div>
-${scriptsHtml(scripts)}
+${scriptsHtml(scripts, 'admin')}
 </body>
 </html>`;
   }
@@ -180,7 +181,7 @@ ${portal === 'public' ? bigFooter(req, s, home) : html`<footer class="footer">
     <div class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refund-policy">Refunds</a><a href="/contact">Contact</a><a href="/">View site</a></div>
   </div>
 </footer>`}
-${scriptsHtml(scripts)}
+${scriptsHtml(scripts, portal)}
 </body>
 </html>`;
 }

@@ -22,7 +22,8 @@ function words() {
   const { getSettings } = require('./db');
   const raw = getSettings().blocked_words;
   if (cache.re && cache.src === raw) return cache;
-  const list = raw == null || raw === '' ? DEFAULT_WORDS
+  const list = raw == null ? DEFAULT_WORDS
+    : raw === '' ? []
     : String(raw).split(/[\n,]+/).map((w) => w.trim().toLowerCase()).filter((w) => w.length >= 2).slice(0, 500);
   // "call boy" also matches "call-boy", "call.boy", "callboy"
   const parts = list.map((w) => w.split(/\s+/).map(esc).join('[\\s._\\-]*'));
